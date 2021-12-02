@@ -72,7 +72,7 @@ class CachingComputation {
   // Returns low node of @sample.
   std::shared_ptr<LowNode> GetLowNode(int sample) const;
 
-  // Returns compressed P value @move_id of @sample.
+  // Returns compressed P value @move_ct of @sample.
   uint16_t GetPVal(int sample, int move_ct) const;
   Move GetMove(int sample, int move_ct) const;
   // Pops last input from the computation. Only allowed for inputs which were
