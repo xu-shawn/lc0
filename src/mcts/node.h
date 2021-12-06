@@ -44,10 +44,10 @@ namespace lczero {
 // Children of a node are stored the following way:
 // * Edges and Nodes edges point to are stored separately.
 // * There may be dangling edges (which don't yet point to any Node object yet)
-// * Edges are stored are a simple array on heap.
+// * Edges are stored as a simple array on heap.
 // * Nodes are stored as a linked list, and contain index_ field which shows
 //   which edge of a parent that node points to.
-//   Or they are stored a contiguous array of Node objects on the heap if
+//   Or they are stored in a contiguous array of Node objects on the heap if
 //   solid_children_ is true. If the children have been 'solidified' their
 //   sibling links are unused and left empty. In this state there are no
 //   dangling edges, but the nodes may not have ever received any visits.
