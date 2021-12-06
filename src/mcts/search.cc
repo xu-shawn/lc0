@@ -500,22 +500,6 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
   }
 }
 
-NNCacheLock Search::GetCachedNNEval(const Node* node) const {
-  if (!node) return {};
-
-  std::vector<Move> moves;
-  for (; node != root_node_; node = node->GetParent()) {
-    moves.push_back(node->GetOwnEdge()->GetMove());
-  }
-  PositionHistory history(played_history_);
-  for (auto iter = moves.rbegin(), end = moves.rend(); iter != end; ++iter) {
-    history.Append(*iter);
-  }
-  const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
-  NNCacheLock nneval(cache_, hash);
-  return nneval;
-}
-
 void Search::MaybeTriggerStop(const IterationStats& stats,
                               StoppersHints* hints) {
   hints->Reset();
