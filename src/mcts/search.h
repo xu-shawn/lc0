@@ -193,7 +193,7 @@ class Search {
   std::atomic<int> backend_waiting_counter_{0};
   std::atomic<int> thread_count_{0};
 
-  std::vector<std::pair<Node*, int>> shared_collisions_
+  std::vector<std::pair<const std::vector<Node*>, int>> shared_collisions_
       GUARDED_BY(nodes_mutex_);
 
   std::unique_ptr<UciResponder> uci_responder_;
@@ -296,6 +296,8 @@ class SearchWorker {
       return is_cache_hit || node->IsTerminal();
     }
 
+    // The path to the node to extend.
+    std::vector<Node*> path;
     // The node to extend.
     Node* node;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
@@ -325,16 +327,17 @@ class SearchWorker {
     PositionHistory history;
     bool ooo_completed = false;
 
-    static NodeToProcess Collision(Node* node, uint16_t depth,
-                                   int collision_count) {
-      return NodeToProcess(node, depth, true, collision_count, 0);
+    static NodeToProcess Collision(const std::vector<Node*>& path,
+                                   uint16_t depth, int collision_count) {
+      return NodeToProcess(path, depth, true, collision_count, 0);
     }
-    static NodeToProcess Collision(Node* node, uint16_t depth,
-                                   int collision_count, int max_count) {
-      return NodeToProcess(node, depth, true, collision_count, max_count);
+    static NodeToProcess Collision(const std::vector<Node*>& path,
+                                   uint16_t depth, int collision_count,
+                                   int max_count) {
+      return NodeToProcess(path, depth, true, collision_count, max_count);
     }
-    static NodeToProcess Visit(Node* node, uint16_t depth) {
-      return NodeToProcess(node, depth, false, 1, 0);
+    static NodeToProcess Visit(const std::vector<Node*>& path, uint16_t depth) {
+      return NodeToProcess(path, depth, false, 1, 0);
     }
 
     // Method to allow NodeToProcess to conform as a 'Computation'. Only safe
@@ -342,9 +345,10 @@ class SearchWorker {
     std::shared_ptr<LowNode> GetLowNode(int) const { return lock->low_node; }
 
    private:
-    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
-                  int max_count)
-        : node(node),
+    NodeToProcess(const std::vector<Node*>& path, uint16_t depth,
+                  bool is_collision, int multivisit, int max_count)
+        : path(path),
+          node(path.back()),
           multivisit(multivisit),
           maxvisit(max_count),
           depth(depth),
@@ -359,6 +363,7 @@ class SearchWorker {
     std::vector<int> vtp_last_filled;
     std::vector<int> current_path;
     std::vector<Move> moves_to_path;
+    std::vector<Node*> full_path;
     PositionHistory history;
     TaskWorkspace() {
       vtp_buffer.reserve(30);
@@ -375,6 +380,7 @@ class SearchWorker {
     PickTaskType task_type;
 
     // For task type gathering.
+    std::vector<Node*> start_path;
     Node* start;
     int base_depth;
     int collision_limit;
@@ -387,10 +393,11 @@ class SearchWorker {
 
     bool complete = false;
 
-    PickTask(Node* node, uint16_t depth, const std::vector<Move>& base_moves,
-             int collision_limit)
+    PickTask(const std::vector<Node*>& start_path, uint16_t depth,
+             const std::vector<Move>& base_moves, int collision_limit)
         : task_type(kGathering),
-          start(node),
+          start_path(start_path),
+          start(start_path.back()),
           base_depth(depth),
           collision_limit(collision_limit),
           moves_to_base(base_moves) {}
@@ -406,15 +413,16 @@ class SearchWorker {
   bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta,
                       float* d_delta, float* m_delta) const;
   void PickNodesToExtend(int collision_limit);
-  void PickNodesToExtendTask(Node* starting_point, int collision_limit,
-                             int base_depth,
+  void PickNodesToExtendTask(const std::vector<Node*>& path,
+                             int collision_limit, int base_depth,
                              const std::vector<Move>& moves_to_base,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
-  void EnsureNodeTwoFoldCorrectForDepth(Node* node, int depth);
+  void EnsureNodeTwoFoldCorrectForDepth(const std::vector<Node*>& path,
+                                        int depth);
   void ProcessPickedTask(int batch_start, int batch_end,
                          TaskWorkspace* workspace);
-  NNCacheLock ExtendNode(Node* node, int depth,
+  NNCacheLock ExtendNode(const std::vector<Node*>& path, int depth,
                          const std::vector<Move>& moves_to_add,
                          PositionHistory* history, uint64_t* hash);
   template <typename Computation>
