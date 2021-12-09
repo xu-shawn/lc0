@@ -279,16 +279,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 }
 
 std::vector<Move> SelfPlayGame::GetMoves() const {
-  std::vector<Move> moves;
-  for (Node* node = tree_[0]->GetCurrentHead();
-       node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
-    moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove());
-  }
   std::vector<Move> result;
   Position pos = tree_[0]->GetPositionHistory().Starting();
-  while (!moves.empty()) {
-    Move move = moves.back();
-    moves.pop_back();
+  for (auto move : tree_[0]->GetMoves()) {
     if (!chess960_) move = pos.GetBoard().GetLegacyMove(move);
     pos = Position(pos, move);
     // Position already flipped, therefore flip the move if white to move.

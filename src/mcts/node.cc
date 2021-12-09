@@ -493,6 +493,7 @@ void NodeTree::MakeMove(Move move) {
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
   history_.Append(move);
+  moves_.push_back(move);
 }
 
 void NodeTree::TrimTreeAtHead() {
@@ -524,6 +525,7 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
 
   history_.Reset(starting_board, no_capture_ply,
                  full_moves * 2 - (starting_board.flipped() ? 1 : 2));
+  moves_.clear();
 
   Node* old_head = current_head_;
   current_head_ = gamebegin_node_.get();

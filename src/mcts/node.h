@@ -706,6 +706,7 @@ class NodeTree {
   Node* GetCurrentHead() const { return current_head_; }
   Node* GetGameBeginNode() const { return gamebegin_node_.get(); }
   const PositionHistory& GetPositionHistory() const { return history_; }
+  const std::vector<Move>& GetMoves() const { return moves_; }
 
  private:
   void DeallocateTree();
@@ -714,6 +715,7 @@ class NodeTree {
   // Root node of a game tree.
   std::unique_ptr<Node> gamebegin_node_;
   PositionHistory history_;
+  std::vector<Move> moves_;
 };
 
 }  // namespace lczero
