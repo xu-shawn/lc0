@@ -692,11 +692,11 @@ class NodeTree {
   // Resets the current head to ensure it doesn't carry over details from a
   // previous search.
   void TrimTreeAtHead();
-  // Sets the position in a tree, trying to reuse the tree.
+  // Sets the position in the tree, trying to reuse the tree.
   // If @auto_garbage_collect, old tree is garbage collected immediately. (may
   // take some milliseconds)
-  // Returns whether a new position the same game as old position (with some
-  // moves added). Returns false, if the position is completely different,
+  // Returns whether the new position is the same game as the old position (with
+  // some moves added). Returns false, if the position is completely different,
   // or if it's shorter than before.
   bool ResetToPosition(const std::string& starting_fen,
                        const std::vector<Move>& moves);
