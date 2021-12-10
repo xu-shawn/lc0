@@ -110,7 +110,6 @@ class SearchParams {
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
   int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
   float GetNpsLimit() const { return kNpsLimit; }
-  int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
 
   int GetTaskWorkersPerSearchWorker() const {
     return kTaskWorkersPerSearchWorker;
@@ -190,7 +189,6 @@ class SearchParams {
   static const OptionId kDrawScoreBlackId;
   static const OptionId kMaxOutOfOrderEvalsId;
   static const OptionId kNpsLimitId;
-  static const OptionId kSolidTreeThresholdId;
   static const OptionId kTaskWorkersPerSearchWorkerId;
   static const OptionId kMinimumWorkSizeForProcessingId;
   static const OptionId kMinimumWorkSizeForPickingId;
@@ -246,7 +244,6 @@ class SearchParams {
   const float kDrawScoreBlack;
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
-  const int kSolidTreeThreshold;
   const int kTaskWorkersPerSearchWorker;
   const int kMinimumWorkSizeForProcessing;
   const int kMinimumWorkSizeForPicking;

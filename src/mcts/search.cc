@@ -1882,13 +1882,9 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
       if (state != FAIL) {
         // TB nodes don't have NN evaluation, assign M from parent node.
         float m = 0.0f;
-        // Need a lock to access parent, in case MakeSolid is in progress.
-        {
-          SharedMutex::SharedLock lock(search_->nodes_mutex_);
-          if (path.size() > 1) {
-            auto parent = path[path.size() - 2];
-            m = std::max(0.0f, parent->GetM() - 1.0f);
-          }
+        if (path.size() > 1) {
+          auto parent = path[path.size() - 2];
+          m = std::max(0.0f, parent->GetM() - 1.0f);
         }
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
@@ -2138,8 +2134,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v_delta = 0.0f;
   float d_delta = 0.0f;
   float m_delta = 0.0f;
-  uint32_t solid_threshold =
-      static_cast<uint32_t>(params_.GetSolidTreeThreshold());
   for (auto it = path.crbegin(); it != path.crend();
        /* ++it in the body */) {
     auto n = *it;
@@ -2154,17 +2148,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
-    }
-    if (n->GetN() >= solid_threshold) {
-#if 0  // TODO: Find a way to make this work. Is it possible to do this when
-       // nothing else has (possibly) affected paths?
-      if (n->MakeSolid() && n == search_->root_node_) {
-        // If we make the root solid, the current_best_edge_ becomes invalid and
-        // we should repopulate it.
-        search_->current_best_edge_ =
-            search_->GetBestChildNoTemperature(search_->root_node_, 0);
-      }
-#endif
     }
 
     // Nothing left to do without ancestors to update.

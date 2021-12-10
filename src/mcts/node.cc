@@ -56,11 +56,10 @@ class NodeGarbageCollector {
 
   // Takes ownership of a subtree, to dispose it in a separate thread when
   // it has time.
-  void AddToGcQueue(std::unique_ptr<Node> node, size_t solid_size = 0) {
+  void AddToGcQueue(std::unique_ptr<Node> node) {
     if (!node) return;
     Mutex::Lock lock(gc_mutex_);
     subtrees_to_gc_.emplace_back(std::move(node));
-    subtrees_to_gc_solid_size_.push_back(solid_size);
   }
 
   ~NodeGarbageCollector() {
@@ -74,7 +73,6 @@ class NodeGarbageCollector {
     while (!stop_.load()) {
       // Node will be released in destructor when mutex is not locked.
       std::unique_ptr<Node> node_to_gc;
-      size_t solid_size = 0;
       {
         // Lock the mutex and move last subtree from subtrees_to_gc_ into
         // node_to_gc.
@@ -82,16 +80,6 @@ class NodeGarbageCollector {
         if (subtrees_to_gc_.empty()) return;
         node_to_gc = std::move(subtrees_to_gc_.back());
         subtrees_to_gc_.pop_back();
-        solid_size = subtrees_to_gc_solid_size_.back();
-        subtrees_to_gc_solid_size_.pop_back();
-      }
-      // Solid is a hack...
-      if (solid_size != 0) {
-        for (size_t i = 0; i < solid_size; i++) {
-          node_to_gc.get()[i].~Node();
-        }
-        std::allocator<Node> alloc;
-        alloc.deallocate(node_to_gc.release(), solid_size);
       }
     }
   }
@@ -108,7 +96,6 @@ class NodeGarbageCollector {
 
   mutable Mutex gc_mutex_;
   std::vector<std::unique_ptr<Node>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
-  std::vector<size_t> subtrees_to_gc_solid_size_ GUARDED_BY(gc_mutex_);
 
   // When true, Worker() should stop and exit.
   std::atomic<bool> stop_{false};
@@ -217,12 +204,8 @@ void Node::CreateEdges(const MoveList& moves) {
   num_edges_ = moves.size();
 }
 
-Node::ConstIterator Node::Edges() const {
-  return {*this, !solid_children_ ? &child_ : nullptr};
-}
-Node::Iterator Node::Edges() {
-  return {*this, !solid_children_ ? &child_ : nullptr};
-}
+Node::ConstIterator Node::Edges() const { return {*this, &child_}; }
+Node::Iterator Node::Edges() { return {*this, &child_}; }
 
 float Node::GetVisitedPolicy() const {
   float sum = 0.0f;
@@ -246,54 +229,8 @@ std::string Node::DebugString() const {
       << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
       << " Edges:" << static_cast<int>(num_edges_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
-      << static_cast<int>(upper_bound_) - 2 << " Solid:" << solid_children_;
+      << static_cast<int>(upper_bound_) - 2;
   return oss.str();
-}
-
-bool Node::MakeSolid() {
-  if (solid_children_ || num_edges_ == 0 || IsTerminal()) return false;
-  // Can only make solid if no immediate leaf childredn are in flight since we
-  // allow the search code to hold references to leaf nodes across locks.
-  Node* old_child_to_check = child_.get();
-  uint32_t total_in_flight = 0;
-  while (old_child_to_check != nullptr) {
-    if (old_child_to_check->GetN() <= 1 &&
-        old_child_to_check->GetNInFlight() > 0) {
-      return false;
-    }
-    if (old_child_to_check->IsTerminal() &&
-        old_child_to_check->GetNInFlight() > 0) {
-      return false;
-    }
-    total_in_flight += old_child_to_check->GetNInFlight();
-    old_child_to_check = old_child_to_check->sibling_.get();
-  }
-  // If the total of children in flight is not the same as self, then there are
-  // collisions against immediate children (which don't update the GetNInFlight
-  // of the leaf) and its not safe.
-  if (total_in_flight != GetNInFlight()) {
-    return false;
-  }
-  std::allocator<Node> alloc;
-  auto* new_children = alloc.allocate(num_edges_);
-  for (int i = 0; i < num_edges_; i++) {
-    new (&(new_children[i])) Node(this, i);
-  }
-  std::unique_ptr<Node> old_child = std::move(child_);
-  while (old_child) {
-    int index = old_child->index_;
-    new_children[index] = std::move(*old_child.get());
-    // This isn't needed, but it helps crash things faster if something has gone
-    // wrong.
-    old_child->parent_ = nullptr;
-    gNodeGc.AddToGcQueue(std::move(old_child));
-    new_children[index].UpdateChildrenParents();
-    old_child = std::move(new_children[index].sibling_);
-  }
-  // This is a hack.
-  child_ = std::unique_ptr<Node>(new_children);
-  solid_children_ = true;
-  return true;
 }
 
 void Edge::SortEdges(Edge* edges, int num_edges) {
@@ -406,57 +343,26 @@ void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
   }
 }
 
-void Node::UpdateChildrenParents() {
-  if (!solid_children_) {
-    Node* cur_child = child_.get();
-    while (cur_child != nullptr) {
-      cur_child->parent_ = this;
-      cur_child = cur_child->sibling_.get();
-    }
-  } else {
-    Node* child_array = child_.get();
-    for (int i = 0; i < num_edges_; i++) {
-      child_array[i].parent_ = this;
-    }
-  }
-}
-
-void Node::ReleaseChildren() {
-  gNodeGc.AddToGcQueue(std::move(child_), solid_children_ ? num_edges_ : 0);
-}
+void Node::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }
 
 void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
-  if (solid_children_) {
-    std::unique_ptr<Node> saved_node;
-    if (node_to_save != nullptr) {
-      saved_node = std::make_unique<Node>(this, node_to_save->index_);
-      *saved_node = std::move(*node_to_save);
+  // Stores node which will have to survive (or nullptr if it's not found).
+  std::unique_ptr<Node> saved_node;
+  // Pointer to unique_ptr, so that we could move from it.
+  for (std::unique_ptr<Node>* node = &child_; *node;
+       node = &(*node)->sibling_) {
+    // If current node is the one that we have to save.
+    if (node->get() == node_to_save) {
+      // Kill all remaining siblings.
+      gNodeGc.AddToGcQueue(std::move((*node)->sibling_));
+      // Save the node, and take the ownership from the unique_ptr.
+      saved_node = std::move(*node);
+      break;
     }
-    gNodeGc.AddToGcQueue(std::move(child_), num_edges_);
-    child_ = std::move(saved_node);
-    if (child_) {
-      child_->UpdateChildrenParents();
-    }
-    solid_children_ = false;
-  } else {
-    // Stores node which will have to survive (or nullptr if it's not found).
-    std::unique_ptr<Node> saved_node;
-    // Pointer to unique_ptr, so that we could move from it.
-    for (std::unique_ptr<Node>* node = &child_; *node;
-         node = &(*node)->sibling_) {
-      // If current node is the one that we have to save.
-      if (node->get() == node_to_save) {
-        // Kill all remaining siblings.
-        gNodeGc.AddToGcQueue(std::move((*node)->sibling_));
-        // Save the node, and take the ownership from the unique_ptr.
-        saved_node = std::move(*node);
-        break;
-      }
-    }
-    // Make saved node the only child. (kills previous siblings).
-    gNodeGc.AddToGcQueue(std::move(child_));
-    child_ = std::move(saved_node);
   }
+  // Make saved node the only child. (kills previous siblings).
+  gNodeGc.AddToGcQueue(std::move(child_));
+  child_ = std::move(saved_node);
   if (!child_) {
     num_edges_ = 0;
     low_node_.reset();  // Clear low node.
@@ -501,8 +407,6 @@ void NodeTree::MakeMove(Move move) {
 }
 
 void NodeTree::TrimTreeAtHead() {
-  // If solid, this will be empty before move and will be moved back empty
-  // afterwards which is fine.
   auto tmp = std::move(current_head_->sibling_);
   // Send dependent nodes for GC instead of destroying them immediately.
   current_head_->ReleaseChildren();
