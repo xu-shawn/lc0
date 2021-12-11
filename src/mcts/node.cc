@@ -188,23 +188,6 @@ void LowNode::CopyPolicy(int max_needed, float* output) const {
   }
 }
 
-Node* Node::CreateSingleChildNode(Move move) {
-  assert(!low_node_);
-  assert(!child_);
-  low_node_ = std::make_shared<LowNode>(MoveList({move}));
-  child_ = std::make_unique<Node>(low_node_.get(), 0);
-  return child_.get();
-}
-
-void Node::CreateEdges(const MoveList& moves) {
-  assert(!low_node_);
-  assert(!child_);
-  low_node_ = std::make_shared<LowNode>(moves);
-}
-
-Node::ConstIterator Node::Edges() const { return {*this, &child_}; }
-Node::Iterator Node::Edges() { return {*this, &child_}; }
-
 float Node::GetVisitedPolicy() const {
   float sum = 0.0f;
   for (auto* node : VisitedNodes()) sum += GetEdgeToNode(node)->GetP();
@@ -220,12 +203,19 @@ Edge* LowNode::GetEdgeToNode(const Node* node) const {
 std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << " Term:" << static_cast<int>(terminal_type_) << " This:" << this
-      << " Parent:" << parent_ << " Index:" << index_
-      << " Child:" << child_.get() << " Sibling:" << sibling_.get()
-      << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
-      << " Edges:" << static_cast<int>(GetNumEdges())
+      << " Parent:" << parent_ << " Index:" << index_ << " Child:" << GetChild()
+      << " Sibling:" << sibling_.get() << " WL:" << wl_ << " N:" << n_
+      << " N_:" << n_in_flight_ << " Edges:" << static_cast<int>(GetNumEdges())
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2;
+  return oss.str();
+}
+
+std::string LowNode::DebugString() const {
+  std::ostringstream oss;
+  oss << " This:" << this << "OrigQ:" << orig_q_ << " OrigD:" << orig_d_
+      << " OrigM:" << orig_m_ << " Edges:" << static_cast<int>(num_edges_)
+      << " EdgesAt:" << edges_.get() << " Child:" << child_.get();
   return oss.str();
 }
 
@@ -234,12 +224,6 @@ void Edge::SortEdges(Edge* edges, int num_edges) {
   // the encoding, and its noticeably faster.
   std::sort(edges, (edges + num_edges),
             [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
-}
-
-void Node::SortEdges() {
-  assert(low_node_);
-  assert(!child_);
-  low_node_->SortEdges();
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
@@ -339,18 +323,18 @@ void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
   }
 }
 
-void Node::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }
+void LowNode::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }
 
-void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
+void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
   // Stores node which will have to survive (or nullptr if it's not found).
   std::unique_ptr<Node> saved_node;
   // Pointer to unique_ptr, so that we could move from it.
   for (std::unique_ptr<Node>* node = &child_; *node;
-       node = &(*node)->sibling_) {
+       node = (*node)->GetSibling()) {
     // If current node is the one that we have to save.
     if (node->get() == node_to_save) {
       // Kill all remaining siblings.
-      gNodeGc.AddToGcQueue(std::move((*node)->sibling_));
+      gNodeGc.AddToGcQueue(std::move(*(*node)->GetSibling()));
       // Save the node, and take the ownership from the unique_ptr.
       saved_node = std::move(*node);
       break;
@@ -359,9 +343,6 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   // Make saved node the only child. (kills previous siblings).
   gNodeGc.AddToGcQueue(std::move(child_));
   child_ = std::move(saved_node);
-  if (!child_) {
-    low_node_.reset();  // Clear low node.
-  }
 }
 
 /////////////////////////////////////////////////////////////////////////

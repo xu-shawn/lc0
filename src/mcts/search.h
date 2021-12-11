@@ -344,6 +344,19 @@ class SearchWorker {
     // to call if is_cache_hit is true in the multigather path.
     std::shared_ptr<LowNode> GetLowNode(int) const { return lock->low_node; }
 
+    std::string DebugString() const {
+      std::ostringstream oss;
+      oss << "<NodeToProcess> This:" << this << " Collision:" << is_collision
+          << " Path:";
+      for (auto it = path.cbegin(); it != path.cend(); ++it) {
+        if (it != path.cbegin()) oss << "->";
+        oss << *it;
+      }
+      oss << " --- " << path.back()->DebugString() << std::endl;
+
+      return oss.str();
+    }
+
    private:
     NodeToProcess(const std::vector<Node*>& path, uint16_t depth,
                   bool is_collision, int multivisit, int max_count)

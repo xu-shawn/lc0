@@ -130,7 +130,13 @@ struct Eval {
 class LowNode {
  public:
   LowNode() = delete;
-  LowNode(const LowNode& p) : num_edges_(p.num_edges_) {
+  // Copy low node that is still only a cached NN value without children etc.
+  LowNode(const LowNode& p)
+      : orig_q_(p.orig_q_),
+        orig_d_(p.orig_d_),
+        orig_m_(p.orig_m_),
+        num_edges_(p.num_edges_) {
+    assert(!p.child_);
     if (p.edges_) {
       edges_ = std::make_unique<Edge[]>(num_edges_);
       std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
@@ -140,6 +146,15 @@ class LowNode {
   LowNode(const MoveList& moves) : num_edges_(moves.size()) {
     edges_ = Edge::FromMovelist(moves);
   }
+  // Init @edges_ with moves from @moves and 0 policy.
+  // Also create the first child at @index.
+  LowNode(const MoveList& moves, uint16_t index) : num_edges_(moves.size()) {
+    edges_ = Edge::FromMovelist(moves);
+    child_ = std::make_unique<Node>(this, index);
+  }
+
+  // Gets the first child.
+  std::unique_ptr<Node>* GetChild() { return &child_; }
 
   // Returns whether a node has children.
   bool HasChildren() const { return num_edges_ > 0; }
@@ -159,11 +174,23 @@ class LowNode {
   // Output must point to at least max_needed floats.
   void CopyPolicy(int max_needed, float* output) const;
 
+  // Deletes all children.
+  void ReleaseChildren();
+
+  // Deletes all children except one.
+  // The node provided may be moved, so should not be relied upon to exist
+  // afterwards.
+  void ReleaseChildrenExceptOne(Node* node_to_save);
+
   // For a child node, returns corresponding edge.
   Edge* GetEdgeToNode(const Node* node) const;
 
+  // Debug information about the node.
+  std::string DebugString() const;
+
   void SortEdges() {
     assert(edges_);
+    assert(!child_);
     Edge::SortEdges(edges_.get(), num_edges_);
   }
 
@@ -175,6 +202,8 @@ class LowNode {
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Array of edges.
   std::unique_ptr<Edge[]> edges_;
+  // Pointer to the first child. nullptr when no children.
+  std::unique_ptr<Node> child_;
 
   // 4 byte fields.
   // Original evaluation (from NN).
@@ -190,10 +219,10 @@ class LowNode {
 // A basic sanity check. This must be adjusted when LowNode members are
 // adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(LowNode) == 20,
-              +"Unexpected size of LowNode for 32bit compile");
+static_assert(sizeof(LowNode) == 24,
+              "Unexpected size of LowNode for 32bit compile");
 #else
-static_assert(sizeof(LowNode) == 24, "Unexpected size of LowNode");
+static_assert(sizeof(LowNode) == 32, "Unexpected size of LowNode");
 #endif
 
 class EdgeAndNode;
@@ -218,18 +247,29 @@ class Node {
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON) {}
 
-  // Allocates a new edge and a new node. The node has to be no edges before
-  // that.
-  Node* CreateSingleChildNode(Move m);
+  // Allocates a new edge and a new node. The node has to be without edges
+  // before that.
+  Node* CreateSingleChildNode(Move move) {
+    assert(!low_node_);
+    low_node_ = std::make_shared<LowNode>(MoveList({move}), 0);
+    return GetChild();
+  }
 
-  // Creates edges from a movelist. There has to be no edges before that.
-  void CreateEdges(const MoveList& moves);
+  // Creates edges from a movelist. There have to be no edges before that.
+  void CreateEdges(const MoveList& moves) {
+    assert(!low_node_);
+    low_node_ = std::make_shared<LowNode>(moves);
+  }
 
   // Gets parent low node.
   LowNode* GetParent() const { return parent_; }
   // Get first child.
-  Node* GetChild() { return child_.get(); }
-
+  Node* GetChild() const {
+    if (!low_node_) return nullptr;
+    return low_node_->GetChild()->get();
+  }
+  // Get next sibling.
+  std::unique_ptr<Node>* GetSibling() { return &sibling_; }
   // Moves sibling out.
   std::unique_ptr<Node> MoveSiblingOut() { return std::move(sibling_); }
   // Moves sibling in.
@@ -264,8 +304,9 @@ class Node {
     return low_node_ ? low_node_->GetNumEdges() : 0;
   }
 
-  // Output must point to at least max_needed floats.
+  // Output must point to at least @max_needed floats.
   void CopyPolicy(int max_needed, float* output) const {
+    assert(low_node_);
     low_node_->CopyPolicy(max_needed, output);
   }
 
@@ -307,12 +348,18 @@ class Node {
   VisitedNode_Iterator<false> VisitedNodes();
 
   // Deletes all children.
-  void ReleaseChildren();
+  void ReleaseChildren() const {
+    // Low node may not be attached (yet).
+    if (low_node_) low_node_->ReleaseChildren();
+  }
 
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
-  void ReleaseChildrenExceptOne(Node* node);
+  void ReleaseChildrenExceptOne(Node* node_to_save) const {
+    assert(low_node_);
+    if (low_node_) low_node_->ReleaseChildrenExceptOne(node_to_save);
+  }
 
   // For a child node, returns corresponding edge.
   Edge* GetEdgeToNode(const Node* node) const {
@@ -325,12 +372,17 @@ class Node {
 
   std::shared_ptr<LowNode> GetLowNode() const { return low_node_; }
 
-  void SetLowNode(std::shared_ptr<LowNode> low_node) { low_node_ = low_node; }
+  void SetLowNode(std::shared_ptr<LowNode> low_node) {
+    low_node_ = low_node;
+  }
 
   // Debug information about the node.
   std::string DebugString() const;
 
-  void SortEdges();
+  void SortEdges() const {
+    assert(low_node_);
+    low_node_->SortEdges();
+  }
 
   // Index in parent's edges - useful for correlated ordering.
   uint16_t Index() const { return index_; }
@@ -362,8 +414,6 @@ class Node {
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Pointer to a parent low node. nullptr for the root.
   LowNode* parent_ = nullptr;
-  // Pointer to a first child. nullptr for a leaf node.
-  std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
 
@@ -400,9 +450,9 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 48, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 44, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 72, "Unexpected size of Node");
+static_assert(sizeof(Node) == 64, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -597,6 +647,15 @@ class Edge_Iterator : public EdgeAndNode {
   uint16_t total_count_ = 0;
 };
 
+inline Node::ConstIterator Node::Edges() const {
+  return {*this, (low_node_ ? low_node_->GetChild()
+                            : static_cast<std::unique_ptr<Node>*>(nullptr))};
+}
+inline Node::Iterator Node::Edges() {
+  return {*this, (low_node_ ? low_node_->GetChild()
+                            : static_cast<std::unique_ptr<Node>*>(nullptr))};
+}
+
 // TODO(crem) Replace this with less hacky iterator once we support C++17.
 // This class has multiple hypostases within one class:
 // * Range (begin() and end() functions)
@@ -657,10 +716,10 @@ class VisitedNode_Iterator {
 };
 
 inline VisitedNode_Iterator<true> Node::VisitedNodes() const {
-  return {*this, child_.get()};
+  return {*this, GetChild()};
 }
 inline VisitedNode_Iterator<false> Node::VisitedNodes() {
-  return {*this, child_.get()};
+  return {*this, GetChild()};
 }
 
 class NodeTree {
