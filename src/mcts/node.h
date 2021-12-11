@@ -247,6 +247,13 @@ class Node {
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON) {}
 
+  // Performs construction time type initialization. For use only with a node
+  // that has not been used beyond its construction.
+  void Reinit(LowNode* parent, uint16_t index) {
+    parent_ = parent;
+    index_ = index;
+  }
+
   // Allocates a new edge and a new node. The node has to be without edges
   // before that.
   Node* CreateSingleChildNode(Move move) {
@@ -372,9 +379,7 @@ class Node {
 
   std::shared_ptr<LowNode> GetLowNode() const { return low_node_; }
 
-  void SetLowNode(std::shared_ptr<LowNode> low_node) {
-    low_node_ = low_node;
-  }
+  void SetLowNode(std::shared_ptr<LowNode> low_node) { low_node_ = low_node; }
 
   // Debug information about the node.
   std::string DebugString() const;
@@ -388,13 +393,6 @@ class Node {
   uint16_t Index() const { return index_; }
 
  private:
-  // Performs construction time type initialization. For use only with a node
-  // that has not been used beyond its construction.
-  void Reinit(LowNode* parent, uint16_t index) {
-    parent_ = parent;
-    index_ = index;
-  }
-
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
@@ -441,11 +439,6 @@ class Node {
   // Best and worst result for this node.
   GameResult lower_bound_ : 2;
   GameResult upper_bound_ : 2;
-
-  friend class Edge_Iterator<true>;
-  friend class Edge_Iterator<false>;
-  friend class VisitedNode_Iterator<true>;
-  friend class VisitedNode_Iterator<false>;
 };
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
@@ -560,7 +553,7 @@ class Edge_Iterator : public EdgeAndNode {
   // Creates "begin()" iterator. Also happens to be a range constructor.
   Edge_Iterator(const Node& parent_node, Ptr child_ptr)
       : EdgeAndNode(parent_node.GetNumEdges()
-                        ? parent_node.low_node_->GetEdges()
+                        ? parent_node.GetLowNode()->GetEdges()
                         : nullptr,
                     nullptr),
         node_ptr_(child_ptr),
@@ -613,7 +606,7 @@ class Edge_Iterator : public EdgeAndNode {
     // 3. Attach stored pointer back to a list:
     //    node_ptr_ ->
     //         &Node(idx_.3).sibling_ -> Node(idx_.5).sibling_ -> Node(idx_.7)
-    (*node_ptr_)->sibling_ = std::move(tmp);
+    (*node_ptr_)->MoveSiblingIn(tmp);
     // 4. Actualize:
     //    node_ -> &Node(idx_.5)
     //    node_ptr_ -> &Node(idx_.5).sibling_ -> Node(idx_.7)
@@ -627,14 +620,14 @@ class Edge_Iterator : public EdgeAndNode {
     // This is needed (and has to be 'while' rather than 'if') as other threads
     // could spawn new nodes between &node_ptr_ and *node_ptr_ while we didn't
     // see.
-    while (*node_ptr_ && (*node_ptr_)->index_ < current_idx_) {
-      node_ptr_ = &(*node_ptr_)->sibling_;
+    while (*node_ptr_ && (*node_ptr_)->Index() < current_idx_) {
+      node_ptr_ = (*node_ptr_)->GetSibling();
     }
     // If in the end node_ptr_ points to the node that we need, populate node_
     // and advance node_ptr_.
-    if (*node_ptr_ && (*node_ptr_)->index_ == current_idx_) {
+    if (*node_ptr_ && (*node_ptr_)->Index() == current_idx_) {
       node_ = (*node_ptr_).get();
-      node_ptr_ = &node_->sibling_;
+      node_ptr_ = node_->GetSibling();
     } else {
       node_ = nullptr;
     }
@@ -694,7 +687,7 @@ class VisitedNode_Iterator {
   // Equality comparison operators are inherited from EdgeAndNode.
   void operator++() {
     do {
-      node_ptr_ = node_ptr_->sibling_.get();
+      node_ptr_ = node_ptr_->GetSibling()->get();
       // If n started is 0, can jump direct to end due to sorted policy
       // ensuring that each time a new edge becomes best for the first time,
       // it is always the first of the section at the end that has NStarted of
