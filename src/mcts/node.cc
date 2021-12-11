@@ -399,7 +399,7 @@ void NodeTree::MakeMove(Move move) {
   }
   move = board.GetModernMove(move);
   current_head_->ReleaseChildrenExceptOne(new_head);
-  new_head = current_head_->child_.get();
+  new_head = current_head_->GetChild();
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
   history_.Append(move);
@@ -407,11 +407,11 @@ void NodeTree::MakeMove(Move move) {
 }
 
 void NodeTree::TrimTreeAtHead() {
-  auto tmp = std::move(current_head_->sibling_);
+  auto tmp = current_head_->MoveSiblingOut();
   // Send dependent nodes for GC instead of destroying them immediately.
   current_head_->ReleaseChildren();
-  *current_head_ = Node(current_head_->GetParent(), current_head_->index_);
-  current_head_->sibling_ = std::move(tmp);
+  *current_head_ = Node(current_head_->GetParent(), current_head_->Index());
+  current_head_->MoveSiblingIn(tmp);
 }
 
 bool NodeTree::ResetToPosition(const std::string& starting_fen,

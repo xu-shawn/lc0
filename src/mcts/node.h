@@ -197,6 +197,15 @@ class Node {
 
   // Gets parent node.
   Node* GetParent() const { return parent_; }
+  // Get first child.
+  Node* GetChild() { return child_.get(); }
+
+  // Moves sibling out.
+  std::unique_ptr<Node> MoveSiblingOut() { return std::move(sibling_); }
+  // Moves sibling in.
+  void MoveSiblingIn(std::unique_ptr<Node>& sibling) {
+    sibling_ = std::move(sibling);
+  }
 
   // Returns whether a node has children.
   bool HasChildren() const { return num_edges_ > 0; }
@@ -361,11 +370,8 @@ class Node {
   GameResult lower_bound_ : 2;
   GameResult upper_bound_ : 2;
 
-  // TODO(mooskagh) Unfriend NodeTree.
-  friend class NodeTree;
   friend class Edge_Iterator<true>;
   friend class Edge_Iterator<false>;
-  friend class Edge;
   friend class VisitedNode_Iterator<true>;
   friend class VisitedNode_Iterator<false>;
 };
