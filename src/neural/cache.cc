@@ -86,9 +86,7 @@ void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
   } else {
     // Cache legal moves.
     std::vector<Move> moves = history.Last().GetBoard().GenerateLegalMoves();
-    batch_.back().low_node = std::make_shared<LowNode>();
-    batch_.back().low_node->edges_ = Edge::FromMovelist(moves);
-    batch_.back().low_node->num_edges_ = moves.size();
+    batch_.back().low_node = std::make_shared<LowNode>(moves);
   }
   batch_.back().transform = transform;
   parent_->AddInput(std::move(input));
@@ -108,9 +106,9 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
   // Fill cache with data from NN.
   for (const auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;
-    item.low_node->orig_q_ = parent_->GetQVal(item.idx_in_parent);
-    item.low_node->orig_d_ = parent_->GetDVal(item.idx_in_parent);
-    item.low_node->orig_m_ = parent_->GetMVal(item.idx_in_parent);
+    item.low_node->SetOrig(parent_->GetQVal(item.idx_in_parent),
+                           parent_->GetDVal(item.idx_in_parent),
+                           parent_->GetMVal(item.idx_in_parent));
 
     // Calculate maximum first.
     float max_p = -std::numeric_limits<float>::infinity();
@@ -118,9 +116,10 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     // There are never more than 256 valid legal moves in any legal position.
     std::array<float, 256> intermediate;
     int transform = item.transform;
-    int num_edges = item.low_node->num_edges_;
+    int num_edges = item.low_node->GetNumEdges();
+    auto edges = item.low_node->GetEdges();
     for (int ct = 0; ct < num_edges; ct++) {
-      auto move = item.low_node->edges_[ct].GetMove();
+      auto move = edges[ct].GetMove();
       float p =
           parent_->GetPVal(item.idx_in_parent, move.as_nn_index(transform));
       intermediate[ct] = p;
@@ -137,10 +136,10 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     // Normalize P values to add up to 1.0.
     const float scale = total > 0.0f ? 1.0f / total : 1.0f;
     for (int ct = 0; ct < num_edges; ct++) {
-      item.low_node->edges_[ct].SetP(intermediate[ct] * scale);
+      edges[ct].SetP(intermediate[ct] * scale);
     }
 
-    Edge::SortEdges(item.low_node->edges_.get(), num_edges);
+    item.low_node->SortEdges();
 
     auto req = std::make_unique<CachedNNRequest>();
     req->low_node = item.low_node;

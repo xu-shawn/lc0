@@ -193,13 +193,19 @@ std::unique_ptr<Edge[]> Edge::FromMovelist(const MoveList& moves) {
 // Node
 /////////////////////////////////////////////////////////////////////////
 
+void LowNode::CopyPolicy(int max_needed, float* output) const {
+  if (num_edges_ == 0) return;
+  int loops = std::min(static_cast<int>(num_edges_), max_needed);
+  for (int i = 0; i < loops; i++) {
+    output[i] = edges_[i].GetP();
+  }
+}
+
 Node* Node::CreateSingleChildNode(Move move) {
   assert(!low_node_);
   assert(!child_);
-  low_node_ = std::make_shared<LowNode>();
-  low_node_->edges_ = Edge::FromMovelist({move});
+  low_node_ = std::make_shared<LowNode>(MoveList({move}));
   num_edges_ = 1;
-  low_node_->num_edges_ = 1;
   child_ = std::make_unique<Node>(this, 0);
   return child_.get();
 }
@@ -207,10 +213,8 @@ Node* Node::CreateSingleChildNode(Move move) {
 void Node::CreateEdges(const MoveList& moves) {
   assert(!low_node_);
   assert(!child_);
-  low_node_ = std::make_shared<LowNode>();
-  low_node_->edges_ = Edge::FromMovelist(moves);
+  low_node_ = std::make_shared<LowNode>(moves);
   num_edges_ = moves.size();
-  low_node_->num_edges_ = num_edges_;
 }
 
 Node::ConstIterator Node::Edges() const {
@@ -229,7 +233,7 @@ float Node::GetVisitedPolicy() const {
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
   assert(node->index_ < num_edges_);
-  return &low_node_->edges_[node->index_];
+  return low_node_->GetEdge(node->index_);
 }
 
 Edge* Node::GetOwnEdge() const { return GetParent()->GetEdgeToNode(this); }
@@ -300,9 +304,9 @@ void Edge::SortEdges(Edge* edges, int num_edges) {
 }
 
 void Node::SortEdges() {
-  assert(low_node_ && low_node_->edges_);
+  assert(low_node_);
   assert(!child_);
-  Edge::SortEdges(low_node_->edges_.get(), num_edges_);
+  low_node_->SortEdges();
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {

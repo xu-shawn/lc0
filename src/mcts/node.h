@@ -116,25 +116,58 @@ struct Eval {
   float ml;
 };
 
-struct LowNode {
-  // Array of edges.
-  std::unique_ptr<Edge[]> edges_;
-  float orig_q_;
-  float orig_d_;
-  float orig_m_;
-  // Number of edges in @edges_.
-  uint8_t num_edges_ = 0;
-  LowNode() = default;
-  LowNode(const LowNode& p)
-      : orig_q_(p.orig_q_),
-        orig_d_(p.orig_d_),
-        orig_m_(p.orig_m_),
-        num_edges_(p.num_edges_) {
+class LowNode {
+ public:
+  LowNode() = delete;
+  LowNode(const LowNode& p) : num_edges_(p.num_edges_) {
     if (p.edges_) {
       edges_ = std::make_unique<Edge[]>(num_edges_);
       std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
     }
   }
+  // Init @edges_ with moves from @moves and 0 policy.
+  LowNode(const MoveList& moves)
+      : orig_q_(0), orig_d_(0), orig_m_(0), num_edges_(moves.size()) {
+    edges_ = Edge::FromMovelist(moves);
+  }
+
+  void SetOrig(float q, float d, float m) {
+    orig_q_ = q;
+    orig_d_ = d;
+    orig_m_ = m;
+  }
+  float GetOrigQ() const { return orig_q_; }
+  float GetOrigD() const { return orig_d_; }
+  float GetOrigM() const { return orig_m_; }
+
+  uint8_t GetNumEdges() const { return num_edges_; }
+  // Gets pointer to the start of the edge array.
+  Edge* GetEdges() const { return edges_.get(); }
+  // Output must point to at least max_needed floats.
+  void CopyPolicy(int max_needed, float* output) const;
+
+  // Returns edge at @index.
+  Edge* GetEdge(uint16_t index) const {
+    assert(index < num_edges_);
+    return &edges_[index];
+  }
+
+  void SortEdges() {
+    assert(edges_);
+    Edge::SortEdges(edges_.get(), num_edges_);
+  }
+
+ private:
+  // Array of edges.
+  std::unique_ptr<Edge[]> edges_;
+
+  // Original evaluation (from NN).
+  float orig_q_ = 0;
+  float orig_d_ = 0;
+  float orig_m_ = 0;
+
+  // Number of edges in @edges_.
+  uint8_t num_edges_ = 0;
 };
 
 class EdgeAndNode;
@@ -202,11 +235,7 @@ class Node {
 
   // Output must point to at least max_needed floats.
   void CopyPolicy(int max_needed, float* output) const {
-    if (num_edges_ == 0) return;
-    int loops = std::min(static_cast<int>(num_edges_), max_needed);
-    for (int i = 0; i < loops; i++) {
-      output[i] = low_node_->edges_[i].GetP();
-    }
+    low_node_->CopyPolicy(max_needed, output);
   }
 
   // Makes the node terminal and sets it's score.
@@ -271,7 +300,7 @@ class Node {
 
   void SetLowNode(std::shared_ptr<LowNode> low_node) {
     low_node_ = low_node;
-    num_edges_ = low_node ? low_node->num_edges_ : 0;
+    num_edges_ = low_node ? low_node->GetNumEdges() : 0;
   }
 
   // Debug information about the node.
@@ -494,7 +523,7 @@ class Edge_Iterator : public EdgeAndNode {
   // Creates "begin()" iterator. Also happens to be a range constructor.
   // child_ptr will be nullptr if parent_node is solid children.
   Edge_Iterator(const Node& parent_node, Ptr child_ptr)
-      : EdgeAndNode(parent_node.num_edges_ ? parent_node.low_node_->edges_.get()
+      : EdgeAndNode(parent_node.num_edges_ ? parent_node.low_node_->GetEdges()
                                            : nullptr,
                     nullptr),
         node_ptr_(child_ptr),

@@ -419,7 +419,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
       v = n->GetQ(sign * draw_score);
     } else if (n) {
       auto low_node = n->GetLowNode();
-      if (low_node) v = -low_node->orig_q_;
+      if (low_node) v = -low_node->GetOrigQ();
     }
     if (v) {
       print(oss, "(V: ", sign * *v, ") ", 7, 4);
@@ -1810,10 +1810,11 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
 
   std::vector<Move> legal_moves;
   if (lock) {
-    legal_moves.reserve(lock->low_node->num_edges_);
+    legal_moves.reserve(lock->low_node->GetNumEdges());
     const KingAttackInfo king_attack_info = board.GenerateKingAttackInfo();
-    for (int ct = 0; ct < lock->low_node->num_edges_; ct++) {
-      auto move = lock->low_node->edges_[ct].GetMove();
+    auto edges = lock->low_node->GetEdges();
+    for (int ct = 0; ct < lock->low_node->GetNumEdges(); ct++) {
+      auto move = edges[ct].GetMove();
       if (!board.IsLegalMove(move, king_attack_info)) {
         lock = NNCacheLock();
         break;
@@ -2082,9 +2083,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   // For NN results, we need to populate policy as well as value.
   auto low_node = computation.GetLowNode(idx_in_computation);
-  node_to_process->v = -low_node->orig_q_;
-  node_to_process->d = low_node->orig_d_;
-  node_to_process->m = low_node->orig_m_;
+  node_to_process->v = -low_node->GetOrigQ();
+  node_to_process->d = low_node->GetOrigD();
+  node_to_process->m = low_node->GetOrigM();
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
     // Make a copy of the low node before adding noise.

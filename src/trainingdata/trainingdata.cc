@@ -76,7 +76,6 @@ void DriftCorrect(float* q, float* d) {
 }
 }  // namespace
 
-
 void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
                                 bool adjudicated) const {
   if (training_data_.empty()) return;
@@ -149,11 +148,12 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   std::vector<float> intermediate;
   auto low_node = node->GetLowNode();
   if (low_node) {
+    auto edges = low_node->GetEdges();
     for (const auto& child : node->Edges()) {
       auto move = child.edge()->GetMove();
       for (size_t i = 0; i < node->GetNumEdges(); i++) {
-        if (move == low_node->edges_[i].GetMove()) {
-          intermediate.emplace_back(low_node->edges_[i].GetP());
+        if (move == edges[i].GetMove()) {
+          intermediate.emplace_back(edges[i].GetP());
           break;
         }
       }
@@ -226,9 +226,9 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
 
   Eval orig_eval;
   if (low_node) {
-    orig_eval.wl = low_node->orig_q_;
-    orig_eval.d = low_node->orig_d_;
-    orig_eval.ml = low_node->orig_m_;
+    orig_eval.wl = low_node->GetOrigQ();
+    orig_eval.d = low_node->GetOrigD();
+    orig_eval.ml = low_node->GetOrigM();
   } else {
     orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
     orig_eval.d = std::numeric_limits<float>::quiet_NaN();
