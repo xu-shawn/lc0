@@ -47,6 +47,13 @@ namespace lczero {
 // * Edges are stored as a simple array on heap.
 // * Nodes are stored as a linked list, and contain index_ field which shows
 //   which edge of a parent that node points to.
+// * Node contents are split between the old (Upper)Node and the new LowNode.
+//   The old (Upper)Node will slowly turn into an edge while LowNode will take
+//   its place and eventually turn into a complete node. The structure will turn
+//   from a tree into a more general Directed Acyclic Graph (DAG). This will
+//   help with transposition handling, where one position (node) can be reached
+//   on several paths, but backpropagation using parent pointers will not be
+//   possible any more.
 //
 // Example:
 //                                Parent Node
@@ -152,11 +159,8 @@ class LowNode {
   // Output must point to at least max_needed floats.
   void CopyPolicy(int max_needed, float* output) const;
 
-  // Returns edge at @index.
-  Edge* GetEdge(uint16_t index) const {
-    assert(index < num_edges_);
-    return &edges_[index];
-  }
+  // For a child node, returns corresponding edge.
+  Edge* GetEdgeToNode(const Node* node) const;
 
   void SortEdges() {
     assert(edges_);
@@ -206,8 +210,8 @@ class Node {
 
   enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase, TwoFold };
 
-  // Takes pointer to a parent node and own index in a parent.
-  Node(Node* parent, uint16_t index)
+  // Takes pointer to a @parent low node and own @index in the parent.
+  Node(LowNode* parent, uint16_t index)
       : parent_(parent),
         index_(index),
         terminal_type_(Terminal::NonTerminal),
@@ -221,8 +225,8 @@ class Node {
   // Creates edges from a movelist. There has to be no edges before that.
   void CreateEdges(const MoveList& moves);
 
-  // Gets parent node.
-  Node* GetParent() const { return parent_; }
+  // Gets parent low node.
+  LowNode* GetParent() const { return parent_; }
   // Get first child.
   Node* GetChild() { return child_.get(); }
 
@@ -311,10 +315,13 @@ class Node {
   void ReleaseChildrenExceptOne(Node* node);
 
   // For a child node, returns corresponding edge.
-  Edge* GetEdgeToNode(const Node* node) const;
+  Edge* GetEdgeToNode(const Node* node) const {
+    assert(low_node_);
+    return low_node_->GetEdgeToNode(node);
+  }
 
   // Returns edge to the own node.
-  Edge* GetOwnEdge() const;
+  Edge* GetOwnEdge() const { return GetParent()->GetEdgeToNode(this); }
 
   std::shared_ptr<LowNode> GetLowNode() const { return low_node_; }
 
@@ -325,13 +332,13 @@ class Node {
 
   void SortEdges();
 
-  // Index in parent edges - useful for correlated ordering.
+  // Index in parent's edges - useful for correlated ordering.
   uint16_t Index() const { return index_; }
 
  private:
   // Performs construction time type initialization. For use only with a node
   // that has not been used beyond its construction.
-  void Reinit(Node* parent, uint16_t index) {
+  void Reinit(LowNode* parent, uint16_t index) {
     parent_ = parent;
     index_ = index;
   }
@@ -353,8 +360,8 @@ class Node {
   double wl_ = 0.0f;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
-  // Pointer to a parent node. nullptr for the root.
-  Node* parent_ = nullptr;
+  // Pointer to a parent low node. nullptr for the root.
+  LowNode* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
@@ -546,11 +553,12 @@ class Edge_Iterator : public EdgeAndNode {
     // 2. Create fresh Node(idx_.5):
     //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
     //    tmp -> Node(idx_.7)
+    auto low_parent = parent->GetLowNode().get();
     if (node_source && *node_source) {
-      (*node_source)->Reinit(parent, current_idx_);
+      (*node_source)->Reinit(low_parent, current_idx_);
       *node_ptr_ = std::move(*node_source);
     } else {
-      *node_ptr_ = std::make_unique<Node>(parent, current_idx_);
+      *node_ptr_ = std::make_unique<Node>(low_parent, current_idx_);
     }
     // 3. Attach stored pointer back to a list:
     //    node_ptr_ ->

@@ -369,7 +369,8 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 }  // namespace
 
 std::vector<std::string> Search::GetVerboseStats(Node* node) const {
-  assert(node == root_node_ || node->GetParent() == root_node_);
+  assert(node == root_node_ ||
+         node->GetParent() == root_node_->GetLowNode().get());
   const bool is_root = (node == root_node_);
   const bool is_odd_depth = !is_root;
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);

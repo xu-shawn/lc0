@@ -177,7 +177,7 @@ std::unique_ptr<Edge[]> Edge::FromMovelist(const MoveList& moves) {
 }
 
 /////////////////////////////////////////////////////////////////////////
-// Node
+// LowNode + Node
 /////////////////////////////////////////////////////////////////////////
 
 void LowNode::CopyPolicy(int max_needed, float* output) const {
@@ -192,7 +192,7 @@ Node* Node::CreateSingleChildNode(Move move) {
   assert(!low_node_);
   assert(!child_);
   low_node_ = std::make_shared<LowNode>(MoveList({move}));
-  child_ = std::make_unique<Node>(this, 0);
+  child_ = std::make_unique<Node>(low_node_.get(), 0);
   return child_.get();
 }
 
@@ -211,13 +211,11 @@ float Node::GetVisitedPolicy() const {
   return sum;
 }
 
-Edge* Node::GetEdgeToNode(const Node* node) const {
-  assert(node->parent_ == this);
-  assert(node->index_ < GetNumEdges());
-  return low_node_->GetEdge(node->index_);
+Edge* LowNode::GetEdgeToNode(const Node* node) const {
+  assert(node->GetParent() == this);
+  assert(node->Index() < num_edges_);
+  return &edges_[node->Index()];
 }
-
-Edge* Node::GetOwnEdge() const { return GetParent()->GetEdgeToNode(this); }
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
@@ -425,7 +423,7 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   }
 
   if (!gamebegin_node_) {
-    gamebegin_node_ = std::make_unique<Node>(nullptr, 0);
+    gamebegin_node_ = std::make_unique<Node>(static_cast<LowNode*>(nullptr), 0);
   }
 
   history_.Reset(starting_board, no_capture_ply,
