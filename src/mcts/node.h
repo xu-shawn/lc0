@@ -74,6 +74,14 @@ namespace lczero {
 //                                       | sibling_   | -> nullptr
 //                                       +------------+
 
+// Define __i386__  or __arm__ also for 32 bit Windows.
+#if defined(_M_IX86)
+#define __i386__
+#endif
+#if defined(_M_ARM) && !defined(_M_AMD64)
+#define __arm__
+#endif
+
 class Node;
 class Edge {
  public:
@@ -154,17 +162,33 @@ class LowNode {
   }
 
  private:
+  // To minimize the number of padding bytes and to avoid having unnecessary
+  // padding when new fields are added, we arrange the fields by size, largest
+  // to smallest.
+
+  // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Array of edges.
   std::unique_ptr<Edge[]> edges_;
 
+  // 4 byte fields.
   // Original evaluation (from NN).
   float orig_q_ = 0;
   float orig_d_ = 0;
   float orig_m_ = 0;
 
+  // 1 byte fields.
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
 };
+
+// A basic sanity check. This must be adjusted when LowNode members are
+// adjusted.
+#if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
+static_assert(sizeof(LowNode) == 20,
+              +"Unexpected size of LowNode for 32bit compile");
+#else
+static_assert(sizeof(LowNode) == 24, "Unexpected size of LowNode");
+#endif
 
 class EdgeAndNode;
 template <bool is_const>
@@ -368,14 +392,6 @@ class Node {
   friend class VisitedNode_Iterator<true>;
   friend class VisitedNode_Iterator<false>;
 };
-
-// Define __i386__  or __arm__ also for 32 bit Windows.
-#if defined(_M_IX86)
-#define __i386__
-#endif
-#if defined(_M_ARM) && !defined(_M_AMD64)
-#define __arm__
-#endif
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
