@@ -192,7 +192,6 @@ Node* Node::CreateSingleChildNode(Move move) {
   assert(!low_node_);
   assert(!child_);
   low_node_ = std::make_shared<LowNode>(MoveList({move}));
-  num_edges_ = 1;
   child_ = std::make_unique<Node>(this, 0);
   return child_.get();
 }
@@ -201,7 +200,6 @@ void Node::CreateEdges(const MoveList& moves) {
   assert(!low_node_);
   assert(!child_);
   low_node_ = std::make_shared<LowNode>(moves);
-  num_edges_ = moves.size();
 }
 
 Node::ConstIterator Node::Edges() const { return {*this, &child_}; }
@@ -215,7 +213,7 @@ float Node::GetVisitedPolicy() const {
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
-  assert(node->index_ < num_edges_);
+  assert(node->index_ < GetNumEdges());
   return low_node_->GetEdge(node->index_);
 }
 
@@ -227,7 +225,7 @@ std::string Node::DebugString() const {
       << " Parent:" << parent_ << " Index:" << index_
       << " Child:" << child_.get() << " Sibling:" << sibling_.get()
       << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
-      << " Edges:" << static_cast<int>(num_edges_)
+      << " Edges:" << static_cast<int>(GetNumEdges())
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2;
   return oss.str();
@@ -273,7 +271,7 @@ void Node::MakeNotTerminal() {
   n_ = 0;
 
   // Include children too.
-  if (num_edges_ > 0) {
+  if (GetNumEdges() > 0) {
     n_++;
     for (const auto& child : Edges()) {
       const auto n = child.GetN();
@@ -364,7 +362,6 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   gNodeGc.AddToGcQueue(std::move(child_));
   child_ = std::move(saved_node);
   if (!child_) {
-    num_edges_ = 0;
     low_node_.reset();  // Clear low node.
   }
 }

@@ -134,6 +134,9 @@ class LowNode {
     edges_ = Edge::FromMovelist(moves);
   }
 
+  // Returns whether a node has children.
+  bool HasChildren() const { return num_edges_ > 0; }
+
   void SetOrig(float q, float d, float m) {
     orig_q_ = q;
     orig_d_ = d;
@@ -231,7 +234,7 @@ class Node {
   }
 
   // Returns whether a node has children.
-  bool HasChildren() const { return num_edges_ > 0; }
+  bool HasChildren() const { return low_node_ && low_node_->HasChildren(); }
 
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
@@ -253,7 +256,9 @@ class Node {
   bool IsTwoFoldTerminal() const { return terminal_type_ == Terminal::TwoFold; }
   typedef std::pair<GameResult, GameResult> Bounds;
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
-  uint8_t GetNumEdges() const { return num_edges_; }
+  uint8_t GetNumEdges() const {
+    return low_node_ ? low_node_->GetNumEdges() : 0;
+  }
 
   // Output must point to at least max_needed floats.
   void CopyPolicy(int max_needed, float* output) const {
@@ -313,10 +318,7 @@ class Node {
 
   std::shared_ptr<LowNode> GetLowNode() const { return low_node_; }
 
-  void SetLowNode(std::shared_ptr<LowNode> low_node) {
-    low_node_ = low_node;
-    num_edges_ = low_node ? low_node->GetNumEdges() : 0;
-  }
+  void SetLowNode(std::shared_ptr<LowNode> low_node) { low_node_ = low_node; }
 
   // Debug information about the node.
   std::string DebugString() const;
@@ -376,9 +378,6 @@ class Node {
   uint16_t index_;
 
   // 1 byte fields.
-  // Number of edges in @edges_.
-  uint8_t num_edges_ = 0;
-
   // Bit fields using parts of uint8_t fields initialized in the constructor.
   // Whether or not this node end game (with a winning of either sides or draw).
   Terminal terminal_type_ : 2;
@@ -503,11 +502,12 @@ class Edge_Iterator : public EdgeAndNode {
 
   // Creates "begin()" iterator. Also happens to be a range constructor.
   Edge_Iterator(const Node& parent_node, Ptr child_ptr)
-      : EdgeAndNode(parent_node.num_edges_ ? parent_node.low_node_->GetEdges()
-                                           : nullptr,
+      : EdgeAndNode(parent_node.GetNumEdges()
+                        ? parent_node.low_node_->GetEdges()
+                        : nullptr,
                     nullptr),
         node_ptr_(child_ptr),
-        total_count_(parent_node.num_edges_) {
+        total_count_(parent_node.GetNumEdges()) {
     if (edge_) Actualize();
   }
 
@@ -606,7 +606,7 @@ class VisitedNode_Iterator {
 
   // Creates "begin()" iterator. Also happens to be a range constructor.
   VisitedNode_Iterator(const Node& parent_node, Node* child_ptr)
-      : node_ptr_(child_ptr), total_count_(parent_node.num_edges_) {
+      : node_ptr_(child_ptr), total_count_(parent_node.GetNumEdges()) {
     if (node_ptr_ != nullptr && node_ptr_->GetN() == 0) {
       operator++();
     }
