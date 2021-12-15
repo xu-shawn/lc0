@@ -266,13 +266,6 @@ class Node {
   // incrementing n_in_flight.
   void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
 
-  // Updates max depth, if new depth is larger.
-  void UpdateMaxDepth(int depth);
-
-  // Calculates the full depth if new depth is larger, updates it, returns
-  // in depth parameter, and returns true if it was indeed updated.
-  bool UpdateFullDepth(uint16_t* depth);
-
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
   Iterator Edges();
