@@ -130,8 +130,7 @@ class LowNode {
     }
   }
   // Init @edges_ with moves from @moves and 0 policy.
-  LowNode(const MoveList& moves)
-      : orig_q_(0), orig_d_(0), orig_m_(0), num_edges_(moves.size()) {
+  LowNode(const MoveList& moves) : num_edges_(moves.size()) {
     edges_ = Edge::FromMovelist(moves);
   }
 
