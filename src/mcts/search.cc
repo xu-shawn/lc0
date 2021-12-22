@@ -1830,6 +1830,8 @@ void SearchWorker::PickNodesToExtendTask(const std::vector<Node*>& path,
 NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
                                      const std::vector<Move>& moves_to_node,
                                      PositionHistory* history, uint64_t* hash) {
+  assert(!path.back()->GetLowNode());
+
   // Initialize position sequence with pre-move position.
   history->Trim(search_->played_history_.GetLength());
   for (size_t i = 0; i < moves_to_node.size(); i++) {
