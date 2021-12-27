@@ -129,26 +129,46 @@ struct Eval {
 
 class LowNode {
  public:
+  typedef std::pair<GameResult, GameResult> Bounds;
+
+  enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase, TwoFold };
+
   LowNode() = delete;
-  // Copy low node that is still only a cached NN value without children etc.
+  // Copy low node that is still only a cached NN value without children, visits
+  // etc.
   LowNode(const LowNode& p)
-      : orig_q_(p.orig_q_),
+      : wl_(p.wl_),
+        orig_q_(p.orig_q_),
         orig_d_(p.orig_d_),
         orig_m_(p.orig_m_),
-        num_edges_(p.num_edges_) {
+        d_(p.d_),
+        m_(p.m_),
+        num_edges_(p.num_edges_),
+        terminal_type_(p.terminal_type_),
+        lower_bound_(p.lower_bound_),
+        upper_bound_(p.upper_bound_) {
     assert(!p.child_);
+    assert(p.n_ == 0);
     if (p.edges_) {
       edges_ = std::make_unique<Edge[]>(num_edges_);
       std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
     }
   }
   // Init @edges_ with moves from @moves and 0 policy.
-  LowNode(const MoveList& moves) : num_edges_(moves.size()) {
+  LowNode(const MoveList& moves)
+      : num_edges_(moves.size()),
+        terminal_type_(Terminal::NonTerminal),
+        lower_bound_(GameResult::BLACK_WON),
+        upper_bound_(GameResult::WHITE_WON) {
     edges_ = Edge::FromMovelist(moves);
   }
   // Init @edges_ with moves from @moves and 0 policy.
   // Also create the first child at @index.
-  LowNode(const MoveList& moves, uint16_t index) : num_edges_(moves.size()) {
+  LowNode(const MoveList& moves, uint16_t index)
+      : num_edges_(moves.size()),
+        terminal_type_(Terminal::NonTerminal),
+        lower_bound_(GameResult::BLACK_WON),
+        upper_bound_(GameResult::WHITE_WON) {
     edges_ = Edge::FromMovelist(moves);
     child_ = std::make_unique<Node>(this, index);
   }
@@ -201,6 +221,14 @@ class LowNode {
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
 
+  // 8 byte fields.
+  // Average value (from value head of neural network) of all visited nodes in
+  // subtree. For terminal nodes, eval is stored. This is from the perspective
+  // of the player who "just" moved to reach this position, rather than from the
+  // perspective of the player-to-move for the position.
+  // WL stands for "W minus L". Is equal to Q if draw score is 0.
+  double wl_ = 0.0f;
+
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Array of edges.
   std::unique_ptr<Edge[]> edges_;
@@ -209,22 +237,39 @@ class LowNode {
 
   // 4 byte fields.
   // Original evaluation (from NN).
-  float orig_q_ = 0;
-  float orig_d_ = 0;
-  float orig_m_ = 0;
+  float orig_q_ = 0.0f;
+  float orig_d_ = 0.0f;
+  float orig_m_ = 0.0f;
+  // Averaged draw probability. Works similarly to WL, except that D is not
+  // flipped depending on the side to move.
+  float d_ = 0.0f;
+  // Estimated remaining plies.
+  float m_ = 0.0f;
+  // How many completed visits this node had.
+  uint32_t n_ = 0;
+  // (AKA virtual loss.) How many threads currently process this node (started
+  // but not finished). This value is added to n during selection which node
+  // to pick in MCTS, and also when selecting the best move.
+  uint32_t n_in_flight_ = 0;
 
   // 1 byte fields.
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
+  // Bit fields using parts of uint8_t fields initialized in the constructor.
+  // Whether or not this node end game (with a winning of either sides or draw).
+  Terminal terminal_type_ : 2;
+  // Best and worst result for this node.
+  GameResult lower_bound_ : 2;
+  GameResult upper_bound_ : 2;
 };
 
 // A basic sanity check. This must be adjusted when LowNode members are
 // adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(LowNode) == 24,
+static_assert(sizeof(LowNode) == 48,
               "Unexpected size of LowNode for 32bit compile");
 #else
-static_assert(sizeof(LowNode) == 32, "Unexpected size of LowNode");
+static_assert(sizeof(LowNode) == 56, "Unexpected size of LowNode");
 #endif
 
 class EdgeAndNode;
@@ -239,7 +284,8 @@ class Node {
   using Iterator = Edge_Iterator<false>;
   using ConstIterator = Edge_Iterator<true>;
 
-  enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase, TwoFold };
+  typedef LowNode::Terminal Terminal;
+  typedef LowNode::Bounds Bounds;
 
   // Takes pointer to a @parent low node and own @index in the parent.
   Node(LowNode* parent, uint16_t index)
@@ -307,8 +353,8 @@ class Node {
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
   bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
   bool IsTwoFoldTerminal() const { return terminal_type_ == Terminal::TwoFold; }
-  typedef std::pair<GameResult, GameResult> Bounds;
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
+
   uint8_t GetNumEdges() const {
     return low_node_ ? low_node_->GetNumEdges() : 0;
   }

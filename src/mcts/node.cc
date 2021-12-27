@@ -204,10 +204,11 @@ Edge* LowNode::GetEdgeToNode(const Node* node) const {
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
-  oss << " Term:" << static_cast<int>(terminal_type_) << " This:" << this
-      << " Parent:" << parent_ << " Index:" << index_ << " Child:" << GetChild()
-      << " Sibling:" << sibling_.get() << " WL:" << wl_ << " N:" << n_
-      << " N_:" << n_in_flight_ << " Edges:" << static_cast<int>(GetNumEdges())
+  oss << " <Node> This:" << this << " LowNode:" << low_node_.get()
+      << " Parent:" << parent_ << " Index:" << index_
+      << " Sibling:" << sibling_.get() << " WL:" << wl_ << " D:" << d_
+      << " M:" << m_ << " N:" << n_ << " N_:" << n_in_flight_
+      << " Term:" << static_cast<int>(terminal_type_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2;
   return oss.str();
@@ -215,9 +216,14 @@ std::string Node::DebugString() const {
 
 std::string LowNode::DebugString() const {
   std::ostringstream oss;
-  oss << " This:" << this << "OrigQ:" << orig_q_ << " OrigD:" << orig_d_
-      << " OrigM:" << orig_m_ << " Edges:" << static_cast<int>(num_edges_)
-      << " EdgesAt:" << edges_.get() << " Child:" << child_.get();
+  oss << " <LowNode> This:" << this << " Edges:" << edges_.get()
+      << " NumEdges:" << static_cast<int>(num_edges_)
+      << " Child:" << child_.get() << " OrigQ:" << orig_q_
+      << " OrigD:" << orig_d_ << " OrigM:" << orig_m_ << " WL:" << wl_
+      << " D:" << d_ << " M:" << m_ << " N:" << n_ << " N_:" << n_in_flight_
+      << " Term:" << static_cast<int>(terminal_type_)
+      << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
+      << static_cast<int>(upper_bound_) - 2;
   return oss.str();
 }
 
@@ -352,10 +358,26 @@ static std::string PtrToNodeName(const void* ptr) {
 
 std::string LowNode::DotNodeString() const {
   std::ostringstream oss;
-  oss << PtrToNodeName(this) << " [shape=box,label=\""
-      << "OrigQ=" << orig_q_ << "\\lOrigD=" << orig_d_ << "\\lOrigM=" << orig_m_
-      << "\\l\",tooltip=\"This=" << this
-      << "\\nEdges=" << static_cast<int>(num_edges_) << "\"];";
+  oss << PtrToNodeName(this) << " ["
+      << "shape=box";
+  // Adjust formatting to limit node size.
+  oss << std::fixed << std::setprecision(3);
+  oss << ",label=\""
+      << "WL=" << wl_ << "\\lD=" << d_ << "\\lM=" << m_ << "\\lN=" << n_
+      << "\\lN_=" << n_in_flight_ << "\\l\"";
+  // Set precision for tooltip.
+  oss << std::fixed << std::setprecision(5);
+  oss << ",tooltip=\""
+      << "WL=" << wl_ << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
+      << "\\nN_=" << n_in_flight_
+      << "\\nTerm=" << static_cast<int>(terminal_type_)
+      << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
+      << static_cast<int>(upper_bound_) - 2 << "\\n\\nOrigQ=" << orig_q_
+      << "\\nOrigD=" << orig_d_ << "\\nOrigM=" << orig_m_
+      << "\\n\\nThis=" << this << "\\nEdges=" << edges_.get()
+      << "\\nNumEdges=" << static_cast<int>(num_edges_)
+      << "\\nChild=" << child_.get() << "\\n\"";
+  oss << "];";
   return oss.str();
 }
 
@@ -363,16 +385,22 @@ std::string Node::DotEdgeString(bool as_opponent) const {
   std::ostringstream oss;
   oss << (parent_ == nullptr ? "top" : PtrToNodeName(parent_)) << " -> "
       << (low_node_ ? PtrToNodeName(low_node_.get()) : PtrToNodeName(this))
-      << " [label=\""
+      << " [";
+  oss << "label=\""
       << (parent_ == nullptr ? "N/A"
                              : GetOwnEdge()->GetMove(as_opponent).as_string())
-      << "\\lP=" << (parent_ == nullptr ? 0.0f : GetOwnEdge()->GetP())
-      << "\\l\",labeltooltip=\"This=" << this << "\\nWL= " << wl_
-      << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
+      << "\\lN=" << n_ << "\\lN_=" << n_in_flight_ << "\\l\"";
+  // Set precision for tooltip.
+  oss << std::fixed << std::setprecision(5);
+  oss << ",labeltooltip=\""
+      << "P=" << (parent_ == nullptr ? 0.0f : GetOwnEdge()->GetP())
+      << "\\nWL= " << wl_ << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
       << "\\nN_=" << n_in_flight_
       << "\\nTerm=" << static_cast<int>(terminal_type_)
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
-      << static_cast<int>(upper_bound_) - 2 << "\\n\"";
+      << static_cast<int>(upper_bound_) - 2 << "\\n\\nThis=" << this
+      << "\\nLowNode=" << low_node_.get() << "\\nParent=" << parent_
+      << "\\nIndex=" << index_ << "\\nSibling=" << sibling_.get() << "\\n\"";
   // Try to make more important/visited edges shorter and in the center.
   oss << ",weight=" << n_ + n_in_flight_;
   oss << "];";
