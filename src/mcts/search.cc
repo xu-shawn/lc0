@@ -1731,10 +1731,12 @@ void SearchWorker::PickNodesToExtendTask(
         Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
         full_path.push_back(child_node);
 
-        // Probably best place to check for two-fold draws consistently.
-        // Depth starts with 1 at root, so real depth is depth - 1.
+#if 0  // Current TwoFold detection does not work in DAG.
+       // Probably best place to check for two-fold draws consistently.
+       // Depth starts with 1 at root, so real depth is depth - 1.
         EnsureNodeTwoFoldCorrectForDepth(
             full_path, current_path.size() + base_depth + 1 - 1);
+#endif
 
         if (child_node->TryStartScoreUpdate()) {
           current_nstarted[best_idx]++;
@@ -1843,7 +1845,8 @@ void SearchWorker::PickNodesToExtendTask(
   }
 }
 
-NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
+NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path,
+                                     [[maybe_unused]] int depth,
                                      const std::vector<Move>& moves_to_node,
                                      PositionHistory* history, uint64_t* hash) {
   assert(!path.back()->GetLowNode());
@@ -1908,6 +1911,7 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
       return NNCacheLock();
     }
 
+#if 0  // Current three-fold and two-fold detection does not work in DAG.
     const auto repetitions = history->Last().GetRepetitions();
     // Mark two-fold repetitions as draws according to settings.
     // Depth starts with 1 at root, so number of plies in PV is depth - 1.
@@ -1923,6 +1927,7 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
                          Node::Terminal::TwoFold);
       return NNCacheLock();
     }
+#endif
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
