@@ -1525,7 +1525,7 @@ void SearchWorker::PickNodesToExtendTask(const std::vector<Node*>& path,
           completed_visits += cur_limit;
         }
         full_path.pop_back();
-        node = full_path.back();
+        node = (full_path.size() > 0) ? full_path.back() : nullptr;
         current_path.pop_back();
         continue;
       }
@@ -1802,7 +1802,7 @@ void SearchWorker::PickNodesToExtendTask(const std::vector<Node*>& path,
     }
     if (!found_child) {
       full_path.pop_back();
-      node = full_path.back();
+      node = (full_path.size() > 0) ? full_path.back() : nullptr;
       if (!moves_to_path.empty()) {
         moves_to_path.pop_back();
       }
