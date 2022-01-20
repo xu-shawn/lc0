@@ -1616,7 +1616,10 @@ void SearchWorker::PickNodesToExtendTask(const std::vector<Node*>& path,
               cur_iters[idx] = cur_iters[idx - 1];
               ++cur_iters[idx];
             }
-            current_nstarted[idx] = cur_iters[idx].GetNStarted();
+            {
+              Mutex::Lock lock(picking_tasks_mutex_);
+              current_nstarted[idx] = cur_iters[idx].GetNStarted();
+            }
           }
           int nstarted = current_nstarted[idx];
           const float util = current_util[idx];
@@ -1710,7 +1713,10 @@ void SearchWorker::PickNodesToExtendTask(const std::vector<Node*>& path,
           current_nstarted[best_idx]++;
           new_visits -= 1;
           if (child_node->GetN() > 0 && !child_node->IsTerminal()) {
-            child_node->IncrementNInFlight(new_visits);
+            {
+              Mutex::Lock lock(picking_tasks_mutex_);
+              child_node->IncrementNInFlight(new_visits);
+            }
             current_nstarted[best_idx] += new_visits;
           }
           current_score[best_idx] = current_pol[best_idx] * puct_mult /
