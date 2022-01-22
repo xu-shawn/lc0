@@ -187,6 +187,8 @@ class LowNode {
 
   // Debug information about the node.
   std::string DebugString() const;
+  // Return string describing this node in the Graphviz dot format.
+  std::string DotNodeString() const;
 
   void SortEdges() {
     assert(edges_);
@@ -383,6 +385,12 @@ class Node {
 
   // Debug information about the node.
   std::string DebugString() const;
+  // Return string describing the edge from node's parent to its low node in the
+  // Graphviz dot format.
+  std::string DotEdgeString(bool as_opponent = false) const;
+  // Return string describing the graph starting at this node in the Graphviz
+  // dot format.
+  std::string DotGraphString(bool as_opponent = false) const;
 
   void SortEdges() const {
     assert(low_node_);

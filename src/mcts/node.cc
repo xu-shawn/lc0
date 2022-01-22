@@ -32,8 +32,10 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <list>
 #include <sstream>
 #include <thread>
+#include <unordered_set>
 
 #include "utils/exception.h"
 #include "utils/hashcat.h"
@@ -343,6 +345,81 @@ void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
   // Make saved node the only child. (kills previous siblings).
   gNodeGc.AddToGcQueue(std::move(child_));
   child_ = std::move(saved_node);
+}
+
+static std::string PtrToNodeName(const void* ptr) {
+  std::ostringstream oss;
+  oss << "n_" << ptr;
+  return oss.str();
+}
+
+std::string LowNode::DotNodeString() const {
+  std::ostringstream oss;
+  oss << PtrToNodeName(this) << " [shape=box,label=\""
+      << "OrigQ=" << orig_q_ << "\\lOrigD=" << orig_d_ << "\\lOrigM=" << orig_m_
+      << "\\l\",tooltip=\"This=" << this
+      << "\\nEdges=" << static_cast<int>(num_edges_) << "\"];";
+  return oss.str();
+}
+
+std::string Node::DotEdgeString(bool as_opponent) const {
+  std::ostringstream oss;
+  oss << (parent_ == nullptr ? "top" : PtrToNodeName(parent_)) << " -> "
+      << (low_node_ ? PtrToNodeName(low_node_.get()) : PtrToNodeName(this))
+      << " [label=\""
+      << (parent_ == nullptr ? "N/A"
+                             : GetOwnEdge()->GetMove(as_opponent).as_string())
+      << "\\lP=" << (parent_ == nullptr ? 0.0f : GetOwnEdge()->GetP())
+      << "\\l\",labeltooltip=\"This=" << this << "\\nWL= " << wl_
+      << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
+      << "\\nN_=" << n_in_flight_
+      << "\\nTerm=" << static_cast<int>(terminal_type_)
+      << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
+      << static_cast<int>(upper_bound_) - 2 << "\"];";
+  return oss.str();
+}
+
+std::string Node::DotGraphString(bool as_opponent) const {
+  std::ostringstream oss;
+  std::unordered_set<const Node*> visited;
+  std::list<std::pair<const Node*, bool>> unvisited_fifo;
+
+  oss << "strict digraph G {" << std::endl;
+  oss << "edge ["
+      << "headport=n"
+      << "];" << std::endl;
+  oss << "node ["
+      << "shape=point"  // For terminals.
+      << "];" << std::endl;
+  oss << "ranksep=5.0" << std::endl;
+
+  oss << DotEdgeString(as_opponent) << std::endl;
+  unvisited_fifo.push_back(std::pair(this, as_opponent));
+
+  do {
+    auto parent_pair = unvisited_fifo.front();
+    auto parent_node = parent_pair.first;
+    auto parent_as_opponent = parent_pair.second;
+    unvisited_fifo.pop_front();
+    visited.insert(parent_node);
+
+    auto parent_low_node = parent_node->GetLowNode().get();
+    oss << parent_low_node->DotNodeString() << std::endl;
+
+    for (auto& child_edge : parent_node->Edges()) {
+      auto child = child_edge.node();
+      if (child == nullptr) break;
+
+      oss << child->DotEdgeString(parent_as_opponent) << std::endl;
+
+      if (visited.find(child) == visited.end())
+        unvisited_fifo.push_back(std::pair(child, !parent_as_opponent));
+    }
+  } while (!unvisited_fifo.empty());
+
+  oss << "}" << std::endl;
+
+  return oss.str();
 }
 
 /////////////////////////////////////////////////////////////////////////
