@@ -104,7 +104,7 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
   parent_->ComputeBlocking();
 
   // Fill cache with data from NN.
-  for (const auto& item : batch_) {
+  for (auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;
     item.low_node->SetOrig(parent_->GetQVal(item.idx_in_parent),
                            parent_->GetDVal(item.idx_in_parent),
@@ -144,6 +144,14 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     auto req = std::make_unique<CachedNNRequest>();
     req->low_node = item.low_node;
     cache_->Insert(item.hash, std::move(req));
+
+    // Retrieve and use what really is in the cache for item's hash now as
+    // Insert just silently fails if something else from another batch or even
+    // this batch got inserted there between AddInput and Insert of this item.
+    NNCacheLock lock(cache_, item.hash);
+    assert(lock);
+    item.lock = std::move(lock);
+    item.low_node = item.lock->low_node;
   }
 }
 
