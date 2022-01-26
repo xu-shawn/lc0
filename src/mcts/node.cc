@@ -290,7 +290,22 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
 
+void LowNode::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
+  // Recompute Q.
+  wl_ += multivisit * (v - wl_) / (n_ + multivisit);
+  d_ += multivisit * (d - d_) / (n_ + multivisit);
+  m_ += multivisit * (m - m_) / (n_ + multivisit);
+
+  // Increment N.
+  n_ += multivisit;
+  // Decrement virtual loss.
+  n_in_flight_ -= multivisit;
+}
+
 void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
+  // Low node might be missing for terminals.
+  if (low_node_) low_node_->FinalizeScoreUpdate(v, d, m, multivisit);
+
   // Recompute Q.
   wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);

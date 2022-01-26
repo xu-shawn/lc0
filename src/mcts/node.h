@@ -194,6 +194,13 @@ class LowNode {
   // Output must point to at least max_needed floats.
   void CopyPolicy(int max_needed, float* output) const;
 
+  // Updates the node with newly computed value v.
+  // Updates:
+  // * Q (weighted average of all V in a subtree)
+  // * N (+=multivisit)
+  // * N-in-flight (-=multivisit)
+  void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
+
   // Deletes all children.
   void ReleaseChildren();
 
@@ -382,8 +389,8 @@ class Node {
   // Updates the node with newly computed value v.
   // Updates:
   // * Q (weighted average of all V in a subtree)
-  // * N (+=1)
-  // * N-in-flight (-=1)
+  // * N (+=multivisit)
+  // * N-in-flight (-=multivisit)
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, int multivisit);
