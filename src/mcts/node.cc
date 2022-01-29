@@ -401,16 +401,18 @@ std::string Node::DotGraphString(bool as_opponent) const {
     visited.insert(parent_node);
 
     auto parent_low_node = parent_node->GetLowNode().get();
-    oss << parent_low_node->DotNodeString() << std::endl;
+    if (parent_low_node) {
+      oss << parent_low_node->DotNodeString() << std::endl;
 
-    for (auto& child_edge : parent_node->Edges()) {
-      auto child = child_edge.node();
-      if (child == nullptr) break;
+      for (auto& child_edge : parent_node->Edges()) {
+        auto child = child_edge.node();
+        if (child == nullptr) break;
 
-      oss << child->DotEdgeString(parent_as_opponent) << std::endl;
+        oss << child->DotEdgeString(parent_as_opponent) << std::endl;
 
-      if (visited.find(child) == visited.end())
-        unvisited_fifo.push_back(std::pair(child, !parent_as_opponent));
+        if (visited.find(child) == visited.end())
+          unvisited_fifo.push_back(std::pair(child, !parent_as_opponent));
+      }
     }
   } while (!unvisited_fifo.empty());
 
