@@ -82,6 +82,8 @@ class NodeGarbageCollector {
         if (subtrees_to_gc_.empty()) return;
         node_to_gc = std::move(subtrees_to_gc_.back());
         subtrees_to_gc_.pop_back();
+
+        node_to_gc->UnsetLowNode();
       }
     }
   }
@@ -221,6 +223,7 @@ std::string LowNode::DebugString() const {
       << " Child:" << child_.get() << " OrigQ:" << orig_q_
       << " OrigD:" << orig_d_ << " OrigM:" << orig_m_ << " WL:" << wl_
       << " D:" << d_ << " M:" << m_ << " N:" << n_ << " N_:" << n_in_flight_
+      << " NP:" << static_cast<int>(num_parents_)
       << " Term:" << static_cast<int>(terminal_type_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2;
@@ -390,7 +393,7 @@ std::string LowNode::DotNodeString() const {
   oss << std::fixed << std::setprecision(5);
   oss << ",tooltip=\""
       << "WL=" << wl_ << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
-      << "\\nN_=" << n_in_flight_
+      << "\\nN_=" << n_in_flight_ << "\\nNP=" << static_cast<int>(num_parents_)
       << "\\nTerm=" << static_cast<int>(terminal_type_)
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2 << "\\n\\nOrigQ=" << orig_q_

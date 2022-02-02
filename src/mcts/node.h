@@ -229,6 +229,17 @@ class LowNode {
     Edge::SortEdges(edges_.get(), num_edges_);
   }
 
+  // Add new parent with @n_in_flight visits.
+  void AddParent(int n_in_flight) {
+    ++num_parents_;
+    IncrementNInFlight(n_in_flight);
+  }
+  // Remove parent and its first visit.
+  void RemoveParent() {
+    --n_;
+    --num_parents_;
+  }
+
  private:
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
@@ -268,6 +279,8 @@ class LowNode {
   // 1 byte fields.
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
+  // Number of parents.
+  uint8_t num_parents_ = 0;
   // Bit fields using parts of uint8_t fields initialized in the constructor.
   // Whether or not this node end game (with a winning of either sides or draw).
   Terminal terminal_type_ : 2;
@@ -446,9 +459,16 @@ class Node {
   std::shared_ptr<LowNode> GetLowNode() const { return low_node_; }
 
   void SetLowNode(std::shared_ptr<LowNode> low_node) {
-    // Update N in flight in low node only the first time it is attached.
-    if (low_node_ != low_node) low_node->IncrementNInFlight(n_in_flight_);
-    low_node_ = low_node;
+    // Update low nodes on parent change.
+    if (low_node_ != low_node) {
+      low_node->AddParent(n_in_flight_);
+      if (low_node_) low_node_->RemoveParent();
+      low_node_ = low_node;
+    }
+  }
+  void UnsetLowNode() {
+    if (low_node_) low_node_->RemoveParent();
+    low_node_.reset();
   }
 
   // Debug information about the node.
