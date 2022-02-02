@@ -284,11 +284,17 @@ void Node::SetBounds(GameResult lower, GameResult upper) {
 
 bool Node::TryStartScoreUpdate() {
   if (n_ == 0 && n_in_flight_ > 0) return false;
+  if (low_node_) low_node_->IncrementNInFlight(1);
   ++n_in_flight_;
   return true;
 }
 
-void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
+void LowNode::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
+
+void Node::CancelScoreUpdate(int multivisit) {
+  if (low_node_) low_node_->CancelScoreUpdate(multivisit);
+  n_in_flight_ -= multivisit;
+}
 
 void LowNode::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Recompute Q.

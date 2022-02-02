@@ -194,12 +194,18 @@ class LowNode {
   // Output must point to at least max_needed floats.
   void CopyPolicy(int max_needed, float* output) const;
 
+  // Decrements n-in-flight back.
+  void CancelScoreUpdate(int multivisit);
   // Updates the node with newly computed value v.
   // Updates:
   // * Q (weighted average of all V in a subtree)
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
+  // When search decides to treat one visit as several (in case of collisions
+  // or visiting terminal nodes several times), it amplifies the visit by
+  // incrementing n_in_flight.
+  void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
 
   // Deletes all children.
   void ReleaseChildren();
@@ -313,14 +319,16 @@ class Node {
   // before that.
   Node* CreateSingleChildNode(Move move) {
     assert(!low_node_);
-    low_node_ = std::make_shared<LowNode>(MoveList({move}), 0);
+    auto low_node = std::make_shared<LowNode>(MoveList({move}), 0);
+    SetLowNode(low_node);
     return GetChild();
   }
 
   // Creates edges from a movelist. There have to be no edges before that.
   void CreateEdges(const MoveList& moves) {
     assert(!low_node_);
-    low_node_ = std::make_shared<LowNode>(moves);
+    auto low_node = std::make_shared<LowNode>(moves);
+    SetLowNode(low_node);
   }
 
   // Gets parent low node.
@@ -399,7 +407,10 @@ class Node {
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
-  void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
+  void IncrementNInFlight(int multivisit) {
+    if (low_node_) low_node_->IncrementNInFlight(multivisit);
+    n_in_flight_ += multivisit;
+  }
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
@@ -434,7 +445,11 @@ class Node {
 
   std::shared_ptr<LowNode> GetLowNode() const { return low_node_; }
 
-  void SetLowNode(std::shared_ptr<LowNode> low_node) { low_node_ = low_node; }
+  void SetLowNode(std::shared_ptr<LowNode> low_node) {
+    // Update N in flight in low node only the first time it is attached.
+    if (low_node_ != low_node) low_node->IncrementNInFlight(n_in_flight_);
+    low_node_ = low_node;
+  }
 
   // Debug information about the node.
   std::string DebugString() const;
