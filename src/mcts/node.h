@@ -179,6 +179,9 @@ class LowNode {
   // Returns whether a node has children.
   bool HasChildren() const { return num_edges_ > 0; }
 
+  uint32_t GetN() const { return n_; }
+  uint32_t GetChildrenVisits() const { return n_ - num_parents_; }
+
   void SetOrig(float q, float d, float m) {
     orig_q_ = q;
     orig_d_ = d;
@@ -367,9 +370,13 @@ class Node {
   float GetVisitedPolicy() const;
   uint32_t GetN() const { return n_; }
   uint32_t GetNInFlight() const { return n_in_flight_; }
-  uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
-  // Returns n = n_if_flight.
+  uint32_t GetChildrenVisits() const {
+    return low_node_ ? low_node_->GetChildrenVisits() : 0;
+  }
+  uint32_t GetTotalVisits() const { return low_node_ ? low_node_->GetN() : 0; }
+  // Returns n + n_in_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
+
   float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
