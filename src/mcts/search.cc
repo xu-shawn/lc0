@@ -1427,6 +1427,11 @@ void SearchWorker::EnsureNodeTwoFoldCorrectForDepth(
   }
 }
 
+// Check if PickNodesToExtendTask should stop picking at this @node.
+bool ShouldStopPickingHere(const Node* node) {
+  return node->GetN() == 0 || node->IsTerminal();
+}
+
 void SearchWorker::PickNodesToExtendTask(
     const std::vector<Node*>& path, int base_depth, int collision_limit,
     const std::vector<Move>& moves_to_base,
@@ -1497,7 +1502,7 @@ void SearchWorker::PickNodesToExtendTask(
       }
       // First check if node is terminal or not-expanded.  If either than create
       // a collision of appropriate size and pop current_path.
-      if (node->GetN() == 0 || node->IsTerminal()) {
+      if (ShouldStopPickingHere(node)) {
         if (is_root_node) {
           // Root node is special - since its not reached from anywhere else, so
           // it needs its own logic. Still need to create the collision to
@@ -1697,7 +1702,7 @@ void SearchWorker::PickNodesToExtendTask(
           current_nstarted[best_idx]++;
           new_visits -= 1;
           decremented = true;
-          if (child_node->GetN() > 0 && !child_node->IsTerminal()) {
+          if (!ShouldStopPickingHere(child_node)) {
             child_node->IncrementNInFlight(new_visits);
             current_nstarted[best_idx] += new_visits;
           }
@@ -1705,8 +1710,7 @@ void SearchWorker::PickNodesToExtendTask(
                                         (1 + current_nstarted[best_idx]) +
                                     current_util[best_idx];
         }
-        if ((decremented &&
-             (child_node->GetN() == 0 || child_node->IsTerminal()))) {
+        if ((decremented && ShouldStopPickingHere(child_node))) {
           // Reduce 1 for the visits_to_perform to ensure the collision created
           // doesn't include this visit.
           (*visits_to_perform.back())[best_idx] -= 1;
@@ -1738,7 +1742,7 @@ void SearchWorker::PickNodesToExtendTask(
                     params_.GetMinimumRemainingWorkSizeForPicking()) {
           Node* child_node = cur_iters[i].GetOrSpawnNode(/* parent */ node);
           // Don't split if not expanded or terminal.
-          if (child_node->GetN() == 0 || child_node->IsTerminal()) continue;
+          if (ShouldStopPickingHere(child_node)) continue;
 
           bool passed = false;
           {
