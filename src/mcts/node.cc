@@ -381,12 +381,15 @@ std::string Node::DotGraphString(bool as_opponent) const {
   std::unordered_set<const Node*> visited;
   std::list<std::pair<const Node*, bool>> unvisited_fifo;
 
-  oss << "strict digraph G {" << std::endl;
+  oss << "strict digraph {" << std::endl;
   oss << "edge ["
       << "headport=n"
+      << ",tooltip=\" \""  // Remove default tooltips from edge parts.
       << "];" << std::endl;
   oss << "node ["
-      << "shape=point"  // For terminals.
+      << "shape=point"    // For fake nodes.
+      << ",style=filled"  // Show tooltip everywhere on the node.
+      << ",fillcolor=ivory"
       << "];" << std::endl;
   oss << "ranksep=5.0" << std::endl;
 
