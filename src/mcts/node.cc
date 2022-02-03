@@ -390,7 +390,7 @@ std::string Node::DotGraphString(bool as_opponent) const {
       << "];" << std::endl;
   oss << "ranksep=5.0" << std::endl;
 
-  oss << DotEdgeString(as_opponent) << std::endl;
+  oss << DotEdgeString(!as_opponent) << std::endl;
   unvisited_fifo.push_back(std::pair(this, as_opponent));
 
   do {
