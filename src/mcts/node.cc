@@ -372,7 +372,10 @@ std::string Node::DotEdgeString(bool as_opponent) const {
       << "\\nN_=" << n_in_flight_
       << "\\nTerm=" << static_cast<int>(terminal_type_)
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
-      << static_cast<int>(upper_bound_) - 2 << "\"];";
+      << static_cast<int>(upper_bound_) - 2 << "\\n\"";
+  // Try to make more important/visited edges shorter and in the center.
+  oss << ",weight=" << n_ + n_in_flight_;
+  oss << "];";
   return oss.str();
 }
 
