@@ -290,7 +290,9 @@ class SearchWorker {
 
  private:
   struct NodeToProcess {
-    bool IsExtendable() const { return !is_collision && !node->IsTerminal(); }
+    bool IsExtendable() const {
+      return !is_collision && !node->IsTerminal() && !node->GetLowNode();
+    }
     bool IsCollision() const { return is_collision; }
     bool CanEvalOutOfOrder() const {
       return is_cache_hit || node->IsTerminal();

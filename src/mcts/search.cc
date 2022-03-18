@@ -1315,8 +1315,9 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     if (picked_node.IsCollision()) continue;
     auto* node = picked_node.node;
 
-    // If node is already known as terminal (win/loss/draw according to rules
-    // of the game), it means that we already visited this node before.
+    // If node is a collision, known as a terminal (win/loss/draw according to
+    // the rules of the game) or has a low node, it means that we have already
+    // visited this node before and can't extend it.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
       uint64_t hash;
@@ -1429,7 +1430,38 @@ void SearchWorker::EnsureNodeTwoFoldCorrectForDepth(
 
 // Check if PickNodesToExtendTask should stop picking at this @node.
 bool ShouldStopPickingHere(const Node* node) {
-  return node->GetN() == 0 || node->IsTerminal();
+  constexpr double wl_diff_limit = 0.01f;
+  constexpr float d_diff_limit = 0.01f;
+  constexpr float m_diff_limit = 1.0f;
+
+  if (node->GetN() == 0 || node->IsTerminal()) return true;
+
+  // Check if Node and LowNode differ significantly.
+  auto low_node = node->GetLowNode().get();
+  assert(low_node);
+
+  // Only known transpositions can differ.
+  if (!low_node->IsTransposition()) return false;
+
+  // LowNode is terminal when Node is not.
+  if (low_node->IsTerminal()) return true;
+
+  // Bounds differ.
+  if (low_node->GetBounds() != node->GetBounds()) return true;
+
+  // WL differs significantly.
+  auto wl_diff = std::abs(low_node->GetWL() - node->GetWL());
+  if (wl_diff >= wl_diff_limit) return true;
+
+  // D differs significantly.
+  auto d_diff = std::abs(low_node->GetD() - node->GetD());
+  if (d_diff >= d_diff_limit) return true;
+
+  // M differs significantly.
+  auto m_diff = std::abs(low_node->GetM() - node->GetM());
+  if (m_diff >= m_diff_limit) return true;
+
+  return false;
 }
 
 void SearchWorker::PickNodesToExtendTask(

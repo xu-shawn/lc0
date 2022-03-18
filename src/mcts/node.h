@@ -191,6 +191,16 @@ class LowNode {
   float GetOrigD() const { return orig_d_; }
   float GetOrigM() const { return orig_m_; }
 
+  // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
+  // for terminal nodes.
+  float GetWL() const { return wl_; }
+  float GetD() const { return d_; }
+  float GetM() const { return m_; }
+
+  // Returns whether the node is known to be draw/loss/win.
+  bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
+  Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
+
   uint8_t GetNumEdges() const { return num_edges_; }
   // Gets pointer to the start of the edge array.
   Edge* GetEdges() const { return edges_.get(); }
@@ -242,6 +252,7 @@ class LowNode {
     --n_;
     --num_parents_;
   }
+  bool IsTransposition() const { return num_parents_ > 1; }
 
  private:
   // To minimize the number of padding bytes and to avoid having unnecessary
