@@ -1697,30 +1697,27 @@ void SearchWorker::PickNodesToExtendTask(
         EnsureNodeTwoFoldCorrectForDepth(
             full_path, current_path.size() + base_depth + 1 - 1);
 
-        bool decremented = false;
         if (child_node->TryStartScoreUpdate()) {
           current_nstarted[best_idx]++;
           new_visits -= 1;
-          decremented = true;
-          if (!ShouldStopPickingHere(child_node)) {
+          if (ShouldStopPickingHere(child_node)) {
+            // Reduce 1 for the visits_to_perform to ensure the collision
+            // created doesn't include this visit.
+            (*visits_to_perform.back())[best_idx] -= 1;
+            receiver->push_back(NodeToProcess::Visit(
+                full_path,
+                static_cast<uint16_t>(current_path.size() + 1 + base_depth)));
+            completed_visits++;
+            receiver->back().moves_to_visit.reserve(moves_to_path.size() + 1);
+            receiver->back().moves_to_visit = moves_to_path;
+            receiver->back().moves_to_visit.push_back(best_edge.GetMove());
+          } else {
             child_node->IncrementNInFlight(new_visits);
             current_nstarted[best_idx] += new_visits;
           }
           current_score[best_idx] = current_pol[best_idx] * puct_mult /
                                         (1 + current_nstarted[best_idx]) +
                                     current_util[best_idx];
-        }
-        if ((decremented && ShouldStopPickingHere(child_node))) {
-          // Reduce 1 for the visits_to_perform to ensure the collision created
-          // doesn't include this visit.
-          (*visits_to_perform.back())[best_idx] -= 1;
-          receiver->push_back(NodeToProcess::Visit(
-              full_path,
-              static_cast<uint16_t>(current_path.size() + 1 + base_depth)));
-          completed_visits++;
-          receiver->back().moves_to_visit.reserve(moves_to_path.size() + 1);
-          receiver->back().moves_to_visit = moves_to_path;
-          receiver->back().moves_to_visit.push_back(best_edge.GetMove());
         }
         if (best_idx > vtp_last_filled.back() &&
             (*visits_to_perform.back())[best_idx] > 0) {
