@@ -1446,19 +1446,26 @@ bool ShouldStopPickingHere(const Node* node) {
   // LowNode is terminal when Node is not.
   if (low_node->IsTerminal()) return true;
 
-  // Bounds differ.
-  if (low_node->GetBounds() != node->GetBounds()) return true;
+  // Bounds differ (swap).
+  auto low_node_bounds = low_node->GetBounds();
+  auto node_bounds = node->GetBounds();
+  int low_node_lower = static_cast<int>(low_node_bounds.first) - 2;
+  int low_node_upper = static_cast<int>(low_node_bounds.second) - 2;
+  int node_lower = static_cast<int>(node_bounds.first) - 2;
+  int node_upper = static_cast<int>(node_bounds.second) - 2;
+  if (low_node_lower != -node_upper || low_node_upper != -node_lower)
+    return true;
 
-  // WL differs significantly.
-  auto wl_diff = std::abs(low_node->GetWL() - node->GetWL());
+  // WL differs significantly (flip).
+  auto wl_diff = std::abs(low_node->GetWL() + node->GetWL());
   if (wl_diff >= wl_diff_limit) return true;
 
   // D differs significantly.
   auto d_diff = std::abs(low_node->GetD() - node->GetD());
   if (d_diff >= d_diff_limit) return true;
 
-  // M differs significantly.
-  auto m_diff = std::abs(low_node->GetM() - node->GetM());
+  // M differs significantly (increment).
+  auto m_diff = std::abs(low_node->GetM() + 1 - node->GetM());
   if (m_diff >= m_diff_limit) return true;
 
   return false;
@@ -2116,21 +2123,10 @@ template <typename Computation>
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                          const Computation& computation,
                                          int idx_in_computation) {
-  if (node_to_process->IsCollision()) return;
+  if (!node_to_process->nn_queried) return;
+  // Add NN results to node.
   Node* node = node_to_process->node;
-  if (!node_to_process->nn_queried) {
-    // Terminal nodes don't involve the neural NetworkComputation, nor do
-    // they require any further processing after value retrieval.
-    node_to_process->v = node->GetWL();
-    node_to_process->d = node->GetD();
-    node_to_process->m = node->GetM();
-    return;
-  }
-  // For NN results, we need to populate policy as well as value.
   auto low_node = computation.GetLowNode(idx_in_computation);
-  node_to_process->v = -low_node->GetOrigQ();
-  node_to_process->d = low_node->GetOrigD();
-  node_to_process->m = low_node->GetOrigM();
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
     // Make a copy of the low node before adding noise.
@@ -2165,39 +2161,102 @@ void SearchWorker::DoBackupUpdate() {
   search_->total_batches_ += 1;
 }
 
+bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
+    Node* n, std::shared_ptr<LowNode>& nl, float& v, float& d, float& m,
+    int& n_to_fix, float& v_delta, float& d_delta, float& m_delta,
+    bool& update_parent_bounds) const {
+  if (n->IsTerminal()) {
+    v = n->GetWL();
+    d = n->GetD();
+    m = n->GetM();
+
+    return true;
+  }
+
+  // Adapt information from low node to node by flipping Q sign, bounds, result
+  // and incrementing m.
+  if (nl->IsTransposition()) {
+    v = -nl->GetWL();
+    d = nl->GetD();
+    m = nl->GetM() + 1;
+    // When starting at or going through a transposition, make sure to use the
+    // information it has already acquired.
+    n_to_fix = n->GetN();
+    v_delta = v - n->GetWL();
+    d_delta = d - n->GetD();
+    m_delta = m - n->GetM();
+    // Update bounds.
+    if (params_.GetStickyEndgames()) {
+      auto tt = nl->GetTerminalType();
+      if (tt != LowNode::Terminal::NonTerminal) {
+        GameResult r;
+        if (v == 1.0f) {
+          r = GameResult::BLACK_WON;
+        } else if (v == -1.0f) {
+          r = GameResult::WHITE_WON;
+        } else {
+          r = GameResult::DRAW;
+        }
+
+        n->MakeTerminal(r, m, tt);
+        update_parent_bounds = true;
+      } else {
+        auto bounds = nl->GetBounds();
+        n->SetBounds(-bounds.second, -bounds.first);
+      }
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+// Use information from low node to update node and node's parent low node and
+// so on until root is reached. Low node may become a transposition and/or get
+// more information even during this batch. Both low node and node may become a
+// terminal during this batch.
 void SearchWorker::DoBackupUpdateSingleNode(
     const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
-  auto path = node_to_process.path;
-  auto node = node_to_process.node;
-
   if (node_to_process.IsCollision()) {
     // Collisions are handled via shared_collisions instead.
     return;
   }
 
+  auto n = node_to_process.node;
   // For the first visit to a terminal, maybe update parent bounds too.
   auto update_parent_bounds =
-      params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
-
-  // Backup V value up to a root. After 1 visit, V = Q.
-  float v = node_to_process.v;
-  float d = node_to_process.d;
-  float m = node_to_process.m;
+      params_.GetStickyEndgames() && n->IsTerminal() && !n->GetN();
+  auto nl = n->GetLowNode();
+  float v = 0.0f;
+  float d = 0.0f;
+  float m = 0.0f;
   int n_to_fix = 0;
   float v_delta = 0.0f;
   float d_delta = 0.0f;
   float m_delta = 0.0f;
+
+  if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix, v_delta,
+                                             d_delta, m_delta,
+                                             update_parent_bounds)) {
+    // If there is nothing better, use original NN values adjusted for node.
+    v = -nl->GetOrigQ();
+    d = nl->GetOrigD();
+    m = nl->GetOrigM() + 1;
+  }
+
+  if (!n->IsTerminal()) {
+    // Update first low node on this path.
+    // TODO: MCGS does not increment N on differing transposition nodes?
+    nl->FinalizeScoreUpdate(-v, d, m - 1, node_to_process.multivisit);
+  }
+
+  // Backup V value up to a root. After 1 visit, V = Q.
+  auto path = node_to_process.path;
   for (auto it = path.crbegin(); it != path.crend();
        /* ++it in the body */) {
-    auto n = *it;
+    n = *it;
 
-    // Current node might have become terminal from some other descendant, so
-    // backup the rest of the way with more accurate values.
-    if (n->IsTerminal()) {
-      v = n->GetWL();
-      d = n->GetD();
-      m = n->GetM();
-    }
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
@@ -2206,19 +2265,29 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Nothing left to do without ancestors to update.
     if (++it == path.crend()) break;
     auto p = *it;
+    auto pl = p->GetLowNode();
+
+    pl->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    if (n_to_fix > 0 && !pl->IsTerminal()) {
+      pl->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
+    }
 
     bool old_update_parent_bounds = update_parent_bounds;
     // If parent already is terminal further adjustment is not required.
     if (p->IsTerminal()) n_to_fix = 0;
     // Try setting parent bounds except the root or those already terminal.
     update_parent_bounds =
-        update_parent_bounds && p != search_->root_node_ && !p->IsTerminal() &&
+        update_parent_bounds && p != search_->root_node_ && !pl->IsTerminal() &&
         MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta, &m_delta);
 
     // Q will be flipped for opponent.
     v = -v;
     v_delta = -v_delta;
     m++;
+
+    MaybeAdjustForTerminalOrTransposition(p, pl, v, d, m, n_to_fix, v_delta,
+                                          d_delta, m_delta,
+                                          update_parent_bounds);
 
     // Update the stats.
     // Best move.
@@ -2247,7 +2316,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
   auto losing_m = 0.0f;
   auto prefer_tb = false;
 
-  // Determine the maximum (lower, upper) bounds across all children.
+  // Determine the maximum (lower, upper) bounds across all edges.
   // (-1,-1) Loss (initial and lowest bounds)
   // (-1, 0) Can't Win
   // (-1, 1) Regular node
@@ -2283,6 +2352,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
   //        Win ( 1, 1) -> (-1,-1) Loss
 
   // Nothing left to do for ancestors if the parent would be a regular node.
+  auto pl = p->GetLowNode();
   if (lower == GameResult::BLACK_WON && upper == GameResult::WHITE_WON) {
     return false;
   } else if (lower == upper) {
@@ -2290,20 +2360,17 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
     // it terminal preferring shorter wins and longer losses.
     *n_to_fix = p->GetN();
     assert(*n_to_fix > 0);
-    float cur_v = p->GetWL();
-    float cur_d = p->GetD();
-    float cur_m = p->GetM();
-    p->MakeTerminal(
-        -upper,
-        (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m) + 1.0f,
+    float cur_v = pl->GetWL();
+    float cur_d = pl->GetD();
+    float cur_m = pl->GetM();
+    pl->MakeTerminal(
+        upper, (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m),
         prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
-    // Negate v_delta because we're calculating for the parent, but immediately
-    // afterwards we'll negate v_delta in case it has come from the child.
-    *v_delta = -(p->GetWL() - cur_v);
-    *d_delta = p->GetD() - cur_d;
-    *m_delta = p->GetM() - cur_m;
+    *v_delta = pl->GetWL() - cur_v;
+    *d_delta = pl->GetD() - cur_d;
+    *m_delta = pl->GetM() - cur_m;
   } else {
-    p->SetBounds(-upper, -lower);
+    pl->SetBounds(lower, upper);
   }
 
   // Bounds were set, so indicate we should check the parent too.

@@ -237,6 +237,27 @@ void Edge::SortEdges(Edge* edges, int num_edges) {
             [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
 }
 
+void LowNode::MakeTerminal(GameResult result, float plies_left, Terminal type) {
+  if (type != Terminal::TwoFold) SetBounds(result, result);
+  terminal_type_ = type;
+  m_ = plies_left;
+  if (result == GameResult::DRAW) {
+    wl_ = 0.0f;
+    d_ = 1.0f;
+  } else if (result == GameResult::WHITE_WON) {
+    wl_ = 1.0f;
+    d_ = 0.0f;
+  } else if (result == GameResult::BLACK_WON) {
+    wl_ = -1.0f;
+    d_ = 0.0f;
+  }
+}
+
+void LowNode::SetBounds(GameResult lower, GameResult upper) {
+  lower_bound_ = lower;
+  upper_bound_ = upper;
+}
+
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
   if (type != Terminal::TwoFold) SetBounds(result, result);
   terminal_type_ = type;
@@ -311,10 +332,14 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   n_in_flight_ -= multivisit;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
-  // Low node might be missing for terminals.
-  if (low_node_) low_node_->FinalizeScoreUpdate(v, d, m, multivisit);
+void LowNode::AdjustForTerminal(float v, float d, float m, int multivisit) {
+  // Recompute Q.
+  wl_ += multivisit * v / n_;
+  d_ += multivisit * d / n_;
+  m_ += multivisit * m / n_;
+}
 
+void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Recompute Q.
   wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);

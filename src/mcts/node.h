@@ -200,12 +200,18 @@ class LowNode {
   // Returns whether the node is known to be draw/loss/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
+  Terminal GetTerminalType() const { return terminal_type_; }
 
   uint8_t GetNumEdges() const { return num_edges_; }
   // Gets pointer to the start of the edge array.
   Edge* GetEdges() const { return edges_.get(); }
   // Output must point to at least max_needed floats.
   void CopyPolicy(int max_needed, float* output) const;
+
+  // Makes the node terminal and sets it's score.
+  void MakeTerminal(GameResult result, float plies_left = 0.0f,
+                    Terminal type = Terminal::EndOfGame);
+  void SetBounds(GameResult lower, GameResult upper);
 
   // Decrements n-in-flight back.
   void CancelScoreUpdate(int multivisit);
@@ -215,6 +221,8 @@ class LowNode {
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
+  // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
+  void AdjustForTerminal(float v, float d, float m, int multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.

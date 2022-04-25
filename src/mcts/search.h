@@ -302,12 +302,6 @@ class SearchWorker {
     std::vector<Node*> path;
     // The node to extend.
     Node* node;
-    // Value from NN's value head, or -1/0/1 for terminal nodes.
-    float v;
-    // Draw probability for NN's with WDL value head.
-    float d;
-    // Estimated remaining plies left.
-    float m;
     int multivisit = 0;
     // If greater than multivisit, and other parameters don't imply a lower
     // limit, multivist could be increased to this value without additional
@@ -424,6 +418,16 @@ class SearchWorker {
   NodeToProcess PickNodeToExtend(int collision_limit);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
+  // Adjust parameters for updating node @n and its parent low node if node is
+  // terminal or its child low node is a transposition. Also update bounds and
+  // terminal status of node @n using information from its child low node.
+  // Return true if adjustment happened.
+  bool MaybeAdjustForTerminalOrTransposition(Node* n,
+                                             std::shared_ptr<LowNode>& nl,
+                                             float& v, float& d, float& m,
+                                             int& n_to_fix, float& v_delta,
+                                             float& d_delta, float& m_delta,
+                                             bool& update_parent_bounds) const;
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
   bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta,
