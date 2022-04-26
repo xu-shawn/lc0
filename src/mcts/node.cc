@@ -411,18 +411,26 @@ std::string LowNode::DotNodeString() const {
       << "shape=box";
   // Adjust formatting to limit node size.
   oss << std::fixed << std::setprecision(3);
-  oss << ",label=\""
-      << "WL=" << wl_ << "\\lD=" << d_ << "\\lM=" << m_ << "\\lN=" << n_
+  oss << ",label=\""     //
+      << std::showpos    //
+      << "WL=" << wl_    //
+      << std::noshowpos  //
+      << "\\lD=" << d_ << "\\lM=" << m_ << "\\lN=" << n_
       << "\\lN_=" << n_in_flight_ << "\\l\"";
   // Set precision for tooltip.
-  oss << std::fixed << std::setprecision(5);
-  oss << ",tooltip=\""
-      << "WL=" << wl_ << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
+  oss << std::fixed << std::showpos << std::setprecision(5);
+  oss << ",tooltip=\""   //
+      << std::showpos    //
+      << "WL=" << wl_    //
+      << std::noshowpos  //
+      << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
       << "\\nN_=" << n_in_flight_ << "\\nNP=" << static_cast<int>(num_parents_)
-      << "\\nTerm=" << static_cast<int>(terminal_type_)
+      << "\\nTerm=" << static_cast<int>(terminal_type_)  //
+      << std::showpos                                    //
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2 << "\\n\\nOrigQ=" << orig_q_
-      << "\\nOrigD=" << orig_d_ << "\\nOrigM=" << orig_m_
+      << "\\nOrigD=" << orig_d_ << "\\nOrigM=" << orig_m_  //
+      << std::noshowpos                                    //
       << "\\n\\nThis=" << this << "\\nEdges=" << edges_.get()
       << "\\nNumEdges=" << static_cast<int>(num_edges_)
       << "\\nChild=" << child_.get() << "\\n\"";
@@ -443,11 +451,16 @@ std::string Node::DotEdgeString(bool as_opponent) const {
   oss << std::fixed << std::setprecision(5);
   oss << ",labeltooltip=\""
       << "P=" << (parent_ == nullptr ? 0.0f : GetOwnEdge()->GetP())
-      << "\\nWL= " << wl_ << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
+      << std::showpos      //
+      << "\\nWL= " << wl_  //
+      << std::noshowpos    //
+      << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
       << "\\nN_=" << n_in_flight_
-      << "\\nTerm=" << static_cast<int>(terminal_type_)
+      << "\\nTerm=" << static_cast<int>(terminal_type_)  //
+      << std::showpos                                    //
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
-      << static_cast<int>(upper_bound_) - 2 << "\\n\\nThis=" << this
+      << static_cast<int>(upper_bound_) - 2 << "\\n\\nThis=" << this  //
+      << std::noshowpos                                               //
       << "\\nLowNode=" << low_node_.get() << "\\nParent=" << parent_
       << "\\nIndex=" << index_ << "\\nSibling=" << sibling_.get() << "\\n\"";
   // Try to make more important/visited edges shorter and in the center.
