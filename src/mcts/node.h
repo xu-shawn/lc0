@@ -420,7 +420,7 @@ class Node {
   }
 
   // Makes the node terminal and sets it's score.
-  void MakeTerminal(GameResult result, float plies_left = 0.0f,
+  void MakeTerminal(GameResult result, float plies_left = 1.0f,
                     Terminal type = Terminal::EndOfGame);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
