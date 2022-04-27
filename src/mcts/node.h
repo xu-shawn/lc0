@@ -180,6 +180,7 @@ class LowNode {
   bool HasChildren() const { return num_edges_ > 0; }
 
   uint32_t GetN() const { return n_; }
+  uint32_t GetNInFlight() const { return n_in_flight_; }
   uint32_t GetChildrenVisits() const { return n_ - num_parents_; }
 
   void SetOrig(float q, float d, float m) {

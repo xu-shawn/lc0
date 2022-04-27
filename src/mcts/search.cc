@@ -2250,7 +2250,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     m = nl->GetOrigM() + 1;
   }
 
-  if (!n->IsTerminal()) {
+  if (nl && nl->GetNInFlight() > 0) {
     // Update first low node on this path.
     // TODO: MCGS does not increment N on differing transposition nodes?
     nl->FinalizeScoreUpdate(-v, d, m - 1, node_to_process.multivisit);
