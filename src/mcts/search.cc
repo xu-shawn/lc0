@@ -2365,15 +2365,17 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
     // it terminal preferring shorter wins and longer losses.
     *n_to_fix = p->GetN();
     assert(*n_to_fix > 0);
-    float cur_v = pl->GetWL();
-    float cur_d = pl->GetD();
-    float cur_m = pl->GetM();
     pl->MakeTerminal(
         upper, (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m),
         prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
-    *v_delta = pl->GetWL() - cur_v;
-    *d_delta = pl->GetD() - cur_d;
-    *m_delta = pl->GetM() - cur_m;
+    // v, d and m will be set in MaybeAdjustForTerminalOrTransposition.
+    *v_delta = pl->GetWL() + p->GetWL();
+    *d_delta = pl->GetD() - p->GetD();
+    *m_delta = pl->GetM() + 1 - p->GetM();
+    p->MakeTerminal(
+        -upper,
+        (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m) + 1.0f,
+        prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
   } else {
     pl->SetBounds(lower, upper);
   }
