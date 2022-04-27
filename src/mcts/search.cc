@@ -2196,9 +2196,9 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
       if (tt != LowNode::Terminal::NonTerminal) {
         GameResult r;
         if (v == 1.0f) {
-          r = GameResult::BLACK_WON;
-        } else if (v == -1.0f) {
           r = GameResult::WHITE_WON;
+        } else if (v == -1.0f) {
+          r = GameResult::BLACK_WON;
         } else {
           r = GameResult::DRAW;
         }
