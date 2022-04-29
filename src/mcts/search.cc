@@ -1432,7 +1432,7 @@ void SearchWorker::EnsureNodeTwoFoldCorrectForDepth(
 bool ShouldStopPickingHere(const Node* node) {
   constexpr double wl_diff_limit = 0.01f;
   constexpr float d_diff_limit = 0.01f;
-  constexpr float m_diff_limit = 1.0f;
+  constexpr float m_diff_limit = 2.0f;
 
   if (node->GetN() == 0 || node->IsTerminal()) return true;
 
