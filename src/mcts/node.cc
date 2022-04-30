@@ -471,7 +471,7 @@ std::string Node::DotEdgeString(bool as_opponent) const {
 
 std::string Node::DotGraphString(bool as_opponent) const {
   std::ostringstream oss;
-  std::unordered_set<const Node*> visited;
+  std::unordered_set<const Node*> seen;
   std::list<std::pair<const Node*, bool>> unvisited_fifo;
 
   oss << "strict digraph {" << std::endl;
@@ -488,13 +488,11 @@ std::string Node::DotGraphString(bool as_opponent) const {
 
   oss << DotEdgeString(!as_opponent) << std::endl;
   unvisited_fifo.push_back(std::pair(this, as_opponent));
+  seen.insert(this);
 
   do {
-    auto parent_pair = unvisited_fifo.front();
-    auto parent_node = parent_pair.first;
-    auto parent_as_opponent = parent_pair.second;
+    auto [parent_node, parent_as_opponent] = unvisited_fifo.front();
     unvisited_fifo.pop_front();
-    visited.insert(parent_node);
 
     auto parent_low_node = parent_node->GetLowNode().get();
     if (parent_low_node) {
@@ -506,8 +504,10 @@ std::string Node::DotGraphString(bool as_opponent) const {
 
         oss << child->DotEdgeString(parent_as_opponent) << std::endl;
 
-        if (visited.find(child) == visited.end())
+        if (seen.find(child) == seen.end()) {
           unvisited_fifo.push_back(std::pair(child, !parent_as_opponent));
+          seen.insert(child);
+        }
       }
     }
   } while (!unvisited_fifo.empty());
