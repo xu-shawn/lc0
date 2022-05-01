@@ -291,11 +291,11 @@ class SearchWorker {
  private:
   struct NodeToProcess {
     bool IsExtendable() const {
-      return !is_collision && !node->IsTerminal() && !node->GetLowNode();
+      return !is_collision && !node->IsRealTerminal() && !node->GetLowNode();
     }
     bool IsCollision() const { return is_collision; }
     bool CanEvalOutOfOrder() const {
-      return is_cache_hit || node->IsTerminal();
+      return is_cache_hit || node->IsRealTerminal();
     }
 
     // The path to the node to extend.
@@ -438,8 +438,19 @@ class SearchWorker {
                              const std::vector<Move>& moves_to_base,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
-  void EnsureNodeTwoFoldCorrectForDepth(const std::vector<Node*>& path,
-                                        int depth);
+
+  // Check if the situation described by @depth and complete @history is a
+  // two-fold and return true and set @cycle_length, if it is.
+  bool IsTwoFold(int depth, PositionHistory* history, int& cycle_length);
+  // Check if node is a terminal and if it is a two-fold then verify that it is
+  // still valid with specified @history and @moves_to_node. Revert two-fold
+  // terminal status as needed and return true if node is still a terminal.
+  bool IsStillTerminal(Node* node, int depth, PositionHistory* history,
+                       const std::vector<Move>& moves_to_node);
+  // Check if there is a reason to stop picking and pick @node. Uses
+  // IsStillTerminal to check @node.
+  bool ShouldStopPickingHere(Node* node, int depth, PositionHistory* history,
+                             const std::vector<Move>& moves_to_node);
   void ProcessPickedTask(int batch_start, int batch_end,
                          TaskWorkspace* workspace);
   NNCacheLock ExtendNode(const std::vector<Node*>& path, int depth,

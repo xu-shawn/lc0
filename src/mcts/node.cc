@@ -485,7 +485,11 @@ std::string Node::DotEdgeString(bool as_opponent) const {
   oss << "label=\""
       << (parent_ == nullptr ? "N/A"
                              : GetOwnEdge()->GetMove(as_opponent).as_string())
-      << "\\lN=" << n_ << "\\lN_=" << n_in_flight_ << "\\l\"";
+      << "\\lN=" << n_ << "\\lN_=" << n_in_flight_;
+  if (IsTwoFoldTerminal()) {
+    oss << "\\lDRAW";
+  }
+  oss << "\\l\"";
   // Set precision for tooltip.
   oss << std::fixed << std::setprecision(5);
   oss << ",labeltooltip=\""
