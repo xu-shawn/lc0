@@ -470,7 +470,7 @@ class Node {
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
   void ReleaseChildrenExceptOne(Node* node_to_save) const {
-    assert(low_node_);
+    // Sometime we have no graph yet or a reverted terminal without low node.
     if (low_node_) low_node_->ReleaseChildrenExceptOne(node_to_save);
   }
 
