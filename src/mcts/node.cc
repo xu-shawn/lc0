@@ -253,6 +253,38 @@ void LowNode::MakeTerminal(GameResult result, float plies_left, Terminal type) {
   }
 }
 
+void LowNode::MakeNotTerminal(const Node* node) {
+  if (!IsTerminal()) return;
+
+  terminal_type_ = Terminal::NonTerminal;
+  lower_bound_ = GameResult::BLACK_WON;
+  upper_bound_ = GameResult::WHITE_WON;
+  n_ = 1;
+  wl_ = orig_q_;
+  d_ = orig_d_;
+  m_ = orig_m_;
+
+  // Include children too.
+  if (node->GetNumEdges() > 0) {
+    for (const auto& child : node->Edges()) {
+      const auto n = child.GetN();
+      if (n > 0) {
+        n_ += n;
+        // Flip Q for opponent.
+        // Default values don't matter as n is > 0.
+        wl_ += child.GetWL(0.0f) * n;
+        d_ += child.GetD(0.0f) * n;
+        m_ += child.GetM(0.0f) * n;
+      }
+    }
+
+    // Recompute with current eval (instead of network's) and children's eval.
+    wl_ /= n_;
+    d_ /= n_;
+    m_ /= n_;
+  }
+}
+
 void LowNode::SetBounds(GameResult lower, GameResult upper) {
   lower_bound_ = lower;
   upper_bound_ = upper;
@@ -277,27 +309,31 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
   }
 }
 
-void Node::MakeNotTerminal() {
+void Node::MakeNotTerminal(bool also_low_node) {
+  // At least one of node and low node pair needs to be a terminal.
+  if (!IsTerminal() &&
+      (!also_low_node || !low_node_ || !low_node_->IsTerminal()))
+    return;
+
   terminal_type_ = Terminal::NonTerminal;
-  n_ = 0;
+  if (low_node_) {  // Two-fold or derived terminal.
+    // Revert low node first.
+    if (also_low_node && low_node_) low_node_->MakeNotTerminal(this);
 
-  // Include children too.
-  if (GetNumEdges() > 0) {
-    n_++;
-    for (const auto& child : Edges()) {
-      const auto n = child.GetN();
-      if (n > 0) {
-        n_ += n;
-        // Flip Q for opponent.
-        // Default values don't matter as n is > 0.
-        wl_ += -child.GetWL(0.0f) * n;
-        d_ += child.GetD(0.0f) * n;
-      }
-    }
-
-    // Recompute with current eval (instead of network's) and children's eval.
-    wl_ /= n_;
-    d_ /= n_;
+    auto [lower_bound, upper_bound] = low_node_->GetBounds();
+    lower_bound_ = -upper_bound;
+    upper_bound_ = -lower_bound;
+    n_ = low_node_->GetN();
+    wl_ = -low_node_->GetWL();
+    d_ = low_node_->GetD();
+    m_ = low_node_->GetM() + 1;
+  } else {  // Real terminal.
+    lower_bound_ = GameResult::BLACK_WON;
+    upper_bound_ = GameResult::WHITE_WON;
+    n_ = 0.0f;
+    wl_ = 0.0f;
+    d_ = 0.0f;
+    m_ = 0.0f;
   }
 }
 

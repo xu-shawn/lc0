@@ -212,6 +212,9 @@ class LowNode {
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
                     Terminal type = Terminal::EndOfGame);
+  // Makes the low node not terminal and recomputes bounds, visits and values
+  // using incoming @node.
+  void MakeNotTerminal(const Node* node);
   void SetBounds(GameResult lower, GameResult upper);
 
   // Decrements n-in-flight back.
@@ -423,8 +426,9 @@ class Node {
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 1.0f,
                     Terminal type = Terminal::EndOfGame);
-  // Makes the node not terminal and updates its visits.
-  void MakeNotTerminal();
+  // Makes the node not terminal and recomputes bounds, visits and values.
+  // Changes low node as well unless @also_low_node is false.
+  void MakeNotTerminal(bool also_low_node = true);
   void SetBounds(GameResult lower, GameResult upper);
 
   // If this node is not in the process of being expanded by another thread
