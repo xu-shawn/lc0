@@ -2241,6 +2241,16 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float d_delta = 0.0f;
   float m_delta = 0.0f;
 
+  // Update the low node at the start of backup path first.
+  if (node_to_process.nn_queried) {
+    nl->FinalizeScoreUpdate(nl->GetOrigQ(), nl->GetOrigD(), nl->GetOrigM(),
+                            node_to_process.multivisit);
+  } else if (nl) {
+    // TODO: MCGS does not increment N on differing transposition nodes?
+    nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(),
+                            node_to_process.multivisit);
+  }
+
   if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix, v_delta,
                                              d_delta, m_delta,
                                              update_parent_bounds)) {
@@ -2248,12 +2258,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
     v = -nl->GetOrigQ();
     d = nl->GetOrigD();
     m = nl->GetOrigM() + 1;
-  }
-
-  if (nl && nl->GetNInFlight() > 0) {
-    // Update first low node on this path.
-    // TODO: MCGS does not increment N on differing transposition nodes?
-    nl->FinalizeScoreUpdate(-v, d, m - 1, node_to_process.multivisit);
   }
 
   // Backup V value up to a root. After 1 visit, V = Q.
