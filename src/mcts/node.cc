@@ -313,7 +313,10 @@ bool Node::TryStartScoreUpdate() {
   return true;
 }
 
-void LowNode::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
+void LowNode::CancelScoreUpdate(int multivisit) {
+  assert(n_in_flight_ >= (uint32_t)multivisit);
+  n_in_flight_ -= multivisit;
+}
 
 void Node::CancelScoreUpdate(int multivisit) {
   if (low_node_) low_node_->CancelScoreUpdate(multivisit);

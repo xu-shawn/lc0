@@ -2217,10 +2217,10 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
   return false;
 }
 
-// Use information from low node to update node and node's parent low node and
-// so on until root is reached. Low node may become a transposition and/or get
-// more information even during this batch. Both low node and node may become a
-// terminal during this batch.
+// Use information from terminal status or low node to update node and node's
+// parent low node and so on until the root is reached. Low node may become a
+// transposition and/or get more information even during this batch. Both low
+// node and node may adjust bounds and become a terminal during this batch.
 void SearchWorker::DoBackupUpdateSingleNode(
     const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
   if (node_to_process.IsCollision()) {
@@ -2241,14 +2241,15 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float d_delta = 0.0f;
   float m_delta = 0.0f;
 
-  // Update the low node at the start of backup path first.
-  if (node_to_process.nn_queried) {
-    nl->FinalizeScoreUpdate(nl->GetOrigQ(), nl->GetOrigD(), nl->GetOrigM(),
-                            node_to_process.multivisit);
-  } else if (nl) {
-    // TODO: MCGS does not increment N on differing transposition nodes?
-    nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(),
-                            node_to_process.multivisit);
+  // Update the low node at the start of the backup path first, but only visit
+  // it the first time that backup sees it.
+  if (nl) {
+    if (nl->GetN() == 0) {
+      nl->FinalizeScoreUpdate(nl->GetOrigQ(), nl->GetOrigD(), nl->GetOrigM(),
+                              node_to_process.multivisit);
+    } else {
+      nl->CancelScoreUpdate(node_to_process.multivisit);
+    }
   }
 
   if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix, v_delta,
