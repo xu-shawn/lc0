@@ -2383,6 +2383,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
         prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
   } else {
     pl->SetBounds(lower, upper);
+    p->SetBounds(-upper, -lower);
   }
 
   // Bounds were set, so indicate we should check the parent too.
