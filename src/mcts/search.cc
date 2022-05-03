@@ -1392,7 +1392,8 @@ bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
   const auto repetitions = history->Last().GetRepetitions();
   cycle_length = history->Last().GetPliesSincePrevRepetition();
 
-  return (repetitions >= 1 && depth - 1 >= 4 && depth - 1 >= cycle_length);
+  return ((repetitions >= 2) ||
+          (repetitions == 1 && depth - 1 >= 4 && depth - 1 >= cycle_length));
 }
 
 bool SearchWorker::IsStillTerminal(Node* node, int depth,
