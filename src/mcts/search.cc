@@ -1390,10 +1390,20 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
 bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
                              int& cycle_length) {
   const auto repetitions = history->Last().GetRepetitions();
-  cycle_length = history->Last().GetPliesSincePrevRepetition();
 
-  return ((repetitions >= 2) ||
-          (repetitions == 1 && depth - 1 >= 4 && depth - 1 >= cycle_length));
+  if (repetitions == 0) return false;
+
+  if (repetitions >= 2) {
+    cycle_length = 0;
+    return true;
+  }
+
+  if (/*repetitions == 1 &&*/ depth - 1 >= 4 && depth - 1 >= cycle_length) {
+    cycle_length = history->Last().GetPliesSincePrevRepetition();
+    return true;
+  }
+
+  return false;
 }
 
 bool SearchWorker::IsStillTerminal(Node* node, int depth,
