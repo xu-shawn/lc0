@@ -2270,14 +2270,21 @@ void SearchWorker::DoBackupUpdateSingleNode(
     auto p = *it;
     auto pl = p->GetLowNode();
 
+    assert(!p->IsTerminal() || (p->IsTerminal() && pl->IsTerminal()));
+    // If parent low node is already a (new) terminal, then change propagated
+    // values and stop terminal adjustment.
+    if (pl->IsTerminal()) {
+      v = pl->GetWL();
+      d = pl->GetD();
+      m = pl->GetM();
+      n_to_fix = 0;
+    }
     pl->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
     if (n_to_fix > 0 && !pl->IsTerminal()) {
       pl->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
 
     bool old_update_parent_bounds = update_parent_bounds;
-    // If parent already is terminal further adjustment is not required.
-    if (p->IsTerminal()) n_to_fix = 0;
     // Try setting parent bounds except the root or those already terminal.
     update_parent_bounds =
         update_parent_bounds && p != search_->root_node_ && !pl->IsTerminal() &&
