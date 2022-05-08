@@ -2171,14 +2171,15 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
     return true;
   }
 
-  // Adapt information from low node to node by flipping Q sign, bounds, result
-  // and incrementing m.
-  if (nl->IsTransposition()) {
+  // Use information from transposition or a new terminal.
+  if (nl->IsTransposition() || nl->IsTerminal()) {
+    // Adapt information from low node to node by flipping Q sign, bounds,
+    // result and incrementing m.
     v = -nl->GetWL();
     d = nl->GetD();
     m = nl->GetM() + 1;
-    // When starting at or going through a transposition, make sure to use the
-    // information it has already acquired.
+    // When starting at or going through a transposition/terminal, make sure to
+    // use the information it has already acquired.
     n_to_fix = n->GetN();
     v_delta = v - n->GetWL();
     d_delta = d - n->GetD();
