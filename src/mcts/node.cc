@@ -506,8 +506,6 @@ std::string Node::DotEdgeString(bool as_opponent) const {
       << std::noshowpos                                               //
       << "\\nLowNode=" << low_node_.get() << "\\nParent=" << parent_
       << "\\nIndex=" << index_ << "\\nSibling=" << sibling_.get() << "\\n\"";
-  // Try to make more important/visited edges shorter and in the center.
-  oss << ",weight=" << n_ + n_in_flight_;
   oss << "];";
   return oss.str();
 }
@@ -527,7 +525,7 @@ std::string Node::DotGraphString(bool as_opponent) const {
       << ",style=filled"  // Show tooltip everywhere on the node.
       << ",fillcolor=ivory"
       << "];" << std::endl;
-  oss << "ranksep=5.0" << std::endl;
+  oss << "ranksep=" << 4.0f * std::log10(GetN()) << std::endl;
 
   oss << DotEdgeString(!as_opponent) << std::endl;
   unvisited_fifo.push_back(std::pair(this, as_opponent));
