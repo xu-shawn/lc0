@@ -1409,6 +1409,7 @@ bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
 bool SearchWorker::IsStillTerminal(Node* node, int depth,
                                    PositionHistory* history,
                                    const std::vector<Move>& moves_to_node) {
+  assert((size_t)depth == moves_to_node.size() + 1);
   if (!node->IsTerminal()) return false;
   if (!node->IsTwoFoldTerminal()) return true;
 
@@ -1492,6 +1493,8 @@ void SearchWorker::PickNodesToExtendTask(
   // TODO: Find a safe way to make helper threads work in parallel without
   // excessive locking.
   Mutex::Lock lock(picking_tasks_mutex_);
+  assert(path.size() == (size_t)base_depth + 1);
+  assert((size_t)base_depth == moves_to_base.size());
 
   // TODO: Bring back pre-cached nodes created outside locks in a way that works
   // with tasks.
@@ -1860,7 +1863,8 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
                                      const std::vector<Move>& moves_to_node,
                                      PositionHistory* history, uint64_t* hash) {
   assert(!path.back()->GetLowNode());
-  assert((int)path.size() == depth);
+  assert(path.size() == (size_t)depth);
+  assert((size_t)depth == moves_to_node.size() + 1);
 
   // Initialize position sequence with pre-move position.
   history->Trim(search_->played_history_.GetLength());
@@ -2281,7 +2285,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     auto p = *it;
     auto pl = p->GetLowNode();
 
-    assert(!p->IsTerminal() || (p->IsTerminal() && pl->IsTerminal()));
+    assert(!p->IsTerminal() ||
+           (p->IsTerminal() && pl->IsTerminal() && p->GetWL() == -pl->GetWL() &&
+            p->GetD() == pl->GetD()));
     // If parent low node is already a (new) terminal, then change propagated
     // values and stop terminal adjustment.
     if (pl->IsTerminal()) {

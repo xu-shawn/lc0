@@ -356,6 +356,7 @@ void LowNode::CancelScoreUpdate(int multivisit) {
 
 void Node::CancelScoreUpdate(int multivisit) {
   if (low_node_) low_node_->CancelScoreUpdate(multivisit);
+  assert(n_in_flight_ >= (uint32_t)multivisit);
   n_in_flight_ -= multivisit;
 }
 
@@ -368,6 +369,7 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Increment N.
   n_ += multivisit;
   // Decrement virtual loss.
+  assert(n_in_flight_ >= (uint32_t)multivisit);
   n_in_flight_ -= multivisit;
 }
 
@@ -387,6 +389,7 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Increment N.
   n_ += multivisit;
   // Decrement virtual loss.
+  assert(n_in_flight_ >= (uint32_t)multivisit);
   n_in_flight_ -= multivisit;
 }
 
