@@ -1791,34 +1791,34 @@ void SearchWorker::PickNodesToExtendTask(
                 collision_limit -
                     params_.GetMinimumRemainingWorkSizeForPicking()) {
           Node* child_node = cur_iters[i].GetOrSpawnNode(/* parent */ node);
-          size_t depth = current_path.size() - 1 + base_depth + 1;
+          moves_to_path.push_back(cur_iters[i].GetMove());
+          full_path.push_back(child_node);
+          size_t depth = current_path.size() + base_depth + 1;
           assert(full_path.size() == depth);
           // Don't split if not expanded or terminal.
-          if (ShouldStopPickingHere(child_node, depth, &history, moves_to_path))
-            continue;
-
-          bool passed = false;
-          {
-            // TODO: Reinstate this lock when the whole function lock is gone.
-            // Multiple writers, so need mutex here.
-            // Mutex::Lock lock(picking_tasks_mutex_);
-            // Ensure not to exceed size of reservation.
-            if (picking_tasks_.size() < MAX_TASKS) {
-              moves_to_path.push_back(cur_iters[i].GetMove());
-              full_path.push_back(child_node);
-              picking_tasks_.emplace_back(full_path, depth, moves_to_path,
-                                          child_limit);
-              moves_to_path.pop_back();
-              full_path.pop_back();
-              task_count_.fetch_add(1, std::memory_order_acq_rel);
-              task_added_.notify_all();
-              passed = true;
-              passed_off += child_limit;
+          if (!ShouldStopPickingHere(child_node, depth, &history,
+                                     moves_to_path)) {
+            bool passed = false;
+            {
+              // TODO: Reinstate this lock when the whole function lock is gone.
+              // Multiple writers, so need mutex here.
+              // Mutex::Lock lock(picking_tasks_mutex_);
+              // Ensure not to exceed size of reservation.
+              if (picking_tasks_.size() < MAX_TASKS) {
+                picking_tasks_.emplace_back(full_path, depth - 1, moves_to_path,
+                                            child_limit);
+                task_count_.fetch_add(1, std::memory_order_acq_rel);
+                task_added_.notify_all();
+                passed = true;
+                passed_off += child_limit;
+              }
+            }
+            if (passed) {
+              (*visits_to_perform.back())[i] = 0;
             }
           }
-          if (passed) {
-            (*visits_to_perform.back())[i] = 0;
-          }
+          full_path.pop_back();
+          moves_to_path.pop_back();
         }
       }
       // Fall through to select the first child.
