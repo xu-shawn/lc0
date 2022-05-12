@@ -425,12 +425,12 @@ class SearchWorker {
   bool MaybeAdjustForTerminalOrTransposition(Node* n,
                                              std::shared_ptr<LowNode>& nl,
                                              float& v, float& d, float& m,
-                                             int& n_to_fix, float& v_delta,
+                                             uint32_t& n_to_fix, float& v_delta,
                                              float& d_delta, float& m_delta,
                                              bool& update_parent_bounds) const;
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
-  bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta,
+  bool MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix, float* v_delta,
                       float* d_delta, float* m_delta) const;
   void PickNodesToExtend(int collision_limit);
   void PickNodesToExtendTask(const std::vector<Node*>& path,

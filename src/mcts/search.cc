@@ -2175,7 +2175,7 @@ void SearchWorker::DoBackupUpdate() {
 
 bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
     Node* n, std::shared_ptr<LowNode>& nl, float& v, float& d, float& m,
-    int& n_to_fix, float& v_delta, float& d_delta, float& m_delta,
+    uint32_t& n_to_fix, float& v_delta, float& d_delta, float& m_delta,
     bool& update_parent_bounds) const {
   if (n->IsTerminal()) {
     v = n->GetWL();
@@ -2244,7 +2244,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v = 0.0f;
   float d = 0.0f;
   float m = 0.0f;
-  int n_to_fix = 0;
+  uint32_t n_to_fix = 0;
   float v_delta = 0.0f;
   float d_delta = 0.0f;
   float m_delta = 0.0f;
@@ -2277,6 +2277,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
     if (n_to_fix > 0 && !n->IsTerminal()) {
+      // Number of visits may decrease above transposition low node.
+      n_to_fix = std::min(n_to_fix, n->GetN());
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
 
@@ -2337,7 +2339,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }
 
-bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
+bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
                                   float* v_delta, float* d_delta,
                                   float* m_delta) const {
   auto losing_m = 0.0f;
