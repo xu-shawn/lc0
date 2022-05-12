@@ -2297,7 +2297,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       n_to_fix = 0;
     }
     pl->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
-    if (n_to_fix > 0 && !pl->IsTerminal()) {
+    if (n_to_fix > 0) {
       pl->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
 
