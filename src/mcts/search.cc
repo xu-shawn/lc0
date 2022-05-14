@@ -2134,6 +2134,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   Node* node = node_to_process->node;
   auto low_node = computation.GetLowNode(idx_in_computation);
   // Add Dirichlet noise if enabled and at root.
+  SharedMutex::Lock nodes_lock(search_->nodes_mutex_);
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
     // Make a copy of the low node before adding noise.
     node->SetLowNode(std::make_shared<LowNode>(*low_node));
