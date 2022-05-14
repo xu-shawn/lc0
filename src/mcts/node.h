@@ -488,12 +488,9 @@ class Node {
   std::shared_ptr<LowNode> GetLowNode() const { return low_node_; }
 
   void SetLowNode(std::shared_ptr<LowNode> low_node) {
-    // Update low nodes on parent change.
-    if (low_node_ != low_node) {
-      low_node->AddParent(n_in_flight_);
-      if (low_node_) low_node_->RemoveParent();
-      low_node_ = low_node;
-    }
+    assert(!low_node_);
+    low_node->AddParent(n_in_flight_);
+    low_node_ = low_node;
   }
   void UnsetLowNode() {
     if (low_node_) low_node_->RemoveParent();

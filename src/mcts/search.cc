@@ -1970,12 +1970,6 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
     }
   }
 
-  // Add legal moves as edges of this node.
-  if (lock) {
-    node->SetLowNode(lock->low_node);
-  } else {
-    node->CreateEdges(legal_moves);
-  }
   return lock;
 }
 
@@ -2147,10 +2141,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                         params_.GetNoiseAlpha());
     node->SortEdges();
   } else {
-    // Merge transpositions that were inserted into the NN cache after
-    // ExtendNode's decision to make a new low node using CreateEdges.
-    // A different low node from another thread or even the same batch can get
-    // to the NN cache sooner.
     node->SetLowNode(low_node);
   }
 }
