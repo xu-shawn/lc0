@@ -1460,12 +1460,8 @@ bool SearchWorker::ShouldStopPickingHere(
   if (low_node->IsTerminal()) return true;
 
   // Bounds differ (swap).
-  auto low_node_bounds = low_node->GetBounds();
-  auto node_bounds = node->GetBounds();
-  int low_node_lower = static_cast<int>(low_node_bounds.first) - 2;
-  int low_node_upper = static_cast<int>(low_node_bounds.second) - 2;
-  int node_lower = static_cast<int>(node_bounds.first) - 2;
-  int node_upper = static_cast<int>(node_bounds.second) - 2;
+  auto [low_node_lower, low_node_upper] = low_node->GetBounds();
+  auto [node_lower, node_upper] = node->GetBounds();
   if (low_node_lower != -node_upper || low_node_upper != -node_lower)
     return true;
 
@@ -2189,8 +2185,8 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
         n->MakeTerminal(r, m, tt);
         update_parent_bounds = true;
       } else {
-        auto bounds = nl->GetBounds();
-        n->SetBounds(-bounds.second, -bounds.first);
+        auto [lower, upper] = nl->GetBounds();
+        n->SetBounds(-upper, -lower);
       }
     }
 
