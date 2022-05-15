@@ -1259,6 +1259,7 @@ void SearchWorker::GatherMinibatch2() {
           }
           minibatch_.erase(minibatch_.begin() + i);
         } else if (minibatch_[i].ooo_completed) {
+          FetchSingleNodeResult(&minibatch_[i], minibatch_[i], 0);
           DoBackupUpdateSingleNode(minibatch_[i]);
           minibatch_.erase(minibatch_.begin() + i);
           --minibatch_size;
@@ -1333,11 +1334,9 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         }
       }
     }
-    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
-      // Perform out of order eval for the last entry in minibatch_.
-      FetchSingleNodeResult(&picked_node, picked_node, 0);
-      picked_node.ooo_completed = true;
-    }
+
+    picked_node.ooo_completed =
+        params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder();
   }
 }
 
@@ -2101,6 +2100,7 @@ void SearchWorker::RunNNComputation() {
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
+  SharedMutex::Lock nodes_lock(search_->nodes_mutex_);
   // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : minibatch_) {
@@ -2112,13 +2112,13 @@ void SearchWorker::FetchMinibatchResults() {
 template <typename Computation>
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                          const Computation& computation,
-                                         int idx_in_computation) {
+                                         int idx_in_computation)
+    REQUIRES(search_->nodes_mutex_) {
   if (!node_to_process->nn_queried) return;
   // Add NN results to node.
   Node* node = node_to_process->node;
   auto low_node = computation.GetLowNode(idx_in_computation);
   // Add Dirichlet noise if enabled and at root.
-  SharedMutex::Lock nodes_lock(search_->nodes_mutex_);
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
     // Make a copy of the low node before adding noise.
     node->SetLowNode(std::make_shared<LowNode>(*low_node));
