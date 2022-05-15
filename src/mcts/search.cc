@@ -238,7 +238,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
       uci_info.mate = std::copysign(
-          std::round(edge.GetM(0.0f)) / 2 + (edge.IsTbTerminal() ? 101 : 1),
+          std::round(edge.GetM(0.0f) + 1) / 2 + (edge.IsTbTerminal() ? 100 : 0),
           wl);
     } else if (score_type == "centipawn_with_drawscore") {
       uci_info.score = 90 * tan(1.5637541897 * q);
