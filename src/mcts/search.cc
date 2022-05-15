@@ -1882,24 +1882,8 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
     lock = NNCacheLock(search_->cache_, *hash);
   }
 
-  std::vector<Move> legal_moves;
-  if (lock) {
-    legal_moves.reserve(lock->low_node->GetNumEdges());
-    const KingAttackInfo king_attack_info = board.GenerateKingAttackInfo();
-    auto edges = lock->low_node->GetEdges();
-    for (int ct = 0; ct < lock->low_node->GetNumEdges(); ct++) {
-      auto move = edges[ct].GetMove();
-      if (!board.IsLegalMove(move, king_attack_info)) {
-        lock = NNCacheLock();
-        break;
-      }
-      legal_moves.emplace_back(move);
-    }
-  }
+  std::vector<Move> legal_moves = board.GenerateLegalMoves();
 
-  if (!lock) {
-    legal_moves = board.GenerateLegalMoves();
-  }
   // Check whether it's a draw/lose by position. Importantly, we must check
   // these before doing the by-rule checks below.
   auto node = path.back();
