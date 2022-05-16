@@ -300,21 +300,28 @@ void Node::SetBounds(GameResult lower, GameResult upper) {
 }
 
 bool Node::TryStartScoreUpdate() {
-  if (n_ == 0 && n_in_flight_ > 0) return false;
+  if (n_ > 0) {
+    n_in_flight_.fetch_add(1, std::memory_order_acq_rel);
+  } else {
+    uint32_t expected_n_if_flight_ = 0;
+    if (!n_in_flight_.compare_exchange_strong(expected_n_if_flight_, 1,
+                                              std::memory_order_acq_rel)) {
+      return false;
+    }
+  }
   if (low_node_) low_node_->IncrementNInFlight(1);
-  ++n_in_flight_;
   return true;
 }
 
 void LowNode::CancelScoreUpdate(int multivisit) {
-  assert(n_in_flight_ >= (uint32_t)multivisit);
-  n_in_flight_ -= multivisit;
+  assert(GetNInFlight() >= (uint32_t)multivisit);
+  n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
 void Node::CancelScoreUpdate(int multivisit) {
   if (low_node_) low_node_->CancelScoreUpdate(multivisit);
-  assert(n_in_flight_ >= (uint32_t)multivisit);
-  n_in_flight_ -= multivisit;
+  assert(GetNInFlight() >= (uint32_t)multivisit);
+  n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
 void LowNode::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
@@ -327,8 +334,8 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Increment N.
   n_ += multivisit;
   // Decrement virtual loss.
-  assert(n_in_flight_ >= (uint32_t)multivisit);
-  n_in_flight_ -= multivisit;
+  assert(GetNInFlight() >= (uint32_t)multivisit);
+  n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
 void LowNode::AdjustForTerminal(float v, float d, float m, int multivisit) {
@@ -347,8 +354,8 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Increment N.
   n_ += multivisit;
   // Decrement virtual loss.
-  assert(n_in_flight_ >= (uint32_t)multivisit);
-  n_in_flight_ -= multivisit;
+  assert(GetNInFlight() >= (uint32_t)multivisit);
+  n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
 void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {

@@ -217,10 +217,14 @@ class LowNode {
   bool HasChildren() const { return num_edges_ > 0; }
 
   uint32_t GetN() const { return n_; }
-  uint32_t GetNInFlight() const { return n_in_flight_; }
+  uint32_t GetNInFlight() const {
+    return n_in_flight_.load(std::memory_order_acquire);
+  }
   uint32_t GetChildrenVisits() const { return n_ - 1; }
   // Returns n + n_in_flight.
-  int GetNStarted() const { return n_ + n_in_flight_; }
+  int GetNStarted() const {
+    return n_ + n_in_flight_.load(std::memory_order_acquire);
+  }
 
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
@@ -260,7 +264,9 @@ class LowNode {
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
-  void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
+  void IncrementNInFlight(int multivisit) {
+    n_in_flight_.fetch_add(multivisit, std::memory_order_acq_rel);
+  }
 
   // Deletes all children.
   void ReleaseChildren();
@@ -325,7 +331,7 @@ class LowNode {
   // (AKA virtual loss.) How many threads currently process this node (started
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
-  uint32_t n_in_flight_ = 0;
+  std::atomic<uint32_t> n_in_flight_ = 0;
 
   // 1 byte fields.
   // Number of edges in @edges_.
@@ -392,13 +398,17 @@ class Node {
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
   uint32_t GetN() const { return n_; }
-  uint32_t GetNInFlight() const { return n_in_flight_; }
+  uint32_t GetNInFlight() const {
+    return n_in_flight_.load(std::memory_order_acquire);
+  }
   uint32_t GetChildrenVisits() const {
     return low_node_ ? low_node_->GetChildrenVisits() : 0;
   }
   uint32_t GetTotalVisits() const { return low_node_ ? low_node_->GetN() : 0; }
   // Returns n + n_in_flight.
-  int GetNStarted() const { return n_ + n_in_flight_; }
+  int GetNStarted() const {
+    return n_ + n_in_flight_.load(std::memory_order_acquire);
+  }
 
   float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
@@ -450,7 +460,7 @@ class Node {
   // incrementing n_in_flight.
   void IncrementNInFlight(int multivisit) {
     if (low_node_) low_node_->IncrementNInFlight(multivisit);
-    n_in_flight_ += multivisit;
+    n_in_flight_.fetch_add(multivisit, std::memory_order_acq_rel);
   }
 
   // Returns range for iterating over edges.
@@ -543,7 +553,7 @@ class Node {
   // (AKA virtual loss.) How many threads currently process this node (started
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
-  uint32_t n_in_flight_ = 0;
+  std::atomic<uint32_t> n_in_flight_ = 0;
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
