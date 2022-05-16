@@ -69,8 +69,8 @@ void CachingComputation::PopCacheHit() {
   batch_.pop_back();
 }
 
-void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
-                                  const Node* node) {
+void CachingComputation::AddInput(uint64_t hash,
+                                  const PositionHistory& history) {
   if (AddInputByHash(hash)) {
     return;
   }
@@ -80,14 +80,9 @@ void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
   batch_.emplace_back();
   batch_.back().hash = hash;
   batch_.back().idx_in_parent = parent_->GetBatchSize();
-  if (node && node->HasChildren()) {
-    // Legal moves are known, use them.
-    batch_.back().low_node = node->GetLowNode();
-  } else {
-    // Cache legal moves.
-    std::vector<Move> moves = history.Last().GetBoard().GenerateLegalMoves();
-    batch_.back().low_node = std::make_shared<LowNode>(moves);
-  }
+  // Cache legal moves.
+  std::vector<Move> moves = history.Last().GetBoard().GenerateLegalMoves();
+  batch_.back().low_node = std::make_shared<LowNode>(moves);
   batch_.back().transform = transform;
   parent_->AddInput(std::move(input));
   return;

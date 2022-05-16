@@ -1277,8 +1277,7 @@ void SearchWorker::GatherMinibatch2() {
         computation_->AddInputByHash(minibatch_[i].hash,
                                      std::move(minibatch_[i].lock));
       } else {
-        computation_->AddInput(minibatch_[i].hash, minibatch_[i].history,
-                               minibatch_[i].node);
+        computation_->AddInput(minibatch_[i].hash, minibatch_[i].history);
       }
     }
 
@@ -1953,7 +1952,8 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
 }
 
 // Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
+bool SearchWorker::AddNodeToComputation([[maybe_unused]] Node* node,
+                                        bool add_if_cached) {
   const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
@@ -1965,7 +1965,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
       return true;
     }
   }
-  computation_->AddInput(hash, history_, node);
+  computation_->AddInput(hash, history_);
   return false;
 }
 
