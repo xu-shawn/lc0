@@ -41,22 +41,20 @@
 
 namespace lczero {
 
-// Children of a node are stored the following way:
-// * Edges and Nodes edges point to are stored separately.
-// * There may be dangling edges (which don't yet point to any Node object yet)
-// * Edges are stored as a simple array on heap.
-// * Nodes are stored as a linked list, and contain index_ field which shows
-//   which edge of a parent that node points to.
-// * Node contents are split between the old (Upper)Node and the new LowNode.
-//   The old (Upper)Node will slowly turn into an edge while LowNode will take
-//   its place and eventually turn into a complete node. The structure will turn
-//   from a tree into a more general Directed Acyclic Graph (DAG). This will
-//   help with transposition handling, where one position (node) can be reached
-//   on several paths, but backpropagation using parent pointers will not be
-//   possible any more.
+// Terminology:
+// * Edge - a potential edge with a move and policy information.
+// * Node - an existing edge with number of visits and evaluation.
+// * LowNode - a node with number of visits, evaluation and edges.
+//
+// Storage:
+// * Potential edges are stored in a simple array inside the LowNode as edges_.
+// * Existing edges are stored in a linked list starting with a child_ pointer
+//   in the LowNode and continuing with a sibling_ pointer in each Node.
+// * Existing edges are connected to the relevant Edge via parent_ and index_
+//   fields and to target LowNode via the low_node_ pointer.
 //
 // Example:
-//                                Parent Node
+//                                 LowNode
 //                                    |
 //        +-------------+-------------+----------------+--------------+
 //        |              |            |                |              |
@@ -65,21 +63,23 @@ namespace lczero {
 //                   Node, Q=0.5                    Node, Q=-0.2
 //
 //  Is represented as:
-// +--------------+
-// | Parent Node  |
-// +--------------+                                        +--------+
-// | edges_       | -------------------------------------> | Edge[] |
-// |              |    +------------+                      +--------+
-// | child_       | -> | Node       |                      | Nf3    |
-// +--------------+    +------------+                      | Bc5    |
-//                     | index_ = 1 |                      | a4     |
-//                     | q_ = 0.5   |    +------------+    | Qxf7   |
-//                     | sibling_   | -> | Node       |    | a3     |
-//                     +------------+    +------------+    +--------+
-//                                       | index_ = 3 |
-//                                       | q_ = -0.2  |
-//                                       | sibling_   | -> nullptr
-//                                       +------------+
+// +-----------------+
+// | LowNode         |
+// +-----------------+                                        +--------+
+// | edges_          | -------------------------------------> | Edge[] |
+// |                 |    +------------+                      +--------+
+// | child_          | -> | Node       |                      | Nf3    |
+// |                 |    +------------+                      | Bc5    |
+// | ...             | <- | parent_    |                      | a4     |
+// |                 |    | index_ = 1 |                      | Qxf7   |
+// |                 |    | q_ = 0.5   |    +------------+    | a3     |
+// |                 |    | sibling_   | -> | Node       |    +--------+
+// |                 |    +------------+    +------------+
+// |                 | <------------------- | parent_    |
+// +-----------------+                      | index_ = 3 |
+//                                          | q_ = -0.2  |
+//                                          | sibling_   | -> nullptr
+//                                          +------------+
 
 // Define __i386__  or __arm__ also for 32 bit Windows.
 #if defined(_M_IX86)
