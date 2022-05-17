@@ -1600,9 +1600,6 @@ void SearchWorker::PickNodesToExtendTask(
       vtp_last_filled.push_back(-1);
 
       // Cache all constant UCT parameters.
-#if 0
-      // TODO: Find a way to save some policy copying even in DAG. Having child
-      // count, parent count or N+N_in_flight in low node might help.
 
       // When we're near the leaves we can copy less of the policy, since there
       // is no way iteration will ever reach it.
@@ -1616,11 +1613,10 @@ void SearchWorker::PickNodesToExtendTask(
       // node to stay at 64 bytes).
       int max_needed = node->GetNumEdges();
       if (!is_root_node || root_move_filter.empty()) {
-        max_needed = std::min(max_needed, node->GetNStarted() + cur_limit + 2);
+        max_needed = std::min(
+            max_needed, node->GetLowNode()->GetNStarted() + cur_limit + 2);
       }
-#else
-      int max_needed = node->GetNumEdges();
-#endif
+
       node->CopyPolicy(max_needed, current_pol.data());
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();

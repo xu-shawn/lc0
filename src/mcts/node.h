@@ -182,6 +182,8 @@ class LowNode {
   uint32_t GetN() const { return n_; }
   uint32_t GetNInFlight() const { return n_in_flight_; }
   uint32_t GetChildrenVisits() const { return n_ - 1; }
+  // Returns n + n_in_flight.
+  int GetNStarted() const { return n_ + n_in_flight_; }
 
   void SetOrig(float q, float d, float m) {
     orig_q_ = q;
