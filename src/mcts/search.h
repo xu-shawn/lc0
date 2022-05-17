@@ -35,6 +35,7 @@
 #include <optional>
 #include <shared_mutex>
 #include <thread>
+#include <unordered_map>
 
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
@@ -165,8 +166,7 @@ class Search {
 
   Node* root_node_;
   NNCache* cache_;
-  Mutex tt_mutex_;
-  TranspositionTable* tt_ GUARDED_BY(tt_mutex_);
+  TranspositionTable* tt_;
   SyzygyTablebase* syzygy_tb_;
   // Fixed positions which happened before the search.
   const PositionHistory& played_history_;
@@ -302,8 +302,9 @@ class SearchWorker {
     }
     bool IsCollision() const { return is_collision; }
     bool CanEvalOutOfOrder() const {
-      return is_cache_hit || node->IsRealTerminal();
+      return is_tt_hit || is_cache_hit || node->IsRealTerminal();
     }
+    bool ShouldAddToInput() const { return nn_queried && !is_tt_hit; }
 
     // The path to the node to extend.
     std::vector<Node*> path;
@@ -316,6 +317,7 @@ class SearchWorker {
     int maxvisit = 0;
     uint16_t depth;
     bool nn_queried = false;
+    bool is_tt_hit = false;
     bool is_cache_hit = false;
     bool is_collision = false;
 
@@ -326,6 +328,7 @@ class SearchWorker {
 
     // Details that are filled in as we go.
     uint64_t hash;
+    std::shared_ptr<LowNode> tt_low_node;
     NNCacheLock lock;
     PositionHistory history;
     bool ooo_completed = false;
@@ -345,7 +348,7 @@ class SearchWorker {
 
     // Method to allow NodeToProcess to conform as a 'Computation'. Only safe
     // to call if is_cache_hit is true in the multigather path.
-    std::shared_ptr<LowNode> GetLowNode(int) const { return lock->low_node; }
+    std::shared_ptr<NNEval> GetNNEval(int) const { return lock->eval; }
 
     std::string DebugString() const {
       std::ostringstream oss;
@@ -460,9 +463,7 @@ class SearchWorker {
                              const std::vector<Move>& moves_to_node);
   void ProcessPickedTask(int batch_start, int batch_end,
                          TaskWorkspace* workspace);
-  NNCacheLock ExtendNode(const std::vector<Node*>& path, int depth,
-                         const std::vector<Move>& moves_to_add,
-                         PositionHistory* history, uint64_t* hash);
+  void ExtendNode(NodeToProcess& picked_node, PositionHistory* history);
   template <typename Computation>
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              const Computation& computation,

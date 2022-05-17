@@ -127,32 +127,47 @@ struct Eval {
   float ml;
 };
 
+struct NNEval {
+  // To minimize the number of padding bytes and to avoid having unnecessary
+  // padding when new fields are added, we arrange the fields by size, largest
+  // to smallest.
+
+  // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
+  // Array of edges.
+  std::unique_ptr<Edge[]> edges;
+
+  // 4 byte fields.
+  float q = 0.0f;
+  float d = 0.0f;
+  float m = 0.0f;
+
+  // 1 byte fields.
+  // Number of edges in @edges.
+  uint8_t num_edges = 0;
+};
+
 class LowNode {
  public:
   typedef std::pair<GameResult, GameResult> Bounds;
 
   enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase, TwoFold };
 
-  LowNode() = delete;
-  // Copy low node that is still only a cached NN value without children, visits
-  // etc.
+  LowNode()
+      : terminal_type_(Terminal::NonTerminal),
+        lower_bound_(GameResult::BLACK_WON),
+        upper_bound_(GameResult::WHITE_WON) {}
+  // Init from from another low node, but use it for NNEval only.
   LowNode(const LowNode& p)
-      : wl_(p.wl_),
-        orig_q_(p.orig_q_),
+      : orig_q_(p.orig_q_),
         orig_d_(p.orig_d_),
         orig_m_(p.orig_m_),
-        d_(p.d_),
-        m_(p.m_),
         num_edges_(p.num_edges_),
-        terminal_type_(p.terminal_type_),
-        lower_bound_(p.lower_bound_),
-        upper_bound_(p.upper_bound_) {
-    assert(!p.child_);
-    assert(p.n_ == 0);
-    if (p.edges_) {
-      edges_ = std::make_unique<Edge[]>(num_edges_);
-      std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
-    }
+        terminal_type_(Terminal::NonTerminal),
+        lower_bound_(GameResult::BLACK_WON),
+        upper_bound_(GameResult::WHITE_WON) {
+    assert(p.edges_);
+    edges_ = std::make_unique<Edge[]>(num_edges_);
+    std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
   }
   // Init @edges_ with moves from @moves and 0 policy.
   LowNode(const MoveList& moves)
@@ -171,6 +186,24 @@ class LowNode {
         upper_bound_(GameResult::WHITE_WON) {
     edges_ = Edge::FromMovelist(moves);
     child_ = std::make_unique<Node>(this, index);
+  }
+
+  void SetNNEval(const NNEval* eval) {
+    assert(!edges_ || (orig_q_ == eval->q && orig_d_ == eval->d &&
+                       orig_m_ == eval->m && num_edges_ == eval->num_edges));
+    if (edges_) return;
+    assert(n_ == 0);
+    assert(child_ == nullptr);
+
+    edges_ = std::make_unique<Edge[]>(eval->num_edges);
+    std::memcpy(edges_.get(), eval->edges.get(),
+                eval->num_edges * sizeof(Edge));
+
+    orig_q_ = eval->q;
+    orig_d_ = eval->d;
+    orig_m_ = eval->m;
+
+    num_edges_ = eval->num_edges;
   }
 
   // Gets the first child.

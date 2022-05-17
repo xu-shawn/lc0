@@ -166,6 +166,11 @@ Search::Search(const NodeTree& tree, Network* network,
           searchmoves_, syzygy_tb_, played_history_,
           params_.GetSyzygyFastPlay(), &tb_hits_, &root_is_in_dtz_)),
       uci_responder_(std::move(uci_responder)) {
+  // Evict expired entries from the transposition table.
+  // Garbage collection may lead to expiration at any time so this is not enough
+  // to prevent expired entries later during the search.
+  absl::erase_if(*tt_, [](const auto& item) { return item.second.expired(); });
+
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
                              std::memory_order_release);
@@ -1272,7 +1277,7 @@ void SearchWorker::GatherMinibatch2() {
       // If there was no OOO, there can stil be collisions.
       // There are no OOO though.
       // Also terminals when OOO is disabled.
-      if (!minibatch_[i].nn_queried) continue;
+      if (!minibatch_[i].ShouldAddToInput()) continue;
       if (minibatch_[i].is_cache_hit) {
         // Since minibatch_[i] holds cache lock, this is guaranteed to succeed.
         computation_->AddInputByHash(minibatch_[i].hash,
@@ -1314,25 +1319,12 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
     if (picked_node.IsCollision()) continue;
-    auto* node = picked_node.node;
-
     // If node is a collision, known as a terminal (win/loss/draw according to
     // the rules of the game) or has a low node, it means that we have already
     // visited this node before and can't extend it.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      uint64_t hash;
-      auto lock = ExtendNode(picked_node.path, picked_node.depth,
-                             picked_node.moves_to_visit, &history, &hash);
-      if (!node->IsRealTerminal()) {
-        picked_node.nn_queried = true;
-        picked_node.hash = hash;
-        picked_node.lock = std::move(lock);
-        picked_node.is_cache_hit = picked_node.lock;
-        if (!picked_node.is_cache_hit) {
-          picked_node.history = history;
-        }
-      }
+      ExtendNode(picked_node, &history);
     }
 
     picked_node.ooo_completed =
@@ -1850,9 +1842,11 @@ void SearchWorker::PickNodesToExtendTask(
   }
 }
 
-NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
-                                     const std::vector<Move>& moves_to_node,
-                                     PositionHistory* history, uint64_t* hash) {
+void SearchWorker::ExtendNode(NodeToProcess& picked_node,
+                              PositionHistory* history) {
+  const auto path = picked_node.path;
+  const auto depth = picked_node.depth;
+  const auto moves_to_node = picked_node.moves_to_visit;
   assert(!path.back()->GetLowNode());
   assert(path.size() == (size_t)depth);
   assert((size_t)depth == moves_to_node.size() + 1);
@@ -1866,18 +1860,11 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
   const auto& board = history->Last().GetBoard();
-
-  NNCacheLock lock;
-  if (hash != nullptr) {
-    *hash = history->HashLast(params_.GetCacheHistoryLength() + 1);
-    lock = NNCacheLock(search_->cache_, *hash);
-  }
-
   std::vector<Move> legal_moves = board.GenerateLegalMoves();
 
   // Check whether it's a draw/lose by position. Importantly, we must check
   // these before doing the by-rule checks below.
-  auto node = path.back();
+  auto node = picked_node.node;
   if (legal_moves.empty()) {
     // Could be a checkmate or a stalemate
     if (board.IsUnderCheck()) {
@@ -1885,7 +1872,7 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
     } else {
       node->MakeTerminal(GameResult::DRAW);
     }
-    return NNCacheLock();
+    return;
   }
 
   // We can shortcircuit these draws-by-rule only if they aren't root;
@@ -1893,12 +1880,12 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
   if (node != search_->root_node_) {
     if (!board.HasMatingMaterial()) {
       node->MakeTerminal(GameResult::DRAW);
-      return NNCacheLock();
+      return;
     }
 
     if (history->Last().GetRule50Ply() >= 100) {
       node->MakeTerminal(GameResult::DRAW);
-      return NNCacheLock();
+      return;
     }
 
     // Mark at least two-fold repetitions as draws according to settings.
@@ -1940,12 +1927,32 @@ NNCacheLock SearchWorker::ExtendNode(const std::vector<Node*>& path, int depth,
           node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-        return NNCacheLock();
+        return;
       }
     }
   }
 
-  return lock;
+  picked_node.nn_queried = true;  // Node::SetLowNode() required.
+
+  // Check the transposition table first and NN cache second before asking for
+  // NN evaluation.
+  picked_node.hash = history->HashLast(params_.GetCacheHistoryLength() + 1);
+  auto tt_iter = search_->tt_->find(picked_node.hash);
+  if (tt_iter != search_->tt_->end()) {
+    assert(!tt_iter->second.expired());
+    picked_node.tt_low_node = tt_iter->second.lock();
+  }
+  if (picked_node.tt_low_node) {
+    assert(!tt_iter->second.expired());
+    picked_node.is_tt_hit = true;
+  } else {
+    picked_node.lock = NNCacheLock(search_->cache_, picked_node.hash);
+    picked_node.is_cache_hit = picked_node.lock;
+
+    if (!picked_node.is_cache_hit) {
+      picked_node.history = *history;
+    }
+  }
 }
 
 // Returns whether node was already in cache.
@@ -2098,7 +2105,7 @@ void SearchWorker::FetchMinibatchResults() {
   int idx_in_computation = 0;
   for (auto& node_to_process : minibatch_) {
     FetchSingleNodeResult(&node_to_process, *computation_, idx_in_computation);
-    if (node_to_process.nn_queried) ++idx_in_computation;
+    if (node_to_process.ShouldAddToInput()) ++idx_in_computation;
   }
 }
 
@@ -2108,18 +2115,42 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                          int idx_in_computation)
     REQUIRES(search_->nodes_mutex_) {
   if (!node_to_process->nn_queried) return;
+
+  if (!node_to_process->is_tt_hit) {
+    node_to_process->tt_low_node = std::make_shared<LowNode>();
+
+    auto [tt_iter, is_tt_miss] = search_->tt_->insert(
+        {node_to_process->hash, node_to_process->tt_low_node});
+
+    assert(!tt_iter->second.expired());
+    if (is_tt_miss) {
+      assert(!tt_iter->second.expired());
+      node_to_process->tt_low_node->SetNNEval(
+          computation.GetNNEval(idx_in_computation).get());
+    } else {
+      auto tt_low_node = tt_iter->second.lock();
+      if (!tt_low_node) {
+        tt_iter->second = node_to_process->tt_low_node;
+        node_to_process->tt_low_node->SetNNEval(
+            computation.GetNNEval(idx_in_computation).get());
+      } else {
+        assert(!tt_iter->second.expired());
+        node_to_process->tt_low_node = tt_iter->second.lock();
+      }
+    }
+  }
+
   // Add NN results to node.
   Node* node = node_to_process->node;
-  auto low_node = computation.GetLowNode(idx_in_computation);
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
-    // Make a copy of the low node before adding noise.
-    node->SetLowNode(std::make_shared<LowNode>(*low_node));
+    node->SetLowNode(
+        std::make_shared<LowNode>(*node_to_process->tt_low_node.get()));
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
                         params_.GetNoiseAlpha());
     node->SortEdges();
   } else {
-    node->SetLowNode(low_node);
+    node->SetLowNode(node_to_process->tt_low_node);
   }
 }
 

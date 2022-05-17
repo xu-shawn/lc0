@@ -254,6 +254,7 @@ void LowNode::MakeTerminal(GameResult result, float plies_left, Terminal type) {
 }
 
 void LowNode::MakeNotTerminal(const Node* node) {
+  assert(edges_);
   if (!IsTerminal()) return;
 
   terminal_type_ = Terminal::NonTerminal;
@@ -361,6 +362,7 @@ void Node::CancelScoreUpdate(int multivisit) {
 }
 
 void LowNode::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
+  assert(edges_);
   // Recompute Q.
   wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);

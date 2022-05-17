@@ -82,7 +82,9 @@ void CachingComputation::AddInput(uint64_t hash,
   batch_.back().idx_in_parent = parent_->GetBatchSize();
   // Cache legal moves.
   std::vector<Move> moves = history.Last().GetBoard().GenerateLegalMoves();
-  batch_.back().low_node = std::make_shared<LowNode>(moves);
+  batch_.back().eval = std::make_shared<NNEval>();
+  batch_.back().eval->edges = Edge::FromMovelist(moves);
+  batch_.back().eval->num_edges = moves.size();
   batch_.back().transform = transform;
   parent_->AddInput(std::move(input));
   return;
@@ -101,9 +103,9 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
   // Fill cache with data from NN.
   for (auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;
-    item.low_node->SetOrig(parent_->GetQVal(item.idx_in_parent),
-                           parent_->GetDVal(item.idx_in_parent),
-                           parent_->GetMVal(item.idx_in_parent));
+    item.eval->q = parent_->GetQVal(item.idx_in_parent);
+    item.eval->d = parent_->GetDVal(item.idx_in_parent);
+    item.eval->m = parent_->GetMVal(item.idx_in_parent);
 
     // Calculate maximum first.
     float max_p = -std::numeric_limits<float>::infinity();
@@ -111,8 +113,8 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     // There are never more than 256 valid legal moves in any legal position.
     std::array<float, 256> intermediate;
     int transform = item.transform;
-    int num_edges = item.low_node->GetNumEdges();
-    auto edges = item.low_node->GetEdges();
+    int num_edges = item.eval->num_edges;
+    auto edges = item.eval->edges.get();
     for (int ct = 0; ct < num_edges; ct++) {
       auto move = edges[ct].GetMove();
       float p =
@@ -134,10 +136,10 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
       edges[ct].SetP(intermediate[ct] * scale);
     }
 
-    item.low_node->SortEdges();
+    Edge::SortEdges(item.eval->edges.get(), item.eval->num_edges);
 
     auto req = std::make_unique<CachedNNRequest>();
-    req->low_node = item.low_node;
+    req->eval = item.eval;
     cache_->Insert(item.hash, std::move(req));
 
     // Retrieve and use what really is in the cache for item's hash now as
@@ -146,14 +148,14 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     NNCacheLock lock(cache_, item.hash);
     assert(lock);
     item.lock = std::move(lock);
-    item.low_node = item.lock->low_node;
+    item.eval = item.lock->eval;
   }
 }
 
-std::shared_ptr<LowNode> CachingComputation::GetLowNode(int sample) const {
+std::shared_ptr<NNEval> CachingComputation::GetNNEval(int sample) const {
   const auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0) return item.low_node;
-  return item.lock->low_node;
+  if (item.idx_in_parent >= 0) return item.eval;
+  return item.lock->eval;
 }
 
 }  // namespace lczero
