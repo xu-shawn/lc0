@@ -593,6 +593,15 @@ endif
 #############################################################################
 ## Dependencies
 #############################################################################
+
+  ## ~~~~~~
+  ## Abseil
+  ## ~~~~~~
+  # $ meson wrap install abseil-cpp
+  absl = subproject('abseil-cpp', default_options : ['warning_level=0'])
+  deps += absl.get_variable('absl_container_dep').as_system()
+  includes += absl.get_variable('absl_include_dir')
+
   ## ~~~~
   ## zlib
   ## ~~~~
