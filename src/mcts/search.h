@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <absl/container/flat_hash_map.h>
+
 #include <array>
 #include <condition_variable>
 #include <functional>
@@ -47,6 +49,9 @@
 
 namespace lczero {
 
+typedef absl::flat_hash_map<uint64_t, std::weak_ptr<LowNode>>
+    TranspositionTable;
+
 class Search {
  public:
   Search(const NodeTree& tree, Network* network,
@@ -54,7 +59,7 @@ class Search {
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
          std::unique_ptr<SearchStopper> stopper, bool infinite,
-         const OptionsDict& options, NNCache* cache,
+         const OptionsDict& options, NNCache* cache, TranspositionTable* tt,
          SyzygyTablebase* syzygy_tb);
 
   ~Search();
@@ -160,6 +165,8 @@ class Search {
 
   Node* root_node_;
   NNCache* cache_;
+  Mutex tt_mutex_;
+  TranspositionTable* tt_ GUARDED_BY(tt_mutex_);
   SyzygyTablebase* syzygy_tb_;
   // Fixed positions which happened before the search.
   const PositionHistory& played_history_;

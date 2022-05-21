@@ -149,11 +149,12 @@ Search::Search(const NodeTree& tree, Network* network,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
                const OptionsDict& options, NNCache* cache,
-               SyzygyTablebase* syzygy_tb)
+               TranspositionTable* tt, SyzygyTablebase* syzygy_tb)
     : ok_to_respond_bestmove_(!infinite),
       stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
       cache_(cache),
+      tt_(tt),
       syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
       network_(network),

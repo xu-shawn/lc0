@@ -165,6 +165,7 @@ void EngineController::NewGame() {
   ResetMoveTimer();
   SharedLock lock(busy_mutex_);
   cache_.Clear();
+  tt_.clear();
   search_.reset();
   tree_.reset();
   CreateFreshTimeManager();
@@ -189,7 +190,7 @@ Position EngineController::ApplyPositionMoves() {
   board.SetFromFen(current_position_.fen, &no_capture_ply, &game_move);
   int game_ply = 2 * game_move - (board.flipped() ? 1 : 2);
   Position pos(board, no_capture_ply, game_ply);
-  for (std::string move_str: current_position_.moves) {
+  for (std::string move_str : current_position_.moves) {
     Move move(move_str);
     if (pos.IsBlackToMove()) move.Mirror();
     pos = Position(pos, move);
@@ -297,7 +298,7 @@ void EngineController::Go(const GoParams& params) {
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite || params.ponder,
-      options_, &cache_, syzygy_tb_.get());
+      options_, &cache_, &tt_, syzygy_tb_.get());
 
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
