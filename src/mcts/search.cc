@@ -1209,39 +1209,46 @@ void SearchWorker::GatherMinibatch2() {
       ++minibatch_size;
     }
 
-    bool needs_wait = false;
-    int ppt_start = new_start;
-    if (params_.GetTaskWorkersPerSearchWorker() > 0 &&
-        non_collisions >= params_.GetMinimumWorkSizeForProcessing()) {
-      const int num_tasks = std::clamp(
-          non_collisions / params_.GetMinimumWorkPerTaskForProcessing(), 2,
-          params_.GetTaskWorkersPerSearchWorker() + 1);
-      // Round down, left overs can go to main thread so it waits less.
-      int per_worker = non_collisions / num_tasks;
-      needs_wait = true;
-      ResetTasks();
-      int found = 0;
-      for (int i = new_start; i < static_cast<int>(minibatch_.size()); i++) {
-        auto& picked_node = minibatch_[i];
-        if (picked_node.IsCollision()) {
-          continue;
-        }
-        ++found;
-        if (found == per_worker) {
-          picking_tasks_.emplace_back(ppt_start, i + 1);
-          task_count_.fetch_add(1, std::memory_order_acq_rel);
-          ppt_start = i + 1;
-          found = 0;
-          if (picking_tasks_.size() == static_cast<size_t>(num_tasks - 1)) {
-            break;
+    {
+      // This lock must be held until after the task_completed_ wait succeeds
+      // below. Since the tasks perform work which assumes they have the lock,
+      // even though actually this thread does.
+      SharedMutex::Lock lock(search_->nodes_mutex_);
+
+      bool needs_wait = false;
+      int ppt_start = new_start;
+      if (params_.GetTaskWorkersPerSearchWorker() > 0 &&
+          non_collisions >= params_.GetMinimumWorkSizeForProcessing()) {
+        const int num_tasks = std::clamp(
+            non_collisions / params_.GetMinimumWorkPerTaskForProcessing(), 2,
+            params_.GetTaskWorkersPerSearchWorker() + 1);
+        // Round down, left overs can go to main thread so it waits less.
+        int per_worker = non_collisions / num_tasks;
+        needs_wait = true;
+        ResetTasks();
+        int found = 0;
+        for (int i = new_start; i < static_cast<int>(minibatch_.size()); i++) {
+          auto& picked_node = minibatch_[i];
+          if (picked_node.IsCollision()) {
+            continue;
+          }
+          ++found;
+          if (found == per_worker) {
+            picking_tasks_.emplace_back(ppt_start, i + 1);
+            task_count_.fetch_add(1, std::memory_order_acq_rel);
+            ppt_start = i + 1;
+            found = 0;
+            if (picking_tasks_.size() == static_cast<size_t>(num_tasks - 1)) {
+              break;
+            }
           }
         }
       }
-    }
-    ProcessPickedTask(ppt_start, static_cast<int>(minibatch_.size()),
-                      &main_workspace_);
-    if (needs_wait) {
-      WaitForTasks();
+      ProcessPickedTask(ppt_start, static_cast<int>(minibatch_.size()),
+                        &main_workspace_);
+      if (needs_wait) {
+        WaitForTasks();
+      }
     }
     bool some_ooo = false;
     for (int i = static_cast<int>(minibatch_.size()) - 1; i >= new_start; i--) {
