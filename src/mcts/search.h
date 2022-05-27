@@ -298,11 +298,11 @@ class SearchWorker {
  private:
   struct NodeToProcess {
     bool IsExtendable() const {
-      return !is_collision && !node->IsRealTerminal() && !node->GetLowNode();
+      return !is_collision && !node->IsTerminal() && !node->GetLowNode();
     }
     bool IsCollision() const { return is_collision; }
     bool CanEvalOutOfOrder() const {
-      return is_tt_hit || is_cache_hit || node->IsRealTerminal();
+      return is_tt_hit || is_cache_hit || node->IsTerminal();
     }
     bool ShouldAddToInput() const { return nn_queried && !is_tt_hit; }
 
@@ -333,17 +333,24 @@ class SearchWorker {
     PositionHistory history;
     bool ooo_completed = false;
 
+    // Repetition draws.
+    bool is_repetition = false;
+    int cycle_length = 0;
+
     static NodeToProcess Collision(const std::vector<Node*>& path,
                                    uint16_t depth, int collision_count) {
-      return NodeToProcess(path, depth, true, collision_count, 0);
+      return NodeToProcess(path, depth, true, collision_count, 0, false, 0);
     }
     static NodeToProcess Collision(const std::vector<Node*>& path,
                                    uint16_t depth, int collision_count,
                                    int max_count) {
-      return NodeToProcess(path, depth, true, collision_count, max_count);
+      return NodeToProcess(path, depth, true, collision_count, max_count, false,
+                           0);
     }
-    static NodeToProcess Visit(const std::vector<Node*>& path, uint16_t depth) {
-      return NodeToProcess(path, depth, false, 1, 0);
+    static NodeToProcess Visit(const std::vector<Node*>& path, uint16_t depth,
+                               bool is_repetition, int cycle_length) {
+      return NodeToProcess(path, depth, false, 1, 0, is_repetition,
+                           cycle_length);
     }
 
     // Method to allow NodeToProcess to conform as a 'Computation'. Only safe
@@ -365,13 +372,16 @@ class SearchWorker {
 
    private:
     NodeToProcess(const std::vector<Node*>& path, uint16_t depth,
-                  bool is_collision, int multivisit, int max_count)
+                  bool is_collision, int multivisit, int max_count,
+                  bool is_repetition, int cycle_length)
         : path(path),
           node(path.back()),
           multivisit(multivisit),
           maxvisit(max_count),
           depth(depth),
-          is_collision(is_collision) {}
+          is_collision(is_collision),
+          is_repetition(is_repetition),
+          cycle_length(cycle_length) {}
   };
 
   // Holds per task worker scratch data
@@ -449,18 +459,19 @@ class SearchWorker {
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
 
-  // Check if the situation described by @depth and complete @history is a
-  // two-fold and return true and set @cycle_length, if it is.
+  // Check if the situation described by @depth and complete @history is at
+  // least a two-fold and return true and set @cycle_length, if it is.
   bool IsTwoFold(int depth, PositionHistory* history, int& cycle_length);
-  // Check if node is a terminal and if it is a two-fold then verify that it is
-  // still valid with specified @history and @moves_to_node. Revert two-fold
-  // terminal status as needed and return true if node is still a terminal.
-  bool IsStillTerminal(Node* node, int depth, PositionHistory* history,
-                       const std::vector<Move>& moves_to_node);
+  // Check if the situation described by @depth, @history and @moves_to_node is
+  // at least a two-fold and return true and set @cycle_length, if it is.
+  bool IsTwoFold(int depth, PositionHistory* history,
+                 const std::vector<Move>& moves_to_node, int& cycle_length);
   // Check if there is a reason to stop picking and pick @node. Uses
-  // IsStillTerminal to check @node.
+  // IsTwoFold to check for at least two-fold and sets @is_repetition and
+  // @cycle_length accordingly.
   bool ShouldStopPickingHere(Node* node, int depth, PositionHistory* history,
-                             const std::vector<Move>& moves_to_node);
+                             const std::vector<Move>& moves_to_node,
+                             bool& is_repetition, int& cycle_length);
   void ProcessPickedTask(int batch_start, int batch_end,
                          TaskWorkspace* workspace);
   void ExtendNode(NodeToProcess& picked_node, PositionHistory* history);
