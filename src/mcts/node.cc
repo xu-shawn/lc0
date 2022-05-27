@@ -238,7 +238,7 @@ void Edge::SortEdges(Edge* edges, int num_edges) {
 }
 
 void LowNode::MakeTerminal(GameResult result, float plies_left, Terminal type) {
-  if (type != Terminal::TwoFold) SetBounds(result, result);
+  SetBounds(result, result);
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {
@@ -292,7 +292,7 @@ void LowNode::SetBounds(GameResult lower, GameResult upper) {
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
-  if (type != Terminal::TwoFold) SetBounds(result, result);
+  SetBounds(result, result);
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {
@@ -491,9 +491,6 @@ std::string Node::DotEdgeString(bool as_opponent) const {
       << (parent_ == nullptr ? "N/A"
                              : GetOwnEdge()->GetMove(as_opponent).as_string())
       << "\\lN=" << n_ << "\\lN_=" << n_in_flight_;
-  if (IsTwoFoldTerminal()) {
-    oss << "\\lDRAW";
-  }
   oss << "\\l\"";
   // Set precision for tooltip.
   oss << std::fixed << std::setprecision(5);

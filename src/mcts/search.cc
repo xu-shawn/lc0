@@ -1395,6 +1395,8 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   }
 }
 
+// Depth starts with 1 at root, so number of plies in PV is depth - 1.
+// Use plies since first repetition as moves left; exact if forced draw.
 bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
                              int& cycle_length) {
   const auto repetitions = history->Last().GetRepetitions();
@@ -1414,12 +1416,10 @@ bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
   return false;
 }
 
-bool SearchWorker::IsStillTerminal(Node* node, int depth,
-                                   PositionHistory* history,
-                                   const std::vector<Move>& moves_to_node) {
+bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
+                             const std::vector<Move>& moves_to_node,
+                             int& cycle_length) {
   assert((size_t)depth == moves_to_node.size() + 1);
-  if (!node->IsTerminal()) return false;
-  if (!node->IsTwoFoldTerminal()) return true;
 
   // Initialize position sequence with pre-move position.
   history->Trim(search_->played_history_.GetLength());
@@ -1427,36 +1427,24 @@ bool SearchWorker::IsStillTerminal(Node* node, int depth,
     history->Append(moves_to_node[i]);
   }
 
-  int cycle_length;
-  if (IsTwoFold(depth, history, cycle_length)) return true;
-
-  // TODO: Introduce locking when removing coarse picking locking.
-  // Take a mutex - any SearchWorker specific mutex... since this is
-  // not safe to do concurrently between multiple tasks.
-  // Mutex::Lock lock(picking_tasks_mutex_);
-  node->MakeNotTerminal(false);
-  // TODO: Is this still true?
-  // When reverting the visits, we also need to revert the initial
-  // visits, as we reused fewer nodes than anticipated.
-  // search_->initial_visits_ -= terminal_visits;
-  // Max depth doesn't change when reverting the visits, and
-  // cum_depth_ only counts the average depth of new nodes, not reused
-  // ones.
-
-  return false;
+  return IsTwoFold(depth, history, cycle_length);
 }
 
 // Check if PickNodesToExtendTask should stop picking at this @node.
-bool SearchWorker::ShouldStopPickingHere(
-    Node* node, int depth, PositionHistory* history,
-    const std::vector<Move>& moves_to_node) {
+bool SearchWorker::ShouldStopPickingHere(Node* node, int depth,
+                                         PositionHistory* history,
+                                         const std::vector<Move>& moves_to_node,
+                                         bool& is_repetition,
+                                         int& cycle_length) {
   constexpr double wl_diff_limit = 0.01f;
   constexpr float d_diff_limit = 0.01f;
   constexpr float m_diff_limit = 2.0f;
 
-  // Possibly the best place to verify two-fold terminals.
-  if (node->GetN() == 0 || IsStillTerminal(node, depth, history, moves_to_node))
-    return true;
+  is_repetition = false;
+  if (node->GetN() == 0 || node->IsTerminal()) return true;
+
+  is_repetition = IsTwoFold(depth, history, moves_to_node, cycle_length);
+  if (is_repetition) return true;
 
   // Check if Node and LowNode differ significantly.
   auto low_node = node->GetLowNode().get();
@@ -1549,6 +1537,9 @@ void SearchWorker::PickNodesToExtendTask(
 
   int max_limit = std::numeric_limits<int>::max();
 
+  bool is_repetition;
+  int cycle_length;
+
   current_path.push_back(-1);
   while (current_path.size() > 0) {
     assert(full_path.size() >= path.size());
@@ -1565,14 +1556,16 @@ void SearchWorker::PickNodesToExtendTask(
       // a collision of appropriate size and pop current_path.
       size_t depth = current_path.size() + base_depth;
       assert(full_path.size() == depth);
-      if (ShouldStopPickingHere(node, depth, &history, moves_to_path)) {
+      if (ShouldStopPickingHere(node, depth, &history, moves_to_path,
+                                is_repetition, cycle_length)) {
         if (is_root_node) {
           // Root node is special - since its not reached from anywhere else, so
           // it needs its own logic. Still need to create the collision to
           // ensure the outer gather loop gives up.
           if (node->TryStartScoreUpdate()) {
             cur_limit -= 1;
-            minibatch_.push_back(NodeToProcess::Visit(full_path, depth));
+            minibatch_.push_back(
+                NodeToProcess::Visit(full_path, depth, false, 0));
             completed_visits++;
           }
         }
@@ -1755,12 +1748,13 @@ void SearchWorker::PickNodesToExtendTask(
           new_visits -= 1;
           size_t depth = current_path.size() + 1 + base_depth;
           assert(full_path.size() == depth);
-          if (ShouldStopPickingHere(child_node, depth, &history,
-                                    moves_to_path)) {
+          if (ShouldStopPickingHere(child_node, depth, &history, moves_to_path,
+                                    is_repetition, cycle_length)) {
             // Reduce 1 for the visits_to_perform to ensure the collision
             // created doesn't include this visit.
             (*visits_to_perform.back())[best_idx] -= 1;
-            receiver->push_back(NodeToProcess::Visit(full_path, depth));
+            receiver->push_back(NodeToProcess::Visit(
+                full_path, depth, is_repetition, cycle_length));
             completed_visits++;
             receiver->back().moves_to_visit = moves_to_path;
           } else {
@@ -1796,8 +1790,8 @@ void SearchWorker::PickNodesToExtendTask(
           size_t depth = current_path.size() + base_depth + 1;
           assert(full_path.size() == depth);
           // Don't split if not expanded or terminal.
-          if (!ShouldStopPickingHere(child_node, depth, &history,
-                                     moves_to_path)) {
+          if (!ShouldStopPickingHere(child_node, depth, &history, moves_to_path,
+                                     is_repetition, cycle_length)) {
             bool passed = false;
             {
               // TODO: Reinstate this lock when the whole function lock is gone.
@@ -1905,14 +1899,11 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
       return;
     }
 
-    // Mark at least two-fold repetitions as draws according to settings.
-    // Depth starts with 1 at root, so number of plies in PV is depth - 1.
-    // Use plies since first repetition as moves left; exact if forced draw.
-    int cycle_length;
-    if (params_.GetTwoFoldDraws() && IsTwoFold(depth, history, cycle_length)) {
-      node->MakeTerminal(GameResult::DRAW, (float)cycle_length,
-                         Node::Terminal::TwoFold);
-      // Uncertain terminal, set low node.
+    // Handle at least two-fold repetitions as draws according to settings.
+    if (params_.GetTwoFoldDraws() &&
+        IsTwoFold(depth, history, picked_node.cycle_length)) {
+      picked_node.is_repetition = true;
+      // Not a terminal, set low node.
     }
     // Neither by-position or by-rule termination, but maybe it's a TB
     // position.
@@ -2247,7 +2238,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   auto n = node_to_process.node;
   // For the first visit to a terminal, maybe update parent bounds too.
   auto update_parent_bounds =
-      params_.GetStickyEndgames() && n->IsRealTerminal() && !n->GetN();
+      params_.GetStickyEndgames() && n->IsTerminal() && !n->GetN();
   auto nl = n->GetLowNode();
   float v = 0.0f;
   float d = 0.0f;
@@ -2268,9 +2259,17 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
   }
 
-  if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix, v_delta,
-                                             d_delta, m_delta,
-                                             update_parent_bounds)) {
+  if (node_to_process.is_repetition) {
+    v = 0.0f;
+    d = 1.0f;
+    m = node_to_process.cycle_length + 1;
+    n_to_fix = n->GetN();
+    v_delta = v - n->GetWL();
+    d_delta = d - n->GetD();
+    m_delta = m - n->GetM();
+  } else if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix,
+                                                    v_delta, d_delta, m_delta,
+                                                    update_parent_bounds)) {
     // If there is nothing better, use original NN values adjusted for node.
     v = -nl->GetWL();
     d = nl->GetD();
