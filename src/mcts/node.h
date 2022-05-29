@@ -158,9 +158,9 @@ class LowNode {
         upper_bound_(GameResult::WHITE_WON) {}
   // Init from from another low node, but use it for NNEval only.
   LowNode(const LowNode& p)
-      : orig_q_(p.orig_q_),
-        orig_d_(p.orig_d_),
-        orig_m_(p.orig_m_),
+      : wl_(p.wl_),
+        d_(p.d_),
+        m_(p.m_),
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
@@ -189,9 +189,7 @@ class LowNode {
   }
 
   void SetNNEval(const NNEval* eval) {
-    assert(!edges_ || (orig_q_ == eval->q && orig_d_ == eval->d &&
-                       orig_m_ == eval->m && num_edges_ == eval->num_edges));
-    if (edges_) return;
+    assert(!edges_);
     assert(n_ == 0);
     assert(child_ == nullptr);
 
@@ -199,9 +197,9 @@ class LowNode {
     std::memcpy(edges_.get(), eval->edges.get(),
                 eval->num_edges * sizeof(Edge));
 
-    orig_q_ = eval->q;
-    orig_d_ = eval->d;
-    orig_m_ = eval->m;
+    wl_ = eval->q;
+    d_ = eval->d;
+    m_ = eval->m;
 
     num_edges_ = eval->num_edges;
   }
@@ -217,15 +215,6 @@ class LowNode {
   uint32_t GetChildrenVisits() const { return n_ - 1; }
   // Returns n + n_in_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
-
-  void SetOrig(float q, float d, float m) {
-    orig_q_ = q;
-    orig_d_ = d;
-    orig_m_ = m;
-  }
-  float GetOrigQ() const { return orig_q_; }
-  float GetOrigD() const { return orig_d_; }
-  float GetOrigM() const { return orig_m_; }
 
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
@@ -318,10 +307,6 @@ class LowNode {
   std::unique_ptr<Node> child_;
 
   // 4 byte fields.
-  // Original evaluation (from NN).
-  float orig_q_ = 0.0f;
-  float orig_d_ = 0.0f;
-  float orig_m_ = 0.0f;
   // Averaged draw probability. Works similarly to WL, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;

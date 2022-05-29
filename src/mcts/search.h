@@ -35,7 +35,6 @@
 #include <optional>
 #include <shared_mutex>
 #include <thread>
-#include <unordered_map>
 
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
@@ -100,6 +99,9 @@ class Search {
   // If called after GetBestMove, another call to GetBestMove will have results
   // from temperature having been applied again.
   void ResetBestMove();
+
+  // Returns NN eval for a given node from cache, if that node is cached.
+  NNCacheLock GetCachedNNEval(const PositionHistory& history) const;
 
  private:
   // Computes the best move, maybe with temperature (according to the settings).

@@ -220,9 +220,8 @@ std::string LowNode::DebugString() const {
   std::ostringstream oss;
   oss << " <LowNode> This:" << this << " Edges:" << edges_.get()
       << " NumEdges:" << static_cast<int>(num_edges_)
-      << " Child:" << child_.get() << " OrigQ:" << orig_q_
-      << " OrigD:" << orig_d_ << " OrigM:" << orig_m_ << " WL:" << wl_
-      << " D:" << d_ << " M:" << m_ << " N:" << n_ << " N_:" << n_in_flight_
+      << " Child:" << child_.get() << " WL:" << wl_ << " D:" << d_
+      << " M:" << m_ << " N:" << n_ << " N_:" << n_in_flight_
       << " NP:" << static_cast<int>(num_parents_)
       << " Term:" << static_cast<int>(terminal_type_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
@@ -260,10 +259,10 @@ void LowNode::MakeNotTerminal(const Node* node) {
   terminal_type_ = Terminal::NonTerminal;
   lower_bound_ = GameResult::BLACK_WON;
   upper_bound_ = GameResult::WHITE_WON;
-  n_ = 1;
-  wl_ = orig_q_;
-  d_ = orig_d_;
-  m_ = orig_m_;
+  n_ = 0;
+  wl_ = 0.0;
+  d_ = 0.0;
+  m_ = 0.0;
 
   // Include children too.
   if (node->GetNumEdges() > 0) {
@@ -472,9 +471,8 @@ std::string LowNode::DotNodeString() const {
       << "\\nTerm=" << static_cast<int>(terminal_type_)  //
       << std::showpos                                    //
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
-      << static_cast<int>(upper_bound_) - 2 << "\\n\\nOrigQ=" << orig_q_
-      << "\\nOrigD=" << orig_d_ << "\\nOrigM=" << orig_m_  //
-      << std::noshowpos                                    //
+      << static_cast<int>(upper_bound_) - 2  //
+      << std::noshowpos                      //
       << "\\n\\nThis=" << this << "\\nEdges=" << edges_.get()
       << "\\nNumEdges=" << static_cast<int>(num_edges_)
       << "\\nChild=" << child_.get() << "\\n\"";

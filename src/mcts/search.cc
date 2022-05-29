@@ -425,8 +425,12 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
     } else if (n) {
-      auto low_node = n->GetLowNode();
-      if (low_node) v = -low_node->GetOrigQ();
+      auto history = played_history_;
+      if (!is_root) {
+        history.Append(node->GetOwnEdge()->GetMove());
+      }
+      NNCacheLock nneval = GetCachedNNEval(history);
+      if (nneval) v = -nneval->eval->q;
     }
     if (v) {
       print(oss, "(V: ", sign * *v, ") ", 7, 4);
@@ -505,6 +509,12 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
       }
     }
   }
+}
+
+NNCacheLock Search::GetCachedNNEval(const PositionHistory& history) const {
+  const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
+  NNCacheLock nneval(cache_, hash);
+  return nneval;
 }
 
 void Search::MaybeTriggerStop(const IterationStats& stats,
@@ -2259,7 +2269,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // it the first time that backup sees it.
   if (nl) {
     if (nl->GetN() == 0) {
-      nl->FinalizeScoreUpdate(nl->GetOrigQ(), nl->GetOrigD(), nl->GetOrigM(),
+      nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(),
                               node_to_process.multivisit);
     } else {
       nl->CancelScoreUpdate(node_to_process.multivisit);
@@ -2270,9 +2280,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
                                              d_delta, m_delta,
                                              update_parent_bounds)) {
     // If there is nothing better, use original NN values adjusted for node.
-    v = -nl->GetOrigQ();
-    d = nl->GetOrigD();
-    m = nl->GetOrigM() + 1;
+    v = -nl->GetWL();
+    d = nl->GetD();
+    m = nl->GetM() + 1;
   }
 
   // Backup V value up to a root. After 1 visit, V = Q.
