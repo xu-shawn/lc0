@@ -304,7 +304,8 @@ class SearchWorker {
     }
     bool IsCollision() const { return is_collision; }
     bool CanEvalOutOfOrder() const {
-      return is_tt_hit || is_cache_hit || node->IsRealTerminal();
+      return is_tt_hit || is_cache_hit || node->IsRealTerminal() ||
+             node->GetLowNode();
     }
     bool ShouldAddToInput() const { return nn_queried && !is_tt_hit; }
 
