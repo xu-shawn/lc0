@@ -97,7 +97,7 @@ const size_t kAvgNodeSize =
     sizeof(Node) + sizeof(LowNode) +
     MemoryWatchingStopper::kAvgMovesPerPosition * sizeof(Edge);
 const size_t kAvgCacheItemSize =
-    NNCache::GetItemStructSize() + sizeof(NNEval) +
+    NNCache::GetItemStructSize() + sizeof(CachedNNRequest) + sizeof(NNEval) +
     sizeof(Edge) * MemoryWatchingStopper::kAvgMovesPerPosition;
 }  // namespace
 
