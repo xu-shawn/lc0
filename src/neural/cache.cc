@@ -141,14 +141,6 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     auto req = std::make_unique<CachedNNRequest>();
     req->eval = item.eval;
     cache_->Insert(item.hash, std::move(req));
-
-    // Retrieve and use what really is in the cache for item's hash now as
-    // Insert just silently fails if something else from another batch or even
-    // this batch got inserted there between AddInput and Insert of this item.
-    NNCacheLock lock(cache_, item.hash);
-    assert(lock);
-    item.lock = std::move(lock);
-    item.eval = item.lock->eval;
   }
 }
 
