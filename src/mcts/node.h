@@ -725,8 +725,7 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator& operator*() { return *this; }
 
   // If there is node, return it. Otherwise spawn a new one and return it.
-  Node* GetOrSpawnNode(Node* parent,
-                       std::unique_ptr<Node>* node_source = nullptr) {
+  Node* GetOrSpawnNode(Node* parent) {
     if (node_) return node_;  // If there is already a node, return it.
     Actualize();              // But maybe other thread already did that.
     if (node_) return node_;  // If it did, return.
@@ -743,12 +742,7 @@ class Edge_Iterator : public EdgeAndNode {
     //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
     //    tmp -> Node(idx_.7)
     auto low_parent = parent->GetLowNode().get();
-    if (node_source && *node_source) {
-      (*node_source)->Reinit(low_parent, current_idx_);
-      *node_ptr_ = std::move(*node_source);
-    } else {
-      *node_ptr_ = std::make_unique<Node>(low_parent, current_idx_);
-    }
+    *node_ptr_ = std::make_unique<Node>(low_parent, current_idx_);
     // 3. Attach stored pointer back to a list:
     //    node_ptr_ ->
     //         &Node(idx_.3).sibling_ -> Node(idx_.5).sibling_ -> Node(idx_.7)
