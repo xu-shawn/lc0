@@ -1955,8 +1955,8 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
   // NN evaluation.
   picked_node.hash = history->HashLast(params_.GetCacheHistoryLength() + 1);
   auto tt_iter = search_->tt_->find(picked_node.hash);
+  // Transposition table entry might be expired.
   if (tt_iter != search_->tt_->end()) {
-    assert(!tt_iter->second.expired());
     picked_node.tt_low_node = tt_iter->second.lock();
   }
   if (picked_node.tt_low_node) {
@@ -2132,7 +2132,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     auto [tt_iter, is_tt_miss] = search_->tt_->insert(
         {node_to_process->hash, node_to_process->tt_low_node});
 
-    assert(!tt_iter->second.expired());
     if (is_tt_miss) {
       assert(!tt_iter->second.expired());
       node_to_process->tt_low_node->SetNNEval(
