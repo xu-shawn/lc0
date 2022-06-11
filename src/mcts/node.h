@@ -155,7 +155,8 @@ class LowNode {
   LowNode()
       : terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {}
+        upper_bound_(GameResult::WHITE_WON),
+        is_transposition(false) {}
   // Init from from another low node, but use it for NNEval only.
   LowNode(const LowNode& p)
       : wl_(p.wl_),
@@ -164,7 +165,8 @@ class LowNode {
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {
+        upper_bound_(GameResult::WHITE_WON),
+        is_transposition(false)  {
     assert(p.edges_);
     edges_ = std::make_unique<Edge[]>(num_edges_);
     std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
@@ -174,7 +176,8 @@ class LowNode {
       : num_edges_(moves.size()),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {
+        upper_bound_(GameResult::WHITE_WON),
+        is_transposition(false)  {
     edges_ = Edge::FromMovelist(moves);
   }
   // Init @edges_ with moves from @moves and 0 policy.
@@ -183,7 +186,8 @@ class LowNode {
       : num_edges_(moves.size()),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {
+        upper_bound_(GameResult::WHITE_WON),
+        is_transposition(false)  {
     edges_ = Edge::FromMovelist(moves);
     child_ = std::make_unique<Node>(this, index);
   }
@@ -281,11 +285,12 @@ class LowNode {
   // Add new parent with @n_in_flight visits.
   void AddParent(int n_in_flight) {
     ++num_parents_;
+    is_transposition |= num_parents_ > 1;
     IncrementNInFlight(n_in_flight);
   }
   // Remove parent and its first visit.
   void RemoveParent() { --num_parents_; }
-  bool IsTransposition() const { return num_parents_ > 1; }
+  bool IsTransposition() const { return is_transposition; }
 
  private:
   // To minimize the number of padding bytes and to avoid having unnecessary
@@ -330,6 +335,8 @@ class LowNode {
   // Best and worst result for this node.
   GameResult lower_bound_ : 2;
   GameResult upper_bound_ : 2;
+  // Low node is a transposition (for ever).
+  bool is_transposition : 1;
 };
 
 // Check that LowNode still fits into an expected cache line size.
