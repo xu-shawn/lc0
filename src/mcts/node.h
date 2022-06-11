@@ -332,16 +332,8 @@ class LowNode {
   GameResult upper_bound_ : 2;
 };
 
-#if 0  // TODO: Fix this when LowNode is somewhat stable again.
-// A basic sanity check. This must be adjusted when LowNode members are
-// adjusted.
-#if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(LowNode) == 48,
-              "Unexpected size of LowNode for 32bit compile");
-#else
-static_assert(sizeof(LowNode) == 56, "Unexpected size of LowNode");
-#endif
-#endif
+// Check that LowNode still fits into an expected cache line size.
+static_assert(sizeof(LowNode) <= 64, "LowNode is too large");
 
 class EdgeAndNode;
 template <bool is_const>
@@ -585,14 +577,8 @@ class Node {
   GameResult upper_bound_ : 2;
 };
 
-#if 0  // TODO: Fix this when Node is somewhat stable again.
-// A basic sanity check. This must be adjusted when Node members are adjusted.
-#if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 44, "Unexpected size of Node for 32bit compile");
-#else
-static_assert(sizeof(Node) == 64, "Unexpected size of Node");
-#endif
-#endif
+// Check that Node still fits into an expected cache line size.
+static_assert(sizeof(Node) <= 64, "Node is too large");
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
 // to them.
