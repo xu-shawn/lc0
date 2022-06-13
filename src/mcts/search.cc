@@ -167,8 +167,8 @@ Search::Search(const NodeTree& tree, Network* network,
           params_.GetSyzygyFastPlay(), &tb_hits_, &root_is_in_dtz_)),
       uci_responder_(std::move(uci_responder)) {
   // Evict expired entries from the transposition table.
-  // Garbage collection may lead to expiration at any time so this is not enough
-  // to prevent expired entries later during the search.
+  // Garbage collection may lead to expiration at any time so this is not
+  // enough to prevent expired entries later during the search.
   absl::erase_if(*tt_, [](const auto& item) { return item.second.expired(); });
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
