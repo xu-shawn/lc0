@@ -527,6 +527,10 @@ class Node {
   // dot format.
   std::string DotGraphString(bool as_opponent = false) const;
 
+  // Returns true if graph under this node has every n_in_flight_ == 0 and
+  // prints offending nodes and low nodes and stats to cerr otherwise.
+  bool ZeroNInFlight() const;
+
   void SortEdges() const {
     assert(low_node_);
     low_node_->SortEdges();

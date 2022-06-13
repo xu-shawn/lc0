@@ -565,6 +565,59 @@ std::string Node::DotGraphString(bool as_opponent) const {
   return oss.str();
 }
 
+bool Node::ZeroNInFlight() const {
+  std::unordered_set<const LowNode*> seen;
+  std::list<const Node*> unvisited_fifo;
+  size_t nonzero_node_count = 0;
+  size_t nonzero_low_node_count = 0;
+
+  if (GetNInFlight() > 0) {
+    std::cerr << DebugString() << std::endl;
+    ++nonzero_node_count;
+  }
+  if (low_node_) {
+    seen.insert(low_node_.get());
+    unvisited_fifo.push_back(this);
+  }
+
+  while (!unvisited_fifo.empty()) {
+    auto parent_node = unvisited_fifo.front();
+    unvisited_fifo.pop_front();
+
+    auto parent_low_node = parent_node->GetLowNode().get();
+    if (parent_low_node->GetNInFlight() > 0) {
+      std::cerr << parent_low_node->DebugString() << std::endl;
+      ++nonzero_low_node_count;
+    }
+
+    for (auto& child_edge : parent_node->Edges()) {
+      auto child = child_edge.node();
+      if (child == nullptr) break;
+
+      if (child->GetNInFlight() > 0) {
+        std::cerr << child->DebugString() << std::endl;
+        ++nonzero_node_count;
+      }
+
+      auto child_low_node = child->GetLowNode().get();
+      if (child_low_node != nullptr &&
+          (seen.find(child_low_node) == seen.end())) {
+        seen.insert(child_low_node);
+        unvisited_fifo.push_back(child);
+      }
+    }
+  }
+
+  if (nonzero_node_count + nonzero_low_node_count > 0) {
+    std::cerr << "GetNInFlight() is nonzero on " << nonzero_node_count
+              << " nodes and " << nonzero_low_node_count << " low nodes"
+              << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
 /////////////////////////////////////////////////////////////////////////
 // EdgeAndNode
 /////////////////////////////////////////////////////////////////////////

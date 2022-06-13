@@ -967,6 +967,10 @@ Search::~Search() {
   {
     SharedMutex::Lock lock(nodes_mutex_);
     CancelSharedCollisions();
+
+#ifndef NDEBUG
+    assert(root_node_->ZeroNInFlight());
+#endif
   }
   LOGFILE << "Search destroyed.";
 }
