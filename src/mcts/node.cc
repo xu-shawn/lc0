@@ -517,7 +517,7 @@ std::string Node::DotEdgeString(bool as_opponent) const {
 
 std::string Node::DotGraphString(bool as_opponent) const {
   std::ostringstream oss;
-  std::unordered_set<const Node*> seen;
+  std::unordered_set<const LowNode*> seen;
   std::list<std::pair<const Node*, bool>> unvisited_fifo;
 
   oss << "strict digraph {" << std::endl;
@@ -533,30 +533,32 @@ std::string Node::DotGraphString(bool as_opponent) const {
   oss << "ranksep=" << 4.0f * std::log10(GetN()) << std::endl;
 
   oss << DotEdgeString(!as_opponent) << std::endl;
-  unvisited_fifo.push_back(std::pair(this, as_opponent));
-  seen.insert(this);
+  if (low_node_) {
+    seen.insert(low_node_.get());
+    unvisited_fifo.push_back(std::pair(this, as_opponent));
+  }
 
-  do {
+  while (!unvisited_fifo.empty()) {
     auto [parent_node, parent_as_opponent] = unvisited_fifo.front();
     unvisited_fifo.pop_front();
 
     auto parent_low_node = parent_node->GetLowNode().get();
-    if (parent_low_node) {
-      oss << parent_low_node->DotNodeString() << std::endl;
+    seen.insert(parent_low_node);
+    oss << parent_low_node->DotNodeString() << std::endl;
 
-      for (auto& child_edge : parent_node->Edges()) {
-        auto child = child_edge.node();
-        if (child == nullptr) break;
+    for (auto& child_edge : parent_node->Edges()) {
+      auto child = child_edge.node();
+      if (child == nullptr) break;
 
-        oss << child->DotEdgeString(parent_as_opponent) << std::endl;
-
-        if (seen.find(child) == seen.end()) {
-          unvisited_fifo.push_back(std::pair(child, !parent_as_opponent));
-          seen.insert(child);
-        }
+      oss << child->DotEdgeString(parent_as_opponent) << std::endl;
+      auto child_low_node = child->GetLowNode().get();
+      if (child_low_node != nullptr &&
+          (seen.find(child_low_node) == seen.end())) {
+        seen.insert(child_low_node);
+        unvisited_fifo.push_back(std::pair(child, !parent_as_opponent));
       }
     }
-  } while (!unvisited_fifo.empty());
+  }
 
   oss << "}" << std::endl;
 
