@@ -1410,7 +1410,7 @@ bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
     return true;
   }
 
-  if (/*repetitions == 1 &&*/ depth - 1 >= 4 &&
+  if (params_.GetTwoFoldDraws() && /*repetitions == 1 &&*/ depth - 1 >= 4 &&
       depth - 1 >= history->Last().GetPliesSincePrevRepetition()) {
     cycle_length = history->Last().GetPliesSincePrevRepetition();
     return true;
@@ -1914,7 +1914,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
     // Depth starts with 1 at root, so number of plies in PV is depth - 1.
     // Use plies since first repetition as moves left; exact if forced draw.
     int cycle_length;
-    if (params_.GetTwoFoldDraws() && IsTwoFold(depth, history, cycle_length)) {
+    if (IsTwoFold(depth, history, cycle_length)) {
       node->MakeTerminal(GameResult::DRAW, (float)cycle_length,
                          Node::Terminal::TwoFold);
       // Uncertain terminal, set low node.
