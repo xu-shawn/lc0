@@ -27,8 +27,6 @@
 
 #pragma once
 
-#include <absl/container/flat_hash_map.h>
-
 #include <array>
 #include <condition_variable>
 #include <functional>
@@ -48,9 +46,6 @@
 #include "utils/numa.h"
 
 namespace lczero {
-
-typedef absl::flat_hash_map<uint64_t, std::weak_ptr<LowNode>>
-    TranspositionTable;
 
 class Search {
  public:

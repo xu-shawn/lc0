@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <absl/container/flat_hash_map.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -852,6 +854,10 @@ inline VisitedNode_Iterator<true> Node::VisitedNodes() const {
 inline VisitedNode_Iterator<false> Node::VisitedNodes() {
   return {*this, GetChild()};
 }
+
+// Transposition Table type for holding references to all low nodes in DAG.
+typedef absl::flat_hash_map<uint64_t, std::weak_ptr<LowNode>>
+    TranspositionTable;
 
 class NodeTree {
  public:
