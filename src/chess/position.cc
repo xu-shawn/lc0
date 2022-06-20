@@ -78,7 +78,7 @@ Position::Position(const ChessBoard& board, int rule50_ply, int game_ply)
 }
 
 uint64_t Position::Hash() const {
-  return HashCat({us_board_.Hash(), static_cast<unsigned long>(repetitions_)});
+  return us_board_.Hash();
 }
 
 std::string Position::DebugString() const { return us_board_.DebugString(); }
