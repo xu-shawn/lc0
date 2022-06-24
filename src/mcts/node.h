@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <absl/container/flat_hash_map.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -166,7 +168,7 @@ class LowNode {
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false)  {
+        is_transposition(false) {
     assert(p.edges_);
     edges_ = std::make_unique<Edge[]>(num_edges_);
     std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
@@ -177,7 +179,7 @@ class LowNode {
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false)  {
+        is_transposition(false) {
     edges_ = Edge::FromMovelist(moves);
   }
   // Init @edges_ with moves from @moves and 0 policy.
@@ -187,7 +189,7 @@ class LowNode {
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false)  {
+        is_transposition(false) {
     edges_ = Edge::FromMovelist(moves);
     child_ = std::make_unique<Node>(this, index);
   }
@@ -525,6 +527,10 @@ class Node {
   // dot format.
   std::string DotGraphString(bool as_opponent = false) const;
 
+  // Returns true if graph under this node has every n_in_flight_ == 0 and
+  // prints offending nodes and low nodes and stats to cerr otherwise.
+  bool ZeroNInFlight() const;
+
   void SortEdges() const {
     assert(low_node_);
     low_node_->SortEdges();
@@ -545,9 +551,9 @@ class Node {
   // 8 byte fields.
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored. This is from the perspective
-  // of the player who "just" moved to reach this position, rather than from the
-  // perspective of the player-to-move for the position.
-  // WL stands for "W minus L". Is equal to Q if draw score is 0.
+  // of the player who "just" moved to reach this position, rather than from
+  // the perspective of the player-to-move for the position. WL stands for "W
+  // minus L". Is equal to Q if draw score is 0.
   double wl_ = 0.0f;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
@@ -575,7 +581,8 @@ class Node {
 
   // 1 byte fields.
   // Bit fields using parts of uint8_t fields initialized in the constructor.
-  // Whether or not this node end game (with a winning of either sides or draw).
+  // Whether or not this node end game (with a winning of either sides or
+  // draw).
   Terminal terminal_type_ : 2;
   // Best and worst result for this node.
   GameResult lower_bound_ : 2;
@@ -845,6 +852,10 @@ inline VisitedNode_Iterator<true> Node::VisitedNodes() const {
 inline VisitedNode_Iterator<false> Node::VisitedNodes() {
   return {*this, GetChild()};
 }
+
+// Transposition Table type for holding references to all low nodes in DAG.
+typedef absl::flat_hash_map<uint64_t, std::weak_ptr<LowNode>>
+    TranspositionTable;
 
 class NodeTree {
  public:

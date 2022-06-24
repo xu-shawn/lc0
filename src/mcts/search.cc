@@ -167,8 +167,8 @@ Search::Search(const NodeTree& tree, Network* network,
           params_.GetSyzygyFastPlay(), &tb_hits_, &root_is_in_dtz_)),
       uci_responder_(std::move(uci_responder)) {
   // Evict expired entries from the transposition table.
-  // Garbage collection may lead to expiration at any time so this is not enough
-  // to prevent expired entries later during the search.
+  // Garbage collection may lead to expiration at any time so this is not
+  // enough to prevent expired entries later during the search.
   absl::erase_if(*tt_, [](const auto& item) { return item.second.expired(); });
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
@@ -967,6 +967,10 @@ Search::~Search() {
   {
     SharedMutex::Lock lock(nodes_mutex_);
     CancelSharedCollisions();
+
+#ifndef NDEBUG
+    assert(root_node_->ZeroNInFlight());
+#endif
   }
   LOGFILE << "Search destroyed.";
 }
@@ -1408,7 +1412,8 @@ bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
     return true;
   }
 
-  if (/*repetitions == 1 &&*/ depth - 1 >= 4 && depth - 1 >= cycle_length) {
+  if (params_.GetTwoFoldDraws() && /*repetitions == 1 &&*/ depth - 1 >= 4 &&
+      depth - 1 >= history->Last().GetPliesSincePrevRepetition()) {
     cycle_length = history->Last().GetPliesSincePrevRepetition();
     return true;
   }
@@ -1900,8 +1905,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
     }
 
     // Handle at least two-fold repetitions as draws according to settings.
-    if (params_.GetTwoFoldDraws() &&
-        IsTwoFold(depth, history, picked_node.cycle_length)) {
+    if (IsTwoFold(depth, history, picked_node.cycle_length)) {
       picked_node.is_repetition = true;
       // Not a terminal, set low node.
     }

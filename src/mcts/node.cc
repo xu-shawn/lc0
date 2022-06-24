@@ -473,8 +473,8 @@ std::string LowNode::DotNodeString() const {
       << std::showpos                                    //
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2
-      << "\\nIsTransposition=" << is_transposition //
-      << std::noshowpos                      //
+      << "\\nIsTransposition=" << is_transposition  //
+      << std::noshowpos                             //
       << "\\n\\nThis=" << this << "\\nEdges=" << edges_.get()
       << "\\nNumEdges=" << static_cast<int>(num_edges_)
       << "\\nChild=" << child_.get() << "\\n\"";
@@ -514,7 +514,7 @@ std::string Node::DotEdgeString(bool as_opponent) const {
 
 std::string Node::DotGraphString(bool as_opponent) const {
   std::ostringstream oss;
-  std::unordered_set<const Node*> seen;
+  std::unordered_set<const LowNode*> seen;
   std::list<std::pair<const Node*, bool>> unvisited_fifo;
 
   oss << "strict digraph {" << std::endl;
@@ -530,34 +530,89 @@ std::string Node::DotGraphString(bool as_opponent) const {
   oss << "ranksep=" << 4.0f * std::log10(GetN()) << std::endl;
 
   oss << DotEdgeString(!as_opponent) << std::endl;
-  unvisited_fifo.push_back(std::pair(this, as_opponent));
-  seen.insert(this);
+  if (low_node_) {
+    seen.insert(low_node_.get());
+    unvisited_fifo.push_back(std::pair(this, as_opponent));
+  }
 
-  do {
+  while (!unvisited_fifo.empty()) {
     auto [parent_node, parent_as_opponent] = unvisited_fifo.front();
     unvisited_fifo.pop_front();
 
     auto parent_low_node = parent_node->GetLowNode().get();
-    if (parent_low_node) {
-      oss << parent_low_node->DotNodeString() << std::endl;
+    seen.insert(parent_low_node);
+    oss << parent_low_node->DotNodeString() << std::endl;
 
-      for (auto& child_edge : parent_node->Edges()) {
-        auto child = child_edge.node();
-        if (child == nullptr) break;
+    for (auto& child_edge : parent_node->Edges()) {
+      auto child = child_edge.node();
+      if (child == nullptr) break;
 
-        oss << child->DotEdgeString(parent_as_opponent) << std::endl;
-
-        if (seen.find(child) == seen.end()) {
-          unvisited_fifo.push_back(std::pair(child, !parent_as_opponent));
-          seen.insert(child);
-        }
+      oss << child->DotEdgeString(parent_as_opponent) << std::endl;
+      auto child_low_node = child->GetLowNode().get();
+      if (child_low_node != nullptr &&
+          (seen.find(child_low_node) == seen.end())) {
+        seen.insert(child_low_node);
+        unvisited_fifo.push_back(std::pair(child, !parent_as_opponent));
       }
     }
-  } while (!unvisited_fifo.empty());
+  }
 
   oss << "}" << std::endl;
 
   return oss.str();
+}
+
+bool Node::ZeroNInFlight() const {
+  std::unordered_set<const LowNode*> seen;
+  std::list<const Node*> unvisited_fifo;
+  size_t nonzero_node_count = 0;
+  size_t nonzero_low_node_count = 0;
+
+  if (GetNInFlight() > 0) {
+    std::cerr << DebugString() << std::endl;
+    ++nonzero_node_count;
+  }
+  if (low_node_) {
+    seen.insert(low_node_.get());
+    unvisited_fifo.push_back(this);
+  }
+
+  while (!unvisited_fifo.empty()) {
+    auto parent_node = unvisited_fifo.front();
+    unvisited_fifo.pop_front();
+
+    auto parent_low_node = parent_node->GetLowNode().get();
+    if (parent_low_node->GetNInFlight() > 0) {
+      std::cerr << parent_low_node->DebugString() << std::endl;
+      ++nonzero_low_node_count;
+    }
+
+    for (auto& child_edge : parent_node->Edges()) {
+      auto child = child_edge.node();
+      if (child == nullptr) break;
+
+      if (child->GetNInFlight() > 0) {
+        std::cerr << child->DebugString() << std::endl;
+        ++nonzero_node_count;
+      }
+
+      auto child_low_node = child->GetLowNode().get();
+      if (child_low_node != nullptr &&
+          (seen.find(child_low_node) == seen.end())) {
+        seen.insert(child_low_node);
+        unvisited_fifo.push_back(child);
+      }
+    }
+  }
+
+  if (nonzero_node_count + nonzero_low_node_count > 0) {
+    std::cerr << "GetNInFlight() is nonzero on " << nonzero_node_count
+              << " nodes and " << nonzero_low_node_count << " low nodes"
+              << std::endl;
+    return false;
+  }
+
+  return true;
 }
 
 /////////////////////////////////////////////////////////////////////////

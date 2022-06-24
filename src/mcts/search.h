@@ -27,8 +27,6 @@
 
 #pragma once
 
-#include <absl/container/flat_hash_map.h>
-
 #include <array>
 #include <condition_variable>
 #include <functional>
@@ -48,9 +46,6 @@
 #include "utils/numa.h"
 
 namespace lczero {
-
-typedef absl::flat_hash_map<uint64_t, std::weak_ptr<LowNode>>
-    TranspositionTable;
 
 class Search {
  public:
@@ -362,13 +357,24 @@ class SearchWorker {
 
     std::string DebugString() const {
       std::ostringstream oss;
-      oss << "<NodeToProcess> This:" << this << " Collision:" << is_collision
+      oss << "<NodeToProcess> This:" << this << " Depth:" << path.size()
+          << " Node:" << node << " Multivisit:" << multivisit
+          << " Maxvisit:" << maxvisit << " NNQueried:" << nn_queried
+          << " TTHit:" << is_tt_hit << " CacheHit:" << is_cache_hit
+          << " Collision:" << is_collision << " OOO:" << ooo_completed
           << " Path:";
       for (auto it = path.cbegin(); it != path.cend(); ++it) {
         if (it != path.cbegin()) oss << "->";
-        oss << *it;
+        auto n = *it;
+        auto nl = n->GetLowNode();
+        oss << n << ":" << n->GetNInFlight();
+        if (nl) {
+          oss << "(" << nl << ":" << nl->GetNInFlight() << ")";
+        }
       }
-      oss << " --- " << path.back()->DebugString() << std::endl;
+      oss << " --- " << path.back()->DebugString();
+      if (node->GetLowNode())
+        oss << " --- " << node->GetLowNode()->DebugString();
 
       return oss.str();
     }
