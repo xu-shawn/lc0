@@ -1410,7 +1410,8 @@ bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
     return true;
   }
 
-  if (/*repetitions == 1 &&*/ depth - 1 >= 4 && depth - 1 >= cycle_length) {
+  if (/*repetitions == 1 &&*/ depth - 1 >= 4 &&
+      depth - 1 >= history->Last().GetPliesSincePrevRepetition()) {
     cycle_length = history->Last().GetPliesSincePrevRepetition();
     return true;
   }
