@@ -167,8 +167,8 @@ Search::Search(const NodeTree& tree, Network* network,
           params_.GetSyzygyFastPlay(), &tb_hits_, &root_is_in_dtz_)),
       uci_responder_(std::move(uci_responder)) {
   // Evict expired entries from the transposition table.
-  // Garbage collection may lead to expiration at any time so this is not enough
-  // to prevent expired entries later during the search.
+  // Garbage collection may lead to expiration at any time so this is not
+  // enough to prevent expired entries later during the search.
   absl::erase_if(*tt_, [](const auto& item) { return item.second.expired(); });
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
@@ -425,8 +425,12 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
     } else if (n) {
-      auto low_node = n->GetLowNode();
-      if (low_node) v = -low_node->GetOrigQ();
+      auto history = played_history_;
+      if (!is_root) {
+        history.Append(node->GetOwnEdge()->GetMove());
+      }
+      NNCacheLock nneval = GetCachedNNEval(history);
+      if (nneval) v = -nneval->eval->q;
     }
     if (v) {
       print(oss, "(V: ", sign * *v, ") ", 7, 4);
@@ -505,6 +509,12 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
       }
     }
   }
+}
+
+NNCacheLock Search::GetCachedNNEval(const PositionHistory& history) const {
+  const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
+  NNCacheLock nneval(cache_, hash);
+  return nneval;
 }
 
 void Search::MaybeTriggerStop(const IterationStats& stats,
@@ -957,6 +967,10 @@ Search::~Search() {
   {
     SharedMutex::Lock lock(nodes_mutex_);
     CancelSharedCollisions();
+
+#ifndef NDEBUG
+    assert(root_node_->ZeroNInFlight());
+#endif
   }
   LOGFILE << "Search destroyed.";
 }
@@ -1398,7 +1412,8 @@ bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
     return true;
   }
 
-  if (/*repetitions == 1 &&*/ depth - 1 >= 4 && depth - 1 >= cycle_length) {
+  if (params_.GetTwoFoldDraws() && /*repetitions == 1 &&*/ depth - 1 >= 4 &&
+      depth - 1 >= history->Last().GetPliesSincePrevRepetition()) {
     cycle_length = history->Last().GetPliesSincePrevRepetition();
     return true;
   }
@@ -1730,7 +1745,7 @@ void SearchWorker::PickNodesToExtendTask(
         (*visits_to_perform.back())[best_idx] += new_visits;
         cur_limit -= new_visits;
 
-        Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
+        Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
         full_path.push_back(child_node);
         moves_to_path.push_back(best_edge.GetMove());
         if (child_node->TryStartScoreUpdate()) {
@@ -1821,7 +1836,7 @@ void SearchWorker::PickNodesToExtendTask(
           }
           current_path.back() = idx;
           current_path.push_back(-1);
-          node = child.GetOrSpawnNode(/* parent */ node, nullptr);
+          node = child.GetOrSpawnNode(/* parent */ node);
           full_path.push_back(node);
           found_child = true;
           break;
@@ -1890,8 +1905,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
     }
 
     // Handle at least two-fold repetitions as draws according to settings.
-    if (params_.GetTwoFoldDraws() &&
-        IsTwoFold(depth, history, picked_node.cycle_length)) {
+    if (IsTwoFold(depth, history, picked_node.cycle_length)) {
       picked_node.is_repetition = true;
       // Not a terminal, set low node.
     }
@@ -1936,8 +1950,8 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
   // NN evaluation.
   picked_node.hash = history->HashLast(params_.GetCacheHistoryLength() + 1);
   auto tt_iter = search_->tt_->find(picked_node.hash);
+  // Transposition table entry might be expired.
   if (tt_iter != search_->tt_->end()) {
-    assert(!tt_iter->second.expired());
     picked_node.tt_low_node = tt_iter->second.lock();
   }
   if (picked_node.tt_low_node) {
@@ -1954,19 +1968,12 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
 }
 
 // Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation([[maybe_unused]] Node* node,
-                                        bool add_if_cached) {
+bool SearchWorker::AddNodeToComputation([[maybe_unused]] Node* node) {
   const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
-  // If already in cache, no need to do anything.
-  if (add_if_cached) {
-    if (computation_->AddInputByHash(hash)) {
-      return true;
-    }
-  } else {
-    if (search_->cache_->ContainsKey(hash)) {
-      return true;
-    }
+  if (search_->cache_->ContainsKey(hash)) {
+    return true;
   }
+
   computation_->AddInput(hash, history_);
   return false;
 }
@@ -2008,7 +2015,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
   // We are in a leaf, which is not yet being processed.
   if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node, false)) {
+    if (AddNodeToComputation(node)) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always
@@ -2120,7 +2127,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     auto [tt_iter, is_tt_miss] = search_->tt_->insert(
         {node_to_process->hash, node_to_process->tt_low_node});
 
-    assert(!tt_iter->second.expired());
     if (is_tt_miss) {
       assert(!tt_iter->second.expired());
       node_to_process->tt_low_node->SetNNEval(
@@ -2250,7 +2256,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // it the first time that backup sees it.
   if (nl) {
     if (nl->GetN() == 0) {
-      nl->FinalizeScoreUpdate(nl->GetOrigQ(), nl->GetOrigD(), nl->GetOrigM(),
+      nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(),
                               node_to_process.multivisit);
     } else {
       nl->CancelScoreUpdate(node_to_process.multivisit);
@@ -2269,9 +2275,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
                                                     v_delta, d_delta, m_delta,
                                                     update_parent_bounds)) {
     // If there is nothing better, use original NN values adjusted for node.
-    v = -nl->GetOrigQ();
-    d = nl->GetOrigD();
-    m = nl->GetOrigM() + 1;
+    v = -nl->GetWL();
+    d = nl->GetD();
+    m = nl->GetM() + 1;
   }
 
   // Backup V value up to a root. After 1 visit, V = Q.

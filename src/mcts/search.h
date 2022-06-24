@@ -27,15 +27,12 @@
 
 #pragma once
 
-#include <absl/container/flat_hash_map.h>
-
 #include <array>
 #include <condition_variable>
 #include <functional>
 #include <optional>
 #include <shared_mutex>
 #include <thread>
-#include <unordered_map>
 
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
@@ -49,9 +46,6 @@
 #include "utils/numa.h"
 
 namespace lczero {
-
-typedef absl::flat_hash_map<uint64_t, std::weak_ptr<LowNode>>
-    TranspositionTable;
 
 class Search {
  public:
@@ -100,6 +94,9 @@ class Search {
   // If called after GetBestMove, another call to GetBestMove will have results
   // from temperature having been applied again.
   void ResetBestMove();
+
+  // Returns NN eval for a given node from cache, if that node is cached.
+  NNCacheLock GetCachedNNEval(const PositionHistory& history) const;
 
  private:
   // Computes the best move, maybe with temperature (according to the settings).
@@ -302,7 +299,8 @@ class SearchWorker {
     }
     bool IsCollision() const { return is_collision; }
     bool CanEvalOutOfOrder() const {
-      return is_tt_hit || is_cache_hit || node->IsTerminal();
+      return is_tt_hit || is_cache_hit || node->IsTerminal() ||
+             node->GetLowNode();
     }
     bool ShouldAddToInput() const { return nn_queried && !is_tt_hit; }
 
@@ -359,13 +357,24 @@ class SearchWorker {
 
     std::string DebugString() const {
       std::ostringstream oss;
-      oss << "<NodeToProcess> This:" << this << " Collision:" << is_collision
+      oss << "<NodeToProcess> This:" << this << " Depth:" << path.size()
+          << " Node:" << node << " Multivisit:" << multivisit
+          << " Maxvisit:" << maxvisit << " NNQueried:" << nn_queried
+          << " TTHit:" << is_tt_hit << " CacheHit:" << is_cache_hit
+          << " Collision:" << is_collision << " OOO:" << ooo_completed
           << " Path:";
       for (auto it = path.cbegin(); it != path.cend(); ++it) {
         if (it != path.cbegin()) oss << "->";
-        oss << *it;
+        auto n = *it;
+        auto nl = n->GetLowNode();
+        oss << n << ":" << n->GetNInFlight();
+        if (nl) {
+          oss << "(" << nl << ":" << nl->GetNInFlight() << ")";
+        }
       }
-      oss << " --- " << path.back()->DebugString() << std::endl;
+      oss << " --- " << path.back()->DebugString();
+      if (node->GetLowNode())
+        oss << " --- " << node->GetLowNode()->DebugString();
 
       return oss.str();
     }
@@ -436,7 +445,7 @@ class SearchWorker {
   };
 
   NodeToProcess PickNodeToExtend(int collision_limit);
-  bool AddNodeToComputation(Node* node, bool add_if_cached);
+  bool AddNodeToComputation(Node* node);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   // Adjust parameters for updating node @n and its parent low node if node is
   // terminal or its child low node is a transposition. Also update bounds and

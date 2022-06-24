@@ -114,7 +114,8 @@ void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
 void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
                               Eval best_eval, Eval played_eval,
                               bool best_is_proven, Move best_move,
-                              Move played_move, float softmax_temp) {
+                              Move played_move, const NNCacheLock& nneval,
+                              float softmax_temp) {
   V6TrainingData result;
   const auto& position = history.Last();
 
@@ -147,17 +148,19 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   // Compute Kullback-Leibler divergence in nats (between policy and visits).
   float kld_sum = 0;
   std::vector<float> intermediate;
-  auto low_node = node->GetLowNode();
-  if (low_node) {
-    auto edges = low_node->GetEdges();
+  if (nneval) {
+    // The cache stores policies in GenerateLegalMoves() order.
+    auto legal_moves = history.Last().GetBoard().GenerateLegalMoves();
     for (const auto& child : node->Edges()) {
       auto move = child.edge()->GetMove();
-      for (size_t i = 0; i < node->GetNumEdges(); i++) {
-        if (move == edges[i].GetMove()) {
-          intermediate.emplace_back(edges[i].GetP());
+      float p = 0;
+      for (size_t i = 0; i < legal_moves.size(); i++) {
+        if (move == legal_moves[i]) {
+          p = nneval->eval->edges[i].GetP();
           break;
         }
       }
+      intermediate.emplace_back(p);
     }
   }
   float total = 0.0;
@@ -165,7 +168,7 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   for (const auto& child : node->Edges()) {
     auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
-    if (low_node) {
+    if (nneval) {
       // Undo any softmax temperature in the cached data.
       float P = std::pow(*it, softmax_temp);
       if (fracv > 0) {
@@ -176,7 +179,7 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
     }
     result.probabilities[nn_idx] = fracv;
   }
-  if (low_node) {
+  if (nneval) {
     // Add small epsilon for backward compatibility with earlier value of 0.
     auto epsilon = std::numeric_limits<float>::min();
     kld_sum = std::max(kld_sum + std::log(total), 0.0f) + epsilon;
@@ -226,10 +229,10 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   result.result_d = 1;
 
   Eval orig_eval;
-  if (low_node) {
-    orig_eval.wl = low_node->GetOrigQ();
-    orig_eval.d = low_node->GetOrigD();
-    orig_eval.ml = low_node->GetOrigM();
+  if (nneval) {
+    orig_eval.wl = nneval->eval->q;
+    orig_eval.d = nneval->eval->d;
+    orig_eval.ml = nneval->eval->m;
   } else {
     orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
     orig_eval.d = std::numeric_limits<float>::quiet_NaN();

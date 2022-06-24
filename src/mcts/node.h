@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <absl/container/flat_hash_map.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -155,16 +157,18 @@ class LowNode {
   LowNode()
       : terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {}
+        upper_bound_(GameResult::WHITE_WON),
+        is_transposition(false) {}
   // Init from from another low node, but use it for NNEval only.
   LowNode(const LowNode& p)
-      : orig_q_(p.orig_q_),
-        orig_d_(p.orig_d_),
-        orig_m_(p.orig_m_),
+      : wl_(p.wl_),
+        d_(p.d_),
+        m_(p.m_),
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {
+        upper_bound_(GameResult::WHITE_WON),
+        is_transposition(false) {
     assert(p.edges_);
     edges_ = std::make_unique<Edge[]>(num_edges_);
     std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
@@ -174,7 +178,8 @@ class LowNode {
       : num_edges_(moves.size()),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {
+        upper_bound_(GameResult::WHITE_WON),
+        is_transposition(false) {
     edges_ = Edge::FromMovelist(moves);
   }
   // Init @edges_ with moves from @moves and 0 policy.
@@ -183,15 +188,14 @@ class LowNode {
       : num_edges_(moves.size()),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {
+        upper_bound_(GameResult::WHITE_WON),
+        is_transposition(false) {
     edges_ = Edge::FromMovelist(moves);
     child_ = std::make_unique<Node>(this, index);
   }
 
   void SetNNEval(const NNEval* eval) {
-    assert(!edges_ || (orig_q_ == eval->q && orig_d_ == eval->d &&
-                       orig_m_ == eval->m && num_edges_ == eval->num_edges));
-    if (edges_) return;
+    assert(!edges_);
     assert(n_ == 0);
     assert(child_ == nullptr);
 
@@ -199,9 +203,9 @@ class LowNode {
     std::memcpy(edges_.get(), eval->edges.get(),
                 eval->num_edges * sizeof(Edge));
 
-    orig_q_ = eval->q;
-    orig_d_ = eval->d;
-    orig_m_ = eval->m;
+    wl_ = eval->q;
+    d_ = eval->d;
+    m_ = eval->m;
 
     num_edges_ = eval->num_edges;
   }
@@ -217,15 +221,6 @@ class LowNode {
   uint32_t GetChildrenVisits() const { return n_ - 1; }
   // Returns n + n_in_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
-
-  void SetOrig(float q, float d, float m) {
-    orig_q_ = q;
-    orig_d_ = d;
-    orig_m_ = m;
-  }
-  float GetOrigQ() const { return orig_q_; }
-  float GetOrigD() const { return orig_d_; }
-  float GetOrigM() const { return orig_m_; }
 
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
@@ -292,11 +287,12 @@ class LowNode {
   // Add new parent with @n_in_flight visits.
   void AddParent(int n_in_flight) {
     ++num_parents_;
+    is_transposition |= num_parents_ > 1;
     IncrementNInFlight(n_in_flight);
   }
   // Remove parent and its first visit.
   void RemoveParent() { --num_parents_; }
-  bool IsTransposition() const { return num_parents_ > 1; }
+  bool IsTransposition() const { return is_transposition; }
 
  private:
   // To minimize the number of padding bytes and to avoid having unnecessary
@@ -318,10 +314,6 @@ class LowNode {
   std::unique_ptr<Node> child_;
 
   // 4 byte fields.
-  // Original evaluation (from NN).
-  float orig_q_ = 0.0f;
-  float orig_d_ = 0.0f;
-  float orig_m_ = 0.0f;
   // Averaged draw probability. Works similarly to WL, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
@@ -345,18 +337,12 @@ class LowNode {
   // Best and worst result for this node.
   GameResult lower_bound_ : 2;
   GameResult upper_bound_ : 2;
+  // Low node is a transposition (for ever).
+  bool is_transposition : 1;
 };
 
-#if 0  // TODO: Fix this when LowNode is somewhat stable again.
-// A basic sanity check. This must be adjusted when LowNode members are
-// adjusted.
-#if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(LowNode) == 48,
-              "Unexpected size of LowNode for 32bit compile");
-#else
-static_assert(sizeof(LowNode) == 56, "Unexpected size of LowNode");
-#endif
-#endif
+// Check that LowNode still fits into an expected cache line size.
+static_assert(sizeof(LowNode) <= 64, "LowNode is too large");
 
 class EdgeAndNode;
 template <bool is_const>
@@ -541,6 +527,10 @@ class Node {
   // dot format.
   std::string DotGraphString(bool as_opponent = false) const;
 
+  // Returns true if graph under this node has every n_in_flight_ == 0 and
+  // prints offending nodes and low nodes and stats to cerr otherwise.
+  bool ZeroNInFlight() const;
+
   void SortEdges() const {
     assert(low_node_);
     low_node_->SortEdges();
@@ -561,9 +551,9 @@ class Node {
   // 8 byte fields.
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored. This is from the perspective
-  // of the player who "just" moved to reach this position, rather than from the
-  // perspective of the player-to-move for the position.
-  // WL stands for "W minus L". Is equal to Q if draw score is 0.
+  // of the player who "just" moved to reach this position, rather than from
+  // the perspective of the player-to-move for the position. WL stands for "W
+  // minus L". Is equal to Q if draw score is 0.
   double wl_ = 0.0f;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
@@ -591,21 +581,16 @@ class Node {
 
   // 1 byte fields.
   // Bit fields using parts of uint8_t fields initialized in the constructor.
-  // Whether or not this node end game (with a winning of either sides or draw).
+  // Whether or not this node end game (with a winning of either sides or
+  // draw).
   Terminal terminal_type_ : 2;
   // Best and worst result for this node.
   GameResult lower_bound_ : 2;
   GameResult upper_bound_ : 2;
 };
 
-#if 0  // TODO: Fix this when Node is somewhat stable again.
-// A basic sanity check. This must be adjusted when Node members are adjusted.
-#if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 44, "Unexpected size of Node for 32bit compile");
-#else
-static_assert(sizeof(Node) == 64, "Unexpected size of Node");
-#endif
-#endif
+// Check that Node still fits into an expected cache line size.
+static_assert(sizeof(Node) <= 64, "Node is too large");
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
 // to them.
@@ -738,8 +723,7 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator& operator*() { return *this; }
 
   // If there is node, return it. Otherwise spawn a new one and return it.
-  Node* GetOrSpawnNode(Node* parent,
-                       std::unique_ptr<Node>* node_source = nullptr) {
+  Node* GetOrSpawnNode(Node* parent) {
     if (node_) return node_;  // If there is already a node, return it.
     Actualize();              // But maybe other thread already did that.
     if (node_) return node_;  // If it did, return.
@@ -756,12 +740,7 @@ class Edge_Iterator : public EdgeAndNode {
     //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
     //    tmp -> Node(idx_.7)
     auto low_parent = parent->GetLowNode().get();
-    if (node_source && *node_source) {
-      (*node_source)->Reinit(low_parent, current_idx_);
-      *node_ptr_ = std::move(*node_source);
-    } else {
-      *node_ptr_ = std::make_unique<Node>(low_parent, current_idx_);
-    }
+    *node_ptr_ = std::make_unique<Node>(low_parent, current_idx_);
     // 3. Attach stored pointer back to a list:
     //    node_ptr_ ->
     //         &Node(idx_.3).sibling_ -> Node(idx_.5).sibling_ -> Node(idx_.7)
@@ -873,6 +852,10 @@ inline VisitedNode_Iterator<true> Node::VisitedNodes() const {
 inline VisitedNode_Iterator<false> Node::VisitedNodes() {
   return {*this, GetChild()};
 }
+
+// Transposition Table type for holding references to all low nodes in DAG.
+typedef absl::flat_hash_map<uint64_t, std::weak_ptr<LowNode>>
+    TranspositionTable;
 
 class NodeTree {
  public:
