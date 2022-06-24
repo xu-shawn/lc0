@@ -2268,8 +2268,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     d = 1.0f;
     m = node_to_process.cycle_length + 1;
     n_to_fix = n->GetN();
-    v_delta = 0.0f - n->GetWL();
-    d_delta = 1.0f - n->GetD();
+    v_delta = v - n->GetWL();
+    d_delta = d - n->GetD();
     m_delta = m - n->GetM();
   } else if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix,
                                                     v_delta, d_delta, m_delta,
