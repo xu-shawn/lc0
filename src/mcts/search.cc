@@ -1421,24 +1421,9 @@ bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
   return false;
 }
 
-bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
-                             const std::vector<Move>& moves_to_node,
-                             int& cycle_length) {
-  assert((size_t)depth == moves_to_node.size() + 1);
-
-  // Initialize position sequence with pre-move position.
-  history->Trim(search_->played_history_.GetLength());
-  for (size_t i = 0; i < moves_to_node.size(); i++) {
-    history->Append(moves_to_node[i]);
-  }
-
-  return IsTwoFold(depth, history, cycle_length);
-}
-
 // Check if PickNodesToExtendTask should stop picking at this @node.
 bool SearchWorker::ShouldStopPickingHere(Node* node, int depth,
                                          PositionHistory* history,
-                                         const std::vector<Move>& moves_to_node,
                                          bool& is_repetition,
                                          int& cycle_length) {
   constexpr double wl_diff_limit = 0.01f;
@@ -1448,7 +1433,7 @@ bool SearchWorker::ShouldStopPickingHere(Node* node, int depth,
   is_repetition = false;
   if (node->GetN() == 0 || node->IsTerminal()) return true;
 
-  is_repetition = IsTwoFold(depth, history, moves_to_node, cycle_length);
+  is_repetition = IsTwoFold(depth, history, cycle_length);
   if (is_repetition) return true;
 
   // Check if Node and LowNode differ significantly.
@@ -1545,6 +1530,12 @@ void SearchWorker::PickNodesToExtendTask(
   bool is_repetition;
   int cycle_length;
 
+  // Get history in sync with position after moves_to_path.
+  history.Trim(search_->played_history_.GetLength());
+  for (size_t i = 0; i < moves_to_path.size(); i++) {
+    history.Append(moves_to_path[i]);
+  }
+
   current_path.push_back(-1);
   while (current_path.size() > 0) {
     assert(full_path.size() >= path.size());
@@ -1561,8 +1552,8 @@ void SearchWorker::PickNodesToExtendTask(
       // a collision of appropriate size and pop current_path.
       size_t depth = current_path.size() + base_depth;
       assert(full_path.size() == depth);
-      if (ShouldStopPickingHere(node, depth, &history, moves_to_path,
-                                is_repetition, cycle_length)) {
+      if (ShouldStopPickingHere(node, depth, &history, is_repetition,
+                                cycle_length)) {
         if (is_root_node) {
           // Root node is special - since its not reached from anywhere else, so
           // it needs its own logic. Still need to create the collision to
@@ -1748,13 +1739,14 @@ void SearchWorker::PickNodesToExtendTask(
         Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
         full_path.push_back(child_node);
         moves_to_path.push_back(best_edge.GetMove());
+        history.Append(best_edge.GetMove());
         if (child_node->TryStartScoreUpdate()) {
           current_nstarted[best_idx]++;
           new_visits -= 1;
           size_t depth = current_path.size() + 1 + base_depth;
           assert(full_path.size() == depth);
-          if (ShouldStopPickingHere(child_node, depth, &history, moves_to_path,
-                                    is_repetition, cycle_length)) {
+          if (ShouldStopPickingHere(child_node, depth, &history, is_repetition,
+                                    cycle_length)) {
             // Reduce 1 for the visits_to_perform to ensure the collision
             // created doesn't include this visit.
             (*visits_to_perform.back())[best_idx] -= 1;
@@ -1774,6 +1766,7 @@ void SearchWorker::PickNodesToExtendTask(
             (*visits_to_perform.back())[best_idx] > 0) {
           vtp_last_filled.back() = best_idx;
         }
+        history.Pop();
         moves_to_path.pop_back();
         full_path.pop_back();
       }
@@ -1791,12 +1784,13 @@ void SearchWorker::PickNodesToExtendTask(
                     params_.GetMinimumRemainingWorkSizeForPicking()) {
           Node* child_node = cur_iters[i].GetOrSpawnNode(/* parent */ node);
           moves_to_path.push_back(cur_iters[i].GetMove());
+          history.Append(cur_iters[i].GetMove());
           full_path.push_back(child_node);
           size_t depth = current_path.size() + base_depth + 1;
           assert(full_path.size() == depth);
           // Don't split if not expanded or terminal.
-          if (!ShouldStopPickingHere(child_node, depth, &history, moves_to_path,
-                                     is_repetition, cycle_length)) {
+          if (!ShouldStopPickingHere(child_node, depth, &history, is_repetition,
+                                     cycle_length)) {
             bool passed = false;
             {
               // TODO: Reinstate this lock when the whole function lock is gone.
@@ -1817,6 +1811,7 @@ void SearchWorker::PickNodesToExtendTask(
             }
           }
           full_path.pop_back();
+          history.Pop();
           moves_to_path.pop_back();
         }
       }
@@ -1831,8 +1826,11 @@ void SearchWorker::PickNodesToExtendTask(
         if (idx > min_idx && (*visits_to_perform.back())[idx] > 0) {
           if (moves_to_path.size() != current_path.size() + base_depth) {
             moves_to_path.push_back(child.GetMove());
+            history.Append(child.GetMove());
           } else {
             moves_to_path.back() = child.GetMove();
+            history.Pop();
+            history.Append(child.GetMove());
           }
           current_path.back() = idx;
           current_path.push_back(-1);
@@ -1848,6 +1846,7 @@ void SearchWorker::PickNodesToExtendTask(
       full_path.pop_back();
       node = (full_path.size() > 0) ? full_path.back() : nullptr;
       if (!moves_to_path.empty()) {
+        history.Pop();
         moves_to_path.pop_back();
       }
       current_path.pop_back();
