@@ -1401,20 +1401,20 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
 
 // Depth starts with 1 at root, so number of plies in PV is depth - 1.
 // Use plies since first repetition as moves left; exact if forced draw.
-bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
-                             int& cycle_length) {
-  const auto repetitions = history->Last().GetRepetitions();
+bool SearchWorker::IsTwoFold(int depth, const Position& position,
+                             int* cycle_length) {
+  const auto repetitions = position.GetRepetitions();
 
   if (repetitions == 0) return false;
 
   if (repetitions >= 2) {
-    cycle_length = 0;
+    *cycle_length = 0;
     return true;
   }
 
   if (params_.GetTwoFoldDraws() && /*repetitions == 1 &&*/ depth - 1 >= 4 &&
-      depth - 1 >= history->Last().GetPliesSincePrevRepetition()) {
-    cycle_length = history->Last().GetPliesSincePrevRepetition();
+      depth - 1 >= position.GetPliesSincePrevRepetition()) {
+    *cycle_length = position.GetPliesSincePrevRepetition();
     return true;
   }
 
@@ -1423,18 +1423,18 @@ bool SearchWorker::IsTwoFold(int depth, PositionHistory* history,
 
 // Check if PickNodesToExtendTask should stop picking at this @node.
 bool SearchWorker::ShouldStopPickingHere(Node* node, int depth,
-                                         PositionHistory* history,
-                                         bool& is_repetition,
-                                         int& cycle_length) {
+                                         const PositionHistory& history,
+                                         bool* is_repetition,
+                                         int* cycle_length) {
   constexpr double wl_diff_limit = 0.01f;
   constexpr float d_diff_limit = 0.01f;
   constexpr float m_diff_limit = 2.0f;
 
-  is_repetition = false;
+  *is_repetition = false;
   if (node->GetN() == 0 || node->IsTerminal()) return true;
 
-  is_repetition = IsTwoFold(depth, history, cycle_length);
-  if (is_repetition) return true;
+  *is_repetition = IsTwoFold(depth, history.Last(), cycle_length);
+  if (*is_repetition) return true;
 
   // Check if Node and LowNode differ significantly.
   auto low_node = node->GetLowNode().get();
@@ -1552,8 +1552,8 @@ void SearchWorker::PickNodesToExtendTask(
       // a collision of appropriate size and pop current_path.
       size_t depth = current_path.size() + base_depth;
       assert(full_path.size() == depth);
-      if (ShouldStopPickingHere(node, depth, &history, is_repetition,
-                                cycle_length)) {
+      if (ShouldStopPickingHere(node, depth, history, &is_repetition,
+                                &cycle_length)) {
         if (is_root_node) {
           // Root node is special - since its not reached from anywhere else, so
           // it needs its own logic. Still need to create the collision to
@@ -1745,8 +1745,8 @@ void SearchWorker::PickNodesToExtendTask(
           new_visits -= 1;
           size_t depth = current_path.size() + 1 + base_depth;
           assert(full_path.size() == depth);
-          if (ShouldStopPickingHere(child_node, depth, &history, is_repetition,
-                                    cycle_length)) {
+          if (ShouldStopPickingHere(child_node, depth, history, &is_repetition,
+                                    &cycle_length)) {
             // Reduce 1 for the visits_to_perform to ensure the collision
             // created doesn't include this visit.
             (*visits_to_perform.back())[best_idx] -= 1;
@@ -1789,8 +1789,8 @@ void SearchWorker::PickNodesToExtendTask(
           size_t depth = current_path.size() + base_depth + 1;
           assert(full_path.size() == depth);
           // Don't split if not expanded or terminal.
-          if (!ShouldStopPickingHere(child_node, depth, &history, is_repetition,
-                                     cycle_length)) {
+          if (!ShouldStopPickingHere(child_node, depth, history, &is_repetition,
+                                     &cycle_length)) {
             bool passed = false;
             {
               // TODO: Reinstate this lock when the whole function lock is gone.
@@ -1904,7 +1904,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
     }
 
     // Handle at least two-fold repetitions as draws according to settings.
-    if (IsTwoFold(depth, history, picked_node.cycle_length)) {
+    if (IsTwoFold(depth, history->Last(), &picked_node.cycle_length)) {
       picked_node.is_repetition = true;
       // Not a terminal, set low node.
     }

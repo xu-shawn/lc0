@@ -468,14 +468,15 @@ class SearchWorker {
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
 
-  // Check if the situation described by @depth and complete @history is at
+  // Check if the situation described by @depth and history @position is at
   // least a two-fold and return true and set @cycle_length, if it is.
-  bool IsTwoFold(int depth, PositionHistory* history, int& cycle_length);
+  bool IsTwoFold(int depth, const Position& position, int* cycle_length);
   // Check if there is a reason to stop picking and pick @node. Uses
   // IsTwoFold to check for at least two-fold and sets @is_repetition and
   // @cycle_length accordingly.
-  bool ShouldStopPickingHere(Node* node, int depth, PositionHistory* history,
-                             bool& is_repetition, int& cycle_length);
+  bool ShouldStopPickingHere(Node* node, int depth,
+                             const PositionHistory& history,
+                             bool* is_repetition, int* cycle_length);
   void ProcessPickedTask(int batch_start, int batch_end,
                          TaskWorkspace* workspace);
   void ExtendNode(NodeToProcess& picked_node, PositionHistory* history);
