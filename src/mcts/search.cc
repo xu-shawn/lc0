@@ -1041,8 +1041,7 @@ void SearchWorker::RunTasks(int tid) {
           break;
         }
         case PickTask::kProcessing: {
-          ProcessPickedTask(task->start_idx, task->end_idx,
-                            &(task_workspaces_[tid]));
+          ProcessPickedTask(task->start_idx, task->end_idx);
           break;
         }
       }
@@ -1258,8 +1257,7 @@ void SearchWorker::GatherMinibatch2() {
           }
         }
       }
-      ProcessPickedTask(ppt_start, static_cast<int>(minibatch_.size()),
-                        &main_workspace_);
+      ProcessPickedTask(ppt_start, static_cast<int>(minibatch_.size()));
       if (needs_wait) {
         WaitForTasks();
       }
@@ -1332,11 +1330,7 @@ void SearchWorker::GatherMinibatch2() {
   }
 }
 
-void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
-                                     TaskWorkspace* workspace) {
-  auto& history = workspace->history;
-  history = search_->played_history_;
-
+void SearchWorker::ProcessPickedTask(int start_idx, int end_idx) {
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
     if (picked_node.IsCollision()) continue;
@@ -1345,7 +1339,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     // visited this node before and can't extend it.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode(picked_node, &history);
+      ExtendNode(picked_node);
     }
 
     picked_node.ooo_completed =
@@ -1531,7 +1525,6 @@ void SearchWorker::PickNodesToExtendTask(
   int cycle_length;
 
   // Get history in sync with position after moves_to_path.
-  history.Trim(search_->played_history_.GetLength());
   for (size_t i = 0; i < moves_to_path.size(); i++) {
     history.Append(moves_to_path[i]);
   }
@@ -1753,7 +1746,7 @@ void SearchWorker::PickNodesToExtendTask(
             receiver->push_back(NodeToProcess::Visit(
                 full_path, depth, is_repetition, cycle_length));
             completed_visits++;
-            receiver->back().moves_to_visit = moves_to_path;
+            receiver->back().history = history;
           } else {
             child_node->IncrementNInFlight(new_visits);
             current_nstarted[best_idx] += new_visits;
@@ -1857,24 +1850,20 @@ void SearchWorker::PickNodesToExtendTask(
   }
 }
 
-void SearchWorker::ExtendNode(NodeToProcess& picked_node,
-                              PositionHistory* history) {
+void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
   const auto path = picked_node.path;
   const auto depth = picked_node.depth;
-  const auto moves_to_node = picked_node.moves_to_visit;
   assert(!path.back()->GetLowNode());
   assert(path.size() == (size_t)depth);
-  assert((size_t)depth == moves_to_node.size() + 1);
 
-  // Initialize position sequence with pre-move position.
-  history->Trim(search_->played_history_.GetLength());
-  for (size_t i = 0; i < moves_to_node.size(); i++) {
-    history->Append(moves_to_node[i]);
+  if (picked_node.history.GetLength() == 0) {
+    picked_node.history = search_->played_history_;
   }
+  const PositionHistory& history = picked_node.history;
 
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
-  const auto& board = history->Last().GetBoard();
+  const auto& board = history.Last().GetBoard();
   std::vector<Move> legal_moves = board.GenerateLegalMoves();
 
   // Check whether it's a draw/lose by position. Importantly, we must check
@@ -1898,13 +1887,13 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
       return;
     }
 
-    if (history->Last().GetRule50Ply() >= 100) {
+    if (history.Last().GetRule50Ply() >= 100) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
 
     // Handle at least two-fold repetitions as draws according to settings.
-    if (IsTwoFold(depth, history->Last(), &picked_node.cycle_length)) {
+    if (IsTwoFold(depth, history.Last(), &picked_node.cycle_length)) {
       picked_node.is_repetition = true;
       // Not a terminal, set low node.
     }
@@ -1912,12 +1901,12 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
     // position.
     else if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
              board.castlings().no_legal_castle() &&
-             history->Last().GetRule50Ply() == 0 &&
+             history.Last().GetRule50Ply() == 0 &&
              (board.ours() | board.theirs()).count() <=
                  search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
       const WDLScore wdl =
-          search_->syzygy_tb_->probe_wdl(history->Last(), &state);
+          search_->syzygy_tb_->probe_wdl(history.Last(), &state);
       // Only fail state means the WDL is wrong, probe_wdl may produce correct
       // result with a stat other than OK.
       if (state != FAIL) {
@@ -1947,7 +1936,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
 
   // Check the transposition table first and NN cache second before asking for
   // NN evaluation.
-  picked_node.hash = history->HashLast(params_.GetCacheHistoryLength() + 1);
+  picked_node.hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
   auto tt_iter = search_->tt_->find(picked_node.hash);
   // Transposition table entry might be expired.
   if (tt_iter != search_->tt_->end()) {
@@ -1959,10 +1948,6 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
   } else {
     picked_node.lock = NNCacheLock(search_->cache_, picked_node.hash);
     picked_node.is_cache_hit = picked_node.lock;
-
-    if (!picked_node.is_cache_hit) {
-      picked_node.history = *history;
-    }
   }
 }
 

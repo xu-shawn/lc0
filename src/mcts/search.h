@@ -319,11 +319,6 @@ class SearchWorker {
     bool is_cache_hit = false;
     bool is_collision = false;
 
-    // Details only populated in the multigather path.
-
-    // Only populated for visits,
-    std::vector<Move> moves_to_visit;
-
     // Details that are filled in as we go.
     uint64_t hash;
     std::shared_ptr<LowNode> tt_low_node;
@@ -477,9 +472,8 @@ class SearchWorker {
   bool ShouldStopPickingHere(Node* node, int depth,
                              const PositionHistory& history,
                              bool* is_repetition, int* cycle_length);
-  void ProcessPickedTask(int batch_start, int batch_end,
-                         TaskWorkspace* workspace);
-  void ExtendNode(NodeToProcess& picked_node, PositionHistory* history);
+  void ProcessPickedTask(int batch_start, int batch_end);
+  void ExtendNode(NodeToProcess& picked_node);
   template <typename Computation>
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              const Computation& computation,
