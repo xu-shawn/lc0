@@ -418,7 +418,7 @@ class SearchWorker {
     Node* start;
     int base_depth;
     int collision_limit;
-    std::vector<Move> moves_to_base;
+    PositionHistory history;
     std::vector<NodeToProcess> results;
 
     // Task type post gather processing.
@@ -428,13 +428,15 @@ class SearchWorker {
     bool complete = false;
 
     PickTask(const std::vector<Node*>& start_path, uint16_t depth,
-             const std::vector<Move>& base_moves, int collision_limit)
+             const PositionHistory& in_history, int collision_limit)
         : task_type(kGathering),
           start_path(start_path),
           start(start_path.back()),
           base_depth(depth),
-          collision_limit(collision_limit),
-          moves_to_base(base_moves) {}
+          collision_limit(collision_limit) {
+      history.Reserve(30);
+      history = in_history;
+    }
     PickTask(int start_idx, int end_idx)
         : task_type(kProcessing), start_idx(start_idx), end_idx(end_idx) {}
   };
@@ -459,7 +461,7 @@ class SearchWorker {
   void PickNodesToExtend(int collision_limit);
   void PickNodesToExtendTask(const std::vector<Node*>& path,
                              int collision_limit, int base_depth,
-                             const std::vector<Move>& moves_to_base,
+                             PositionHistory& history,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
 

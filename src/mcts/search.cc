@@ -1036,7 +1036,7 @@ void SearchWorker::RunTasks(int tid) {
       switch (task->task_type) {
         case PickTask::kGathering: {
           PickNodesToExtendTask(task->start_path, task->base_depth,
-                                task->collision_limit, task->moves_to_base,
+                                task->collision_limit, task->history,
                                 &(task->results), &(task_workspaces_[tid]));
           break;
         }
@@ -1381,8 +1381,9 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   // Since the tasks perform work which assumes they have the lock, even though
   // actually this thread does.
   SharedMutex::Lock lock(search_->nodes_mutex_);
+  main_workspace_.history = search_->played_history_;
   PickNodesToExtendTask({search_->root_node_}, 0, collision_limit,
-                        empty_movelist, &minibatch_, &main_workspace_);
+                        main_workspace_.history, &minibatch_, &main_workspace_);
 
   WaitForTasks();
   for (int i = 0; i < static_cast<int>(picking_tasks_.size()); i++) {
@@ -1463,8 +1464,7 @@ bool SearchWorker::ShouldStopPickingHere(Node* node, int depth,
 
 void SearchWorker::PickNodesToExtendTask(
     const std::vector<Node*>& path, int base_depth, int collision_limit,
-    const std::vector<Move>& moves_to_base,
-    std::vector<NodeToProcess>* receiver,
+    PositionHistory& history, std::vector<NodeToProcess>* receiver,
     TaskWorkspace* workspace) NO_THREAD_SAFETY_ANALYSIS {
   // TODO: Find a safe way to make helper threads work in parallel without
   // excessive locking.
@@ -1483,14 +1483,10 @@ void SearchWorker::PickNodesToExtendTask(
   vtp_last_filled.clear();
   auto& current_path = workspace->current_path;
   current_path.clear();
-  auto& moves_to_path = workspace->moves_to_path;
-  moves_to_path = moves_to_base;
   auto& full_path = workspace->full_path;
   full_path = path;
   assert(full_path.size() > 0);
   Node* node = full_path.back();
-  auto& history = workspace->history;
-  history = search_->played_history_;
   // Sometimes receiver is reused, othertimes not, so only jump start if small.
   if (receiver->capacity() < 30) {
     receiver->reserve(receiver->size() + 30);
@@ -1524,10 +1520,7 @@ void SearchWorker::PickNodesToExtendTask(
   bool is_repetition;
   int cycle_length;
 
-  // Get history in sync with position after moves_to_path.
-  for (size_t i = 0; i < moves_to_path.size(); i++) {
-    history.Append(moves_to_path[i]);
-  }
+  const int played_history_length = search_->played_history_.GetLength();
 
   current_path.push_back(-1);
   while (current_path.size() > 0) {
@@ -1731,7 +1724,6 @@ void SearchWorker::PickNodesToExtendTask(
 
         Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
         full_path.push_back(child_node);
-        moves_to_path.push_back(best_edge.GetMove());
         history.Append(best_edge.GetMove());
         if (child_node->TryStartScoreUpdate()) {
           current_nstarted[best_idx]++;
@@ -1746,6 +1738,8 @@ void SearchWorker::PickNodesToExtendTask(
             receiver->push_back(NodeToProcess::Visit(
                 full_path, depth, is_repetition, cycle_length));
             completed_visits++;
+            receiver->back().history.Trim(0);
+            receiver->back().history.Reserve(30);
             receiver->back().history = history;
           } else {
             child_node->IncrementNInFlight(new_visits);
@@ -1760,7 +1754,6 @@ void SearchWorker::PickNodesToExtendTask(
           vtp_last_filled.back() = best_idx;
         }
         history.Pop();
-        moves_to_path.pop_back();
         full_path.pop_back();
       }
       is_root_node = false;
@@ -1776,7 +1769,6 @@ void SearchWorker::PickNodesToExtendTask(
                 collision_limit -
                     params_.GetMinimumRemainingWorkSizeForPicking()) {
           Node* child_node = cur_iters[i].GetOrSpawnNode(/* parent */ node);
-          moves_to_path.push_back(cur_iters[i].GetMove());
           history.Append(cur_iters[i].GetMove());
           full_path.push_back(child_node);
           size_t depth = current_path.size() + base_depth + 1;
@@ -1791,7 +1783,7 @@ void SearchWorker::PickNodesToExtendTask(
               // Mutex::Lock lock(picking_tasks_mutex_);
               // Ensure not to exceed size of reservation.
               if (picking_tasks_.size() < MAX_TASKS) {
-                picking_tasks_.emplace_back(full_path, depth - 1, moves_to_path,
+                picking_tasks_.emplace_back(full_path, depth - 1, history,
                                             child_limit);
                 task_count_.fetch_add(1, std::memory_order_acq_rel);
                 task_added_.notify_all();
@@ -1805,7 +1797,6 @@ void SearchWorker::PickNodesToExtendTask(
           }
           full_path.pop_back();
           history.Pop();
-          moves_to_path.pop_back();
         }
       }
       // Fall through to select the first child.
@@ -1817,11 +1808,10 @@ void SearchWorker::PickNodesToExtendTask(
       for (auto& child : node->Edges()) {
         idx++;
         if (idx > min_idx && (*visits_to_perform.back())[idx] > 0) {
-          if (moves_to_path.size() != current_path.size() + base_depth) {
-            moves_to_path.push_back(child.GetMove());
+          if (static_cast<size_t>(history.GetLength()) !=
+              current_path.size() + base_depth + played_history_length) {
             history.Append(child.GetMove());
           } else {
-            moves_to_path.back() = child.GetMove();
             history.Pop();
             history.Append(child.GetMove());
           }
@@ -1838,9 +1828,8 @@ void SearchWorker::PickNodesToExtendTask(
     if (!found_child) {
       full_path.pop_back();
       node = (full_path.size() > 0) ? full_path.back() : nullptr;
-      if (!moves_to_path.empty()) {
+      if (history.GetLength() > played_history_length) {
         history.Pop();
-        moves_to_path.pop_back();
       }
       current_path.pop_back();
       vtp_buffer.push_back(std::move(visits_to_perform.back()));
