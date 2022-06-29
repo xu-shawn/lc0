@@ -1382,8 +1382,8 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   // actually this thread does.
   SharedMutex::Lock lock(search_->nodes_mutex_);
   history_.Trim(search_->played_history_.GetLength());
-  PickNodesToExtendTask({search_->root_node_}, 0, collision_limit,
-                        history_, &minibatch_, &main_workspace_);
+  PickNodesToExtendTask({search_->root_node_}, 0, collision_limit, history_,
+                        &minibatch_, &main_workspace_);
 
   WaitForTasks();
   for (int i = 0; i < static_cast<int>(picking_tasks_.size()); i++) {
@@ -1738,8 +1738,6 @@ void SearchWorker::PickNodesToExtendTask(
             receiver->push_back(NodeToProcess::Visit(
                 full_path, depth, is_repetition, cycle_length));
             completed_visits++;
-            receiver->back().history.Trim(0);
-            receiver->back().history.Reserve(30);
             receiver->back().history = history;
           } else {
             child_node->IncrementNInFlight(new_visits);

@@ -212,11 +212,10 @@ class SearchWorker {
  public:
   SearchWorker(Search* search, const SearchParams& params, int id)
       : search_(search),
+        history_(search_->played_history_),
         params_(params),
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
                             pblczero::NetworkFormat::MOVES_LEFT_NONE) {
-    history_.Reserve(30);
-    history_ = search_->played_history_;
     Numa::BindThread(id);
     for (int i = 0; i < params.GetTaskWorkersPerSearchWorker(); i++) {
       task_workspaces_.emplace_back();
@@ -432,10 +431,8 @@ class SearchWorker {
           start_path(start_path),
           start(start_path.back()),
           base_depth(depth),
-          collision_limit(collision_limit) {
-      history.Reserve(30);
-      history = in_history;
-    }
+          collision_limit(collision_limit),
+          history(in_history) {}
     PickTask(int start_idx, int end_idx)
         : task_type(kProcessing), start_idx(start_idx), end_idx(end_idx) {}
   };
