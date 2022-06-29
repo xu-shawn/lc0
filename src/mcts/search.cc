@@ -1381,9 +1381,9 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   // Since the tasks perform work which assumes they have the lock, even though
   // actually this thread does.
   SharedMutex::Lock lock(search_->nodes_mutex_);
-  main_workspace_.history = search_->played_history_;
+  history_.Trim(search_->played_history_.GetLength());
   PickNodesToExtendTask({search_->root_node_}, 0, collision_limit,
-                        main_workspace_.history, &minibatch_, &main_workspace_);
+                        history_, &minibatch_, &main_workspace_);
 
   WaitForTasks();
   for (int i = 0; i < static_cast<int>(picking_tasks_.size()); i++) {

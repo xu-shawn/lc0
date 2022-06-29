@@ -212,10 +212,11 @@ class SearchWorker {
  public:
   SearchWorker(Search* search, const SearchParams& params, int id)
       : search_(search),
-        history_(search_->played_history_),
         params_(params),
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
                             pblczero::NetworkFormat::MOVES_LEFT_NONE) {
+    history_.Reserve(30);
+    history_ = search_->played_history_;
     Numa::BindThread(id);
     for (int i = 0; i < params.GetTaskWorkersPerSearchWorker(); i++) {
       task_workspaces_.emplace_back();
@@ -397,7 +398,6 @@ class SearchWorker {
     std::vector<int> current_path;
     std::vector<Move> moves_to_path;
     std::vector<Node*> full_path;
-    PositionHistory history;
     TaskWorkspace() {
       vtp_buffer.reserve(30);
       visits_to_perform.reserve(30);
@@ -405,7 +405,6 @@ class SearchWorker {
       current_path.reserve(30);
       moves_to_path.reserve(30);
       full_path.reserve(30);
-      history.Reserve(30);
     }
   };
 
