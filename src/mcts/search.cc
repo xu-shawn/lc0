@@ -1470,7 +1470,8 @@ void SearchWorker::PickNodesToExtendTask(
   // excessive locking.
   Mutex::Lock lock(picking_tasks_mutex_);
   assert(path.size() == (size_t)base_depth + 1);
-  assert((size_t)base_depth == moves_to_base.size());
+  assert(base_depth ==
+         history.GetLength() - search_->played_history_.GetLength());
 
   // TODO: Bring back pre-cached nodes created outside locks in a way that works
   // with tasks.
