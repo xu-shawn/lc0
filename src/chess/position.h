@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <string>
 
 #include "chess/board.h"

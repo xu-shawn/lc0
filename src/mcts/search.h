@@ -331,19 +331,14 @@ class SearchWorker {
     int cycle_length = 0;
 
     static NodeToProcess Collision(const std::vector<Node*>& path,
-                                   uint16_t depth, int collision_count) {
-      return NodeToProcess(path, depth, true, collision_count, 0, false, 0);
-    }
-    static NodeToProcess Collision(const std::vector<Node*>& path,
                                    uint16_t depth, int collision_count,
                                    int max_count) {
-      return NodeToProcess(path, depth, true, collision_count, max_count, false,
-                           0);
+      return NodeToProcess(path, depth, collision_count, max_count);
     }
     static NodeToProcess Visit(const std::vector<Node*>& path, uint16_t depth,
-                               bool is_repetition, int cycle_length) {
-      return NodeToProcess(path, depth, false, 1, 0, is_repetition,
-                           cycle_length);
+                               bool is_repetition, int cycle_length,
+                               const PositionHistory& history) {
+      return NodeToProcess(path, depth, is_repetition, cycle_length, history);
     }
 
     // Method to allow NodeToProcess to conform as a 'Computation'. Only safe
@@ -376,14 +371,25 @@ class SearchWorker {
 
    private:
     NodeToProcess(const std::vector<Node*>& path, uint16_t depth,
-                  bool is_collision, int multivisit, int max_count,
-                  bool is_repetition, int cycle_length)
+                  int multivisit, int max_count)
         : path(path),
           node(path.back()),
           multivisit(multivisit),
           maxvisit(max_count),
           depth(depth),
-          is_collision(is_collision),
+          is_collision(true),
+          is_repetition(false),
+          cycle_length(0) {}
+    NodeToProcess(const std::vector<Node*>& path, uint16_t depth,
+                  bool is_repetition, int cycle_length,
+                  const PositionHistory& in_history)
+        : path(path),
+          node(path.back()),
+          multivisit(1),
+          maxvisit(0),
+          depth(depth),
+          is_collision(false),
+          history(in_history),
           is_repetition(is_repetition),
           cycle_length(cycle_length) {}
   };

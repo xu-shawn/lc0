@@ -1546,8 +1546,8 @@ void SearchWorker::PickNodesToExtendTask(
           // ensure the outer gather loop gives up.
           if (node->TryStartScoreUpdate()) {
             cur_limit -= 1;
-            minibatch_.push_back(
-                NodeToProcess::Visit(full_path, depth, false, 0));
+            minibatch_.push_back(NodeToProcess::Visit(
+                full_path, depth, false, 0, search_->played_history_));
             completed_visits++;
           }
         }
@@ -1736,9 +1736,8 @@ void SearchWorker::PickNodesToExtendTask(
             // created doesn't include this visit.
             (*visits_to_perform.back())[best_idx] -= 1;
             receiver->push_back(NodeToProcess::Visit(
-                full_path, depth, is_repetition, cycle_length));
+                full_path, depth, is_repetition, cycle_length, history));
             completed_visits++;
-            receiver->back().history = history;
           } else {
             child_node->IncrementNInFlight(new_visits);
             current_nstarted[best_idx] += new_visits;
@@ -1843,9 +1842,6 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
   assert(!path.back()->GetLowNode());
   assert(path.size() == (size_t)depth);
 
-  if (picked_node.history.GetLength() == 0) {
-    picked_node.history = search_->played_history_;
-  }
   const PositionHistory& history = picked_node.history;
 
   // We don't need the mutex because other threads will see that N=0 and
