@@ -1035,9 +1035,9 @@ void SearchWorker::RunTasks(int tid) {
     if (task != nullptr) {
       switch (task->task_type) {
         case PickTask::kGathering: {
-          PickNodesToExtendTask(task->start_path, task->base_depth,
-                                task->collision_limit, task->history,
-                                &(task->results), &(task_workspaces_[tid]));
+          PickNodesToExtendTask(task->start_path, task->collision_limit,
+                                task->history, &(task->results),
+                                &(task_workspaces_[tid]));
           break;
         }
         case PickTask::kProcessing: {
@@ -1382,7 +1382,7 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   // actually this thread does.
   SharedMutex::Lock lock(search_->nodes_mutex_);
   history_.Trim(search_->played_history_.GetLength());
-  PickNodesToExtendTask({search_->root_node_}, 0, collision_limit, history_,
+  PickNodesToExtendTask({search_->root_node_}, collision_limit, history_,
                         &minibatch_, &main_workspace_);
 
   WaitForTasks();
@@ -1456,15 +1456,14 @@ bool SearchWorker::ShouldStopPickingHere(Node* node, int depth,
 }
 
 void SearchWorker::PickNodesToExtendTask(
-    const std::vector<Node*>& path, int base_depth, int collision_limit,
+    const std::vector<Node*>& path, int collision_limit,
     PositionHistory& history, std::vector<NodeToProcess>* receiver,
     TaskWorkspace* workspace) NO_THREAD_SAFETY_ANALYSIS {
   // TODO: Find a safe way to make helper threads work in parallel without
   // excessive locking.
   Mutex::Lock lock(picking_tasks_mutex_);
-  assert(path.size() == (size_t)base_depth + 1);
-  assert(base_depth ==
-         history.GetLength() - search_->played_history_.GetLength());
+  assert(path.size() == (size_t)history.GetLength() -
+                            search_->played_history_.GetLength() + 1);
 
   // TODO: Bring back pre-cached nodes created outside locks in a way that works
   // with tasks.
@@ -1529,9 +1528,8 @@ void SearchWorker::PickNodesToExtendTask(
       }
       // First check if node is terminal or not-expanded.  If either than create
       // a collision of appropriate size and pop current_path.
-      size_t depth = current_path.size() + base_depth;
-      assert(full_path.size() == depth);
-      if (ShouldStopPickingHere(node, depth, history, &is_repetition)) {
+      if (ShouldStopPickingHere(node, full_path.size(), history,
+                                &is_repetition)) {
         if (is_root_node) {
           // Root node is special - since its not reached from anywhere else, so
           // it needs its own logic. Still need to create the collision to
@@ -1539,21 +1537,19 @@ void SearchWorker::PickNodesToExtendTask(
           if (node->TryStartScoreUpdate()) {
             cur_limit -= 1;
             minibatch_.push_back(NodeToProcess::Visit(
-                full_path, depth, false, search_->played_history_));
+                full_path, false, search_->played_history_));
             completed_visits++;
           }
         }
         // Visits are created elsewhere, just need the collisions here.
         if (cur_limit > 0) {
           int max_count = 0;
-          if (cur_limit == collision_limit && base_depth == 0 &&
+          if (cur_limit == collision_limit && path.size() == 1 &&
               max_limit > cur_limit) {
             max_count = max_limit;
           }
-          receiver->push_back(NodeToProcess::Collision(
-              full_path,
-              static_cast<uint16_t>(current_path.size() + base_depth),
-              cur_limit, max_count));
+          receiver->push_back(
+              NodeToProcess::Collision(full_path, cur_limit, max_count));
           completed_visits += cur_limit;
         }
         full_path.pop_back();
@@ -1600,9 +1596,8 @@ void SearchWorker::PickNodesToExtendTask(
       }
       // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
       // the weirdness.
-      const float draw_score = ((current_path.size() + base_depth) % 2 == 0)
-                                   ? odd_draw_score
-                                   : even_draw_score;
+      const float draw_score =
+          (full_path.size() % 2 == 0) ? odd_draw_score : even_draw_score;
       m_evaluator.SetParent(node);
       float visited_pol = 0.0f;
       for (Node* child : node->VisitedNodes()) {
@@ -1720,15 +1715,13 @@ void SearchWorker::PickNodesToExtendTask(
         if (child_node->TryStartScoreUpdate()) {
           current_nstarted[best_idx]++;
           new_visits -= 1;
-          size_t depth = current_path.size() + 1 + base_depth;
-          assert(full_path.size() == depth);
-          if (ShouldStopPickingHere(child_node, depth, history,
+          if (ShouldStopPickingHere(child_node, full_path.size(), history,
                                     &is_repetition)) {
             // Reduce 1 for the visits_to_perform to ensure the collision
             // created doesn't include this visit.
             (*visits_to_perform.back())[best_idx] -= 1;
             receiver->push_back(
-                NodeToProcess::Visit(full_path, depth, is_repetition, history));
+                NodeToProcess::Visit(full_path, is_repetition, history));
             completed_visits++;
           } else {
             child_node->IncrementNInFlight(new_visits);
@@ -1760,10 +1753,8 @@ void SearchWorker::PickNodesToExtendTask(
           Node* child_node = cur_iters[i].GetOrSpawnNode(/* parent */ node);
           history.Append(cur_iters[i].GetMove());
           full_path.push_back(child_node);
-          size_t depth = current_path.size() + base_depth + 1;
-          assert(full_path.size() == depth);
           // Don't split if not expanded or terminal.
-          if (!ShouldStopPickingHere(child_node, depth, history,
+          if (!ShouldStopPickingHere(child_node, full_path.size(), history,
                                      &is_repetition)) {
             bool passed = false;
             {
@@ -1772,8 +1763,7 @@ void SearchWorker::PickNodesToExtendTask(
               // Mutex::Lock lock(picking_tasks_mutex_);
               // Ensure not to exceed size of reservation.
               if (picking_tasks_.size() < MAX_TASKS) {
-                picking_tasks_.emplace_back(full_path, depth - 1, history,
-                                            child_limit);
+                picking_tasks_.emplace_back(full_path, history, child_limit);
                 task_count_.fetch_add(1, std::memory_order_acq_rel);
                 task_added_.notify_all();
                 passed = true;
@@ -1798,7 +1788,7 @@ void SearchWorker::PickNodesToExtendTask(
         idx++;
         if (idx > min_idx && (*visits_to_perform.back())[idx] > 0) {
           if (static_cast<size_t>(history.GetLength()) !=
-              current_path.size() + base_depth + played_history_length) {
+              current_path.size() + path.size() - 1 + played_history_length) {
             history.Append(child.GetMove());
           } else {
             history.Pop();
@@ -1830,9 +1820,7 @@ void SearchWorker::PickNodesToExtendTask(
 
 void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
   const auto path = picked_node.path;
-  const auto depth = picked_node.depth;
   assert(!path.back()->GetLowNode());
-  assert(path.size() == (size_t)depth);
 
   const PositionHistory& history = picked_node.history;
 
@@ -1868,7 +1856,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
     }
 
     // Handle at least two-fold repetitions as draws according to settings.
-    if (IsTwoFold(depth, history.Last())) {
+    if (IsTwoFold(path.size(), history.Last())) {
       picked_node.is_repetition = true;
       // Not a terminal, set low node.
     }
@@ -2307,8 +2295,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
   }
   search_->total_playouts_ += node_to_process.multivisit;
-  search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
-  search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
+  search_->cum_depth_ +=
+      node_to_process.path.size() * node_to_process.multivisit;
+  search_->max_depth_ =
+      std::max(search_->max_depth_, (uint16_t)node_to_process.path.size());
 }
 
 bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,

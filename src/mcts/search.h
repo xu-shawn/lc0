@@ -313,7 +313,6 @@ class SearchWorker {
     // limit, multivist could be increased to this value without additional
     // change in outcome of next selection.
     int maxvisit = 0;
-    uint16_t depth;
     bool nn_queried = false;
     bool is_tt_hit = false;
     bool is_cache_hit = false;
@@ -330,14 +329,13 @@ class SearchWorker {
     bool is_repetition = false;
 
     static NodeToProcess Collision(const std::vector<Node*>& path,
-                                   uint16_t depth, int collision_count,
-                                   int max_count) {
-      return NodeToProcess(path, depth, collision_count, max_count);
+                                   int collision_count, int max_count) {
+      return NodeToProcess(path, collision_count, max_count);
     }
-    static NodeToProcess Visit(const std::vector<Node*>& path, uint16_t depth,
+    static NodeToProcess Visit(const std::vector<Node*>& path,
                                bool is_repetition,
                                const PositionHistory& history) {
-      return NodeToProcess(path, depth, is_repetition, history);
+      return NodeToProcess(path, is_repetition, history);
     }
 
     // Method to allow NodeToProcess to conform as a 'Computation'. Only safe
@@ -369,22 +367,19 @@ class SearchWorker {
     }
 
    private:
-    NodeToProcess(const std::vector<Node*>& path, uint16_t depth,
-                  int multivisit, int max_count)
+    NodeToProcess(const std::vector<Node*>& path, int multivisit, int max_count)
         : path(path),
           node(path.back()),
           multivisit(multivisit),
           maxvisit(max_count),
-          depth(depth),
           is_collision(true),
           is_repetition(false) {}
-    NodeToProcess(const std::vector<Node*>& path, uint16_t depth,
-                  bool is_repetition, const PositionHistory& in_history)
+    NodeToProcess(const std::vector<Node*>& path, bool is_repetition,
+                  const PositionHistory& in_history)
         : path(path),
           node(path.back()),
           multivisit(1),
           maxvisit(0),
-          depth(depth),
           is_collision(false),
           history(in_history),
           is_repetition(is_repetition) {}
@@ -414,7 +409,6 @@ class SearchWorker {
     // For task type gathering.
     std::vector<Node*> start_path;
     Node* start;
-    int base_depth;
     int collision_limit;
     PositionHistory history;
     std::vector<NodeToProcess> results;
@@ -425,12 +419,11 @@ class SearchWorker {
 
     bool complete = false;
 
-    PickTask(const std::vector<Node*>& start_path, uint16_t depth,
+    PickTask(const std::vector<Node*>& start_path,
              const PositionHistory& in_history, int collision_limit)
         : task_type(kGathering),
           start_path(start_path),
           start(start_path.back()),
-          base_depth(depth),
           collision_limit(collision_limit),
           history(in_history) {}
     PickTask(int start_idx, int end_idx)
@@ -456,8 +449,7 @@ class SearchWorker {
                       float* d_delta, float* m_delta) const;
   void PickNodesToExtend(int collision_limit);
   void PickNodesToExtendTask(const std::vector<Node*>& path,
-                             int collision_limit, int base_depth,
-                             PositionHistory& history,
+                             int collision_limit, PositionHistory& history,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
 
