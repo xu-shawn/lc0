@@ -397,14 +397,12 @@ class SearchWorker {
     std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
     std::vector<int> vtp_last_filled;
     std::vector<int> current_path;
-    std::vector<Move> moves_to_path;
     std::vector<Node*> full_path;
     TaskWorkspace() {
       vtp_buffer.reserve(30);
       visits_to_perform.reserve(30);
       vtp_last_filled.reserve(30);
       current_path.reserve(30);
-      moves_to_path.reserve(30);
       full_path.reserve(30);
     }
   };
