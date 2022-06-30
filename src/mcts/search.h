@@ -328,7 +328,6 @@ class SearchWorker {
 
     // Repetition draws.
     bool is_repetition = false;
-    int cycle_length = 0;
 
     static NodeToProcess Collision(const std::vector<Node*>& path,
                                    uint16_t depth, int collision_count,
@@ -336,9 +335,9 @@ class SearchWorker {
       return NodeToProcess(path, depth, collision_count, max_count);
     }
     static NodeToProcess Visit(const std::vector<Node*>& path, uint16_t depth,
-                               bool is_repetition, int cycle_length,
+                               bool is_repetition,
                                const PositionHistory& history) {
-      return NodeToProcess(path, depth, is_repetition, cycle_length, history);
+      return NodeToProcess(path, depth, is_repetition, history);
     }
 
     // Method to allow NodeToProcess to conform as a 'Computation'. Only safe
@@ -378,11 +377,9 @@ class SearchWorker {
           maxvisit(max_count),
           depth(depth),
           is_collision(true),
-          is_repetition(false),
-          cycle_length(0) {}
+          is_repetition(false) {}
     NodeToProcess(const std::vector<Node*>& path, uint16_t depth,
-                  bool is_repetition, int cycle_length,
-                  const PositionHistory& in_history)
+                  bool is_repetition, const PositionHistory& in_history)
         : path(path),
           node(path.back()),
           multivisit(1),
@@ -390,8 +387,7 @@ class SearchWorker {
           depth(depth),
           is_collision(false),
           history(in_history),
-          is_repetition(is_repetition),
-          cycle_length(cycle_length) {}
+          is_repetition(is_repetition) {}
   };
 
   // Holds per task worker scratch data
@@ -469,13 +465,13 @@ class SearchWorker {
 
   // Check if the situation described by @depth and history @position is at
   // least a two-fold and return true and set @cycle_length, if it is.
-  bool IsTwoFold(int depth, const Position& position, int* cycle_length);
+  bool IsTwoFold(int depth, const Position& position);
   // Check if there is a reason to stop picking and pick @node. Uses
   // IsTwoFold to check for at least two-fold and sets @is_repetition and
   // @cycle_length accordingly.
   bool ShouldStopPickingHere(Node* node, int depth,
                              const PositionHistory& history,
-                             bool* is_repetition, int* cycle_length);
+                             bool* is_repetition);
   void ProcessPickedTask(int batch_start, int batch_end);
   void ExtendNode(NodeToProcess& picked_node);
   template <typename Computation>
