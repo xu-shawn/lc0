@@ -1416,6 +1416,7 @@ bool SearchWorker::IsTwoFold(int depth, const Position& position) {
 // Check if PickNodesToExtendTask should stop picking at this @node.
 bool SearchWorker::ShouldStopPickingHere(Node* node, int depth,
                                          const PositionHistory& history,
+                                         bool is_root_node,
                                          bool* is_repetition) {
   constexpr double wl_diff_limit = 0.01f;
   constexpr float d_diff_limit = 0.01f;
@@ -1423,6 +1424,10 @@ bool SearchWorker::ShouldStopPickingHere(Node* node, int depth,
 
   *is_repetition = false;
   if (node->GetN() == 0 || node->IsTerminal()) return true;
+
+  // Only stop at root when there is no other option.
+  assert(!is_root_node || (node == search_->root_node_ && depth == 1));
+  if (is_root_node) return false;
 
   *is_repetition = IsTwoFold(depth, history.Last());
   if (*is_repetition) return true;
@@ -1531,7 +1536,7 @@ void SearchWorker::PickNodesToExtendTask(
       }
       // First check if node is terminal or not-expanded.  If either than create
       // a collision of appropriate size and pop current_path.
-      if (ShouldStopPickingHere(node, full_path.size(), history,
+      if (ShouldStopPickingHere(node, full_path.size(), history, is_root_node,
                                 &is_repetition)) {
         if (is_root_node) {
           // Root node is special - since its not reached from anywhere else, so
@@ -1540,7 +1545,7 @@ void SearchWorker::PickNodesToExtendTask(
           if (node->TryStartScoreUpdate()) {
             cur_limit -= 1;
             minibatch_.push_back(NodeToProcess::Visit(
-                full_path, false, search_->played_history_));
+                full_path, is_repetition, search_->played_history_));
             completed_visits++;
           }
         }
@@ -1719,7 +1724,7 @@ void SearchWorker::PickNodesToExtendTask(
           current_nstarted[best_idx]++;
           new_visits -= 1;
           if (ShouldStopPickingHere(child_node, full_path.size(), history,
-                                    &is_repetition)) {
+                                    false, &is_repetition)) {
             // Reduce 1 for the visits_to_perform to ensure the collision
             // created doesn't include this visit.
             (*visits_to_perform.back())[best_idx] -= 1;
@@ -1758,7 +1763,7 @@ void SearchWorker::PickNodesToExtendTask(
           full_path.push_back(child_node);
           // Don't split if not expanded or terminal.
           if (!ShouldStopPickingHere(child_node, full_path.size(), history,
-                                     &is_repetition)) {
+                                     false, &is_repetition)) {
             bool passed = false;
             {
               // TODO: Reinstate this lock when the whole function lock is gone.

@@ -460,7 +460,7 @@ class SearchWorker {
   // IsTwoFold to check for at least two-fold and sets @is_repetition and
   // @cycle_length accordingly.
   bool ShouldStopPickingHere(Node* node, int depth,
-                             const PositionHistory& history,
+                             const PositionHistory& history, bool is_root_node,
                              bool* is_repetition);
   void ProcessPickedTask(int batch_start, int batch_end);
   void ExtendNode(NodeToProcess& picked_node);
