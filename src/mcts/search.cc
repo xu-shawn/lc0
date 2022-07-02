@@ -282,10 +282,13 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     if (per_pv_counters) uci_info.nodes = edge.GetN();
     bool flip = played_history_.IsBlackToMove();
     int depth = 0;
+    auto history = played_history_;
     for (auto iter = edge; iter;
          iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
       uci_info.pv.push_back(iter.GetMove(flip));
-      if (!iter.node()) break;  // Last edge was dangling, cannot continue.
+      history.Append(iter.GetMove());
+      // Last edge was dangling or a draw by repetition, cannot continue.
+      if (!iter.node() || history.Last().GetRepetitions() >= 2) break;
       depth += 1;
     }
   }
