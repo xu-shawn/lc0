@@ -958,7 +958,7 @@ void Search::CancelSharedCollisions() REQUIRES(nodes_mutex_) {
   for (auto& entry : shared_collisions_) {
     auto path = entry.first;
     for (auto it = ++(path.crbegin()); it != path.crend(); ++it) {
-      it->first->CancelScoreUpdate(entry.second);
+      std::get<0>(*it)->CancelScoreUpdate(entry.second);
     }
   }
   shared_collisions_.clear();
@@ -1283,7 +1283,7 @@ void SearchWorker::GatherMinibatch2() {
         if (minibatch_[i].IsCollision()) {
           for (auto it = ++(minibatch_[i].path.crbegin());
                it != minibatch_[i].path.crend(); ++it) {
-            it->first->CancelScoreUpdate(minibatch_[i].multivisit);
+            std::get<0>(*it)->CancelScoreUpdate(minibatch_[i].multivisit);
           }
           minibatch_.erase(minibatch_.begin() + i);
         } else if (minibatch_[i].ooo_completed) {
@@ -1323,7 +1323,7 @@ void SearchWorker::GatherMinibatch2() {
           picked_node.multivisit += extra;
           for (auto it = ++(picked_node.path.crbegin());
                it != picked_node.path.crend(); ++it) {
-            it->first->IncrementNInFlight(extra);
+            std::get<0>(*it)->IncrementNInFlight(extra);
           }
         }
         if ((collisions_left -= picked_node.multivisit) <= 0) return;
@@ -1385,7 +1385,7 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   // actually this thread does.
   SharedMutex::Lock lock(search_->nodes_mutex_);
   history_.Trim(search_->played_history_.GetLength());
-  PickNodesToExtendTask({std::pair(search_->root_node_, false)},
+  PickNodesToExtendTask({std::make_tuple(search_->root_node_, 0, 0)},
                         collision_limit, history_, &minibatch_,
                         &main_workspace_);
 
@@ -1399,17 +1399,21 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
 }
 
 // Depth starts with 0 at root, so number of plies in PV equals depth.
-int SearchWorker::GetRepetitions(int depth, const Position& position) {
+std::pair<int, int> SearchWorker::GetRepetitions(int depth,
+                                                 const Position& position) {
   const auto repetitions = position.GetRepetitions();
 
-  if (repetitions != 1) return repetitions;
+  if (repetitions == 0) return {0, 0};
 
+  if (repetitions >= 2) return {repetitions, 0};
+
+  const auto plies = position.GetPliesSincePrevRepetition();
   if (params_.GetTwoFoldDraws() && /*repetitions == 1 &&*/ depth >= 4 &&
-      depth >= position.GetPliesSincePrevRepetition()) {
-    return 1;
+      depth >= plies) {
+    return {1, plies};
   }
 
-  return 0;
+  return {0, 0};
 }
 
 // Check if PickNodesToExtendTask should stop picking at this @node.
@@ -1483,7 +1487,7 @@ void SearchWorker::PickNodesToExtendTask(
   auto& full_path = workspace->full_path;
   full_path = path;
   assert(full_path.size() > 0);
-  auto [node, repetitions] = full_path.back();
+  auto [node, repetitions, moves_left] = full_path.back();
   // Sometimes receiver is reused, othertimes not, so only jump start if small.
   if (receiver->capacity() < 30) {
     receiver->reserve(receiver->size() + 30);
@@ -1555,7 +1559,7 @@ void SearchWorker::PickNodesToExtendTask(
         }
         full_path.pop_back();
         if (full_path.size() > 0) {
-          std::tie(node, repetitions) = full_path.back();
+          std::tie(node, repetitions, moves_left) = full_path.back();
         } else {
           node = nullptr;
           repetitions = 0;
@@ -1717,9 +1721,9 @@ void SearchWorker::PickNodesToExtendTask(
 
         Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
         history.Append(best_edge.GetMove());
-        auto child_repetitions =
+        auto [child_repetitions, child_moves_left] =
             GetRepetitions(full_path.size(), history.Last());
-        full_path.push_back({child_node, child_repetitions});
+        full_path.push_back({child_node, child_repetitions, child_moves_left});
         if (child_node->TryStartScoreUpdate()) {
           current_nstarted[best_idx]++;
           new_visits -= 1;
@@ -1758,9 +1762,10 @@ void SearchWorker::PickNodesToExtendTask(
                     params_.GetMinimumRemainingWorkSizeForPicking()) {
           Node* child_node = cur_iters[i].GetOrSpawnNode(/* parent */ node);
           history.Append(cur_iters[i].GetMove());
-          auto child_repetitions =
+          auto [child_repetitions, child_moves_left] =
               GetRepetitions(full_path.size(), history.Last());
-          full_path.push_back({child_node, child_repetitions});
+          full_path.push_back(
+              {child_node, child_repetitions, child_moves_left});
           // Don't split if not expanded or terminal.
           if (!ShouldStopPickingHere(child_node, false, child_repetitions)) {
             bool passed = false;
@@ -1804,8 +1809,9 @@ void SearchWorker::PickNodesToExtendTask(
           current_path.back() = idx;
           current_path.push_back(-1);
           node = child.GetOrSpawnNode(/* parent */ node);
-          repetitions = GetRepetitions(full_path.size(), history.Last());
-          full_path.push_back({node, repetitions});
+          std::tie(repetitions, moves_left) =
+              GetRepetitions(full_path.size(), history.Last());
+          full_path.push_back({node, repetitions, moves_left});
           found_child = true;
           break;
         }
@@ -1815,7 +1821,7 @@ void SearchWorker::PickNodesToExtendTask(
     if (!found_child) {
       full_path.pop_back();
       if (full_path.size() > 0) {
-        std::tie(node, repetitions) = full_path.back();
+        std::tie(node, repetitions, moves_left) = full_path.back();
       } else {
         node = nullptr;
         repetitions = 0;
@@ -1833,7 +1839,7 @@ void SearchWorker::PickNodesToExtendTask(
 
 void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
   const auto path = picked_node.path;
-  assert(!path.back().first->GetLowNode());
+  assert(!std::get<0>(path.back())->GetLowNode());
 
   const PositionHistory& history = picked_node.history;
 
@@ -1888,7 +1894,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
         // TB nodes don't have NN evaluation, assign M from parent node.
         float m = 0.0f;
         if (path.size() > 1) {
-          auto parent = path[path.size() - 2].first;
+          auto parent = std::get<0>(path[path.size() - 2]);
           m = std::max(0.0f, parent->GetM() - 1.0f);
         }
         // If the colors seem backwards, check the checkmate check above.
@@ -2198,7 +2204,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     return;
   }
 
-  auto n = node_to_process.node;
+  auto path = node_to_process.path;
+  auto [n, nr, nm] = path.back();
   // For the first visit to a terminal, maybe update parent bounds too.
   auto update_parent_bounds =
       params_.GetStickyEndgames() && n->IsTerminal() && !n->GetN();
@@ -2222,12 +2229,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
   }
 
-  if (node_to_process.repetitions > 0) {
+  if (nr > 0) {
     v = 0.0f;
     d = 1.0f;
-    m = node_to_process.repetitions >= 2
-            ? 1
-            : node_to_process.history.Last().GetPliesSincePrevRepetition() + 1;
+    m = nm + 1;
   } else if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix,
                                                     v_delta, d_delta, m_delta,
                                                     update_parent_bounds)) {
@@ -2238,10 +2243,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
   }
 
   // Backup V value up to a root. After 1 visit, V = Q.
-  auto path = node_to_process.path;
   for (auto it = path.crbegin(); it != path.crend();
        /* ++it in the body */) {
-    n = it->first;
+    n = std::get<0>(*it);
 
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
     if (n_to_fix > 0 && !n->IsTerminal()) {
@@ -2252,7 +2256,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // Nothing left to do without ancestors to update.
     if (++it == path.crend()) break;
-    auto p = it->first;
+    auto p = std::get<0>(*it);
     auto pl = p->GetLowNode();
 
     assert(!p->IsTerminal() ||

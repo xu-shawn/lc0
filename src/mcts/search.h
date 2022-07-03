@@ -33,6 +33,7 @@
 #include <optional>
 #include <shared_mutex>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include "chess/callbacks.h"
@@ -48,7 +49,7 @@
 
 namespace lczero {
 
-typedef std::vector<std::pair<Node*, int>> BackupPath;
+typedef std::vector<std::tuple<Node*, int, int>> BackupPath;
 
 class Search {
  public:
@@ -354,14 +355,14 @@ class SearchWorker {
           << " Repetitions:" << repetitions << " Path:";
       for (auto it = path.cbegin(); it != path.cend(); ++it) {
         if (it != path.cbegin()) oss << "->";
-        auto n = it->first;
+        auto n = std::get<0>(*it);
         auto nl = n->GetLowNode();
         oss << n << ":" << n->GetNInFlight();
         if (nl) {
           oss << "(" << nl << ":" << nl->GetNInFlight() << ")";
         }
       }
-      oss << " --- " << path.back().first->DebugString();
+      oss << " --- " << std::get<0>(path.back())->DebugString();
       if (node->GetLowNode())
         oss << " --- " << node->GetLowNode()->DebugString();
 
@@ -371,19 +372,19 @@ class SearchWorker {
    private:
     NodeToProcess(const BackupPath& path, int multivisit, int max_count)
         : path(path),
-          node(path.back().first),
+          node(std::get<0>(path.back())),
           multivisit(multivisit),
           maxvisit(max_count),
           is_collision(true),
           repetitions(0) {}
     NodeToProcess(const BackupPath& path, const PositionHistory& in_history)
         : path(path),
-          node(path.back().first),
+          node(std::get<0>(path.back())),
           multivisit(1),
           maxvisit(0),
           is_collision(false),
           history(in_history),
-          repetitions(path.back().second) {}
+          repetitions(std::get<1>(path.back())) {}
   };
 
   // Holds per task worker scratch data
@@ -424,7 +425,7 @@ class SearchWorker {
              int collision_limit)
         : task_type(kGathering),
           start_path(start_path),
-          start(start_path.back().first),
+          start(std::get<0>(start_path.back())),
           collision_limit(collision_limit),
           history(in_history) {}
     PickTask(int start_idx, int end_idx)
@@ -456,8 +457,8 @@ class SearchWorker {
 
   // Check if the situation described by @depth under root and @position is a
   // safe two-fold or a draw by repetition and return the number of safe
-  // repetitions.
-  int GetRepetitions(int depth, const Position& position);
+  // repetitions and moves_left.
+  std::pair<int, int> GetRepetitions(int depth, const Position& position);
   // Check if there is a reason to stop picking and pick @node.
   bool ShouldStopPickingHere(Node* node, bool is_root_node, int repetitions);
   void ProcessPickedTask(int batch_start, int batch_end);
