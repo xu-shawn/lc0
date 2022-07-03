@@ -1464,8 +1464,8 @@ bool SearchWorker::ShouldStopPickingHere(Node* node, int depth,
 }
 
 void SearchWorker::PickNodesToExtendTask(
-    const std::vector<Node*>& path, int collision_limit,
-    PositionHistory& history, std::vector<NodeToProcess>* receiver,
+    const BackupPath& path, int collision_limit, PositionHistory& history,
+    std::vector<NodeToProcess>* receiver,
     TaskWorkspace* workspace) NO_THREAD_SAFETY_ANALYSIS {
   // TODO: Find a safe way to make helper threads work in parallel without
   // excessive locking.

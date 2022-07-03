@@ -33,6 +33,7 @@
 #include <optional>
 #include <shared_mutex>
 #include <thread>
+#include <vector>
 
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
@@ -46,6 +47,8 @@
 #include "utils/numa.h"
 
 namespace lczero {
+
+typedef std::vector<Node*> BackupPath;
 
 class Search {
  public:
@@ -197,7 +200,7 @@ class Search {
   std::atomic<int> backend_waiting_counter_{0};
   std::atomic<int> thread_count_{0};
 
-  std::vector<std::pair<const std::vector<Node*>, int>> shared_collisions_
+  std::vector<std::pair<const BackupPath, int>> shared_collisions_
       GUARDED_BY(nodes_mutex_);
 
   std::unique_ptr<UciResponder> uci_responder_;
@@ -305,7 +308,7 @@ class SearchWorker {
     bool ShouldAddToInput() const { return nn_queried && !is_tt_hit; }
 
     // The path to the node to extend.
-    std::vector<Node*> path;
+    BackupPath path;
     // The node to extend.
     Node* node;
     int multivisit = 0;
@@ -328,12 +331,11 @@ class SearchWorker {
     // Repetition draws.
     bool is_repetition = false;
 
-    static NodeToProcess Collision(const std::vector<Node*>& path,
-                                   int collision_count, int max_count) {
+    static NodeToProcess Collision(const BackupPath& path, int collision_count,
+                                   int max_count) {
       return NodeToProcess(path, collision_count, max_count);
     }
-    static NodeToProcess Visit(const std::vector<Node*>& path,
-                               bool is_repetition,
+    static NodeToProcess Visit(const BackupPath& path, bool is_repetition,
                                const PositionHistory& history) {
       return NodeToProcess(path, is_repetition, history);
     }
@@ -367,14 +369,14 @@ class SearchWorker {
     }
 
    private:
-    NodeToProcess(const std::vector<Node*>& path, int multivisit, int max_count)
+    NodeToProcess(const BackupPath& path, int multivisit, int max_count)
         : path(path),
           node(path.back()),
           multivisit(multivisit),
           maxvisit(max_count),
           is_collision(true),
           is_repetition(false) {}
-    NodeToProcess(const std::vector<Node*>& path, bool is_repetition,
+    NodeToProcess(const BackupPath& path, bool is_repetition,
                   const PositionHistory& in_history)
         : path(path),
           node(path.back()),
@@ -392,7 +394,7 @@ class SearchWorker {
     std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
     std::vector<int> vtp_last_filled;
     std::vector<int> current_path;
-    std::vector<Node*> full_path;
+    BackupPath full_path;
     TaskWorkspace() {
       vtp_buffer.reserve(30);
       visits_to_perform.reserve(30);
@@ -407,7 +409,7 @@ class SearchWorker {
     PickTaskType task_type;
 
     // For task type gathering.
-    std::vector<Node*> start_path;
+    BackupPath start_path;
     Node* start;
     int collision_limit;
     PositionHistory history;
@@ -419,8 +421,8 @@ class SearchWorker {
 
     bool complete = false;
 
-    PickTask(const std::vector<Node*>& start_path,
-             const PositionHistory& in_history, int collision_limit)
+    PickTask(const BackupPath& start_path, const PositionHistory& in_history,
+             int collision_limit)
         : task_type(kGathering),
           start_path(start_path),
           start(start_path.back()),
@@ -448,8 +450,8 @@ class SearchWorker {
   bool MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix, float* v_delta,
                       float* d_delta, float* m_delta) const;
   void PickNodesToExtend(int collision_limit);
-  void PickNodesToExtendTask(const std::vector<Node*>& path,
-                             int collision_limit, PositionHistory& history,
+  void PickNodesToExtendTask(const BackupPath& path, int collision_limit,
+                             PositionHistory& history,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
 
