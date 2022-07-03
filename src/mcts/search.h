@@ -48,7 +48,7 @@
 
 namespace lczero {
 
-typedef std::vector<Node*> BackupPath;
+typedef std::vector<std::pair<Node*, int>> BackupPath;
 
 class Search {
  public:
@@ -329,15 +329,15 @@ class SearchWorker {
     bool ooo_completed = false;
 
     // Repetition draws.
-    bool is_repetition = false;
+    int repetitions = 0;
 
     static NodeToProcess Collision(const BackupPath& path, int collision_count,
                                    int max_count) {
       return NodeToProcess(path, collision_count, max_count);
     }
-    static NodeToProcess Visit(const BackupPath& path, bool is_repetition,
+    static NodeToProcess Visit(const BackupPath& path,
                                const PositionHistory& history) {
-      return NodeToProcess(path, is_repetition, history);
+      return NodeToProcess(path, history);
     }
 
     // Method to allow NodeToProcess to conform as a 'Computation'. Only safe
@@ -351,17 +351,17 @@ class SearchWorker {
           << " Maxvisit:" << maxvisit << " NNQueried:" << nn_queried
           << " TTHit:" << is_tt_hit << " CacheHit:" << is_cache_hit
           << " Collision:" << is_collision << " OOO:" << ooo_completed
-          << " Path:";
+          << " Repetitions:" << repetitions << " Path:";
       for (auto it = path.cbegin(); it != path.cend(); ++it) {
         if (it != path.cbegin()) oss << "->";
-        auto n = *it;
+        auto n = it->first;
         auto nl = n->GetLowNode();
         oss << n << ":" << n->GetNInFlight();
         if (nl) {
           oss << "(" << nl << ":" << nl->GetNInFlight() << ")";
         }
       }
-      oss << " --- " << path.back()->DebugString();
+      oss << " --- " << path.back().first->DebugString();
       if (node->GetLowNode())
         oss << " --- " << node->GetLowNode()->DebugString();
 
@@ -371,20 +371,19 @@ class SearchWorker {
    private:
     NodeToProcess(const BackupPath& path, int multivisit, int max_count)
         : path(path),
-          node(path.back()),
+          node(path.back().first),
           multivisit(multivisit),
           maxvisit(max_count),
           is_collision(true),
-          is_repetition(false) {}
-    NodeToProcess(const BackupPath& path, bool is_repetition,
-                  const PositionHistory& in_history)
+          repetitions(0) {}
+    NodeToProcess(const BackupPath& path, const PositionHistory& in_history)
         : path(path),
-          node(path.back()),
+          node(path.back().first),
           multivisit(1),
           maxvisit(0),
           is_collision(false),
           history(in_history),
-          is_repetition(is_repetition) {}
+          repetitions(path.back().second) {}
   };
 
   // Holds per task worker scratch data
@@ -425,7 +424,7 @@ class SearchWorker {
              int collision_limit)
         : task_type(kGathering),
           start_path(start_path),
-          start(start_path.back()),
+          start(start_path.back().first),
           collision_limit(collision_limit),
           history(in_history) {}
     PickTask(int start_idx, int end_idx)
@@ -455,15 +454,12 @@ class SearchWorker {
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
 
-  // Check if the situation described by @depth and history @position is at
-  // least a two-fold and return true and set @cycle_length, if it is.
-  bool IsTwoFold(int depth, const Position& position);
-  // Check if there is a reason to stop picking and pick @node. Uses
-  // IsTwoFold to check for at least two-fold and sets @is_repetition and
-  // @cycle_length accordingly.
-  bool ShouldStopPickingHere(Node* node, int depth,
-                             const PositionHistory& history, bool is_root_node,
-                             bool* is_repetition);
+  // Check if the situation described by @depth under root and @position is a
+  // safe two-fold or a draw by repetition and return the number of safe
+  // repetitions.
+  int GetRepetitions(int depth, const Position& position);
+  // Check if there is a reason to stop picking and pick @node.
+  bool ShouldStopPickingHere(Node* node, bool is_root_node, int repetitions);
   void ProcessPickedTask(int batch_start, int batch_end);
   void ExtendNode(NodeToProcess& picked_node);
   template <typename Computation>
