@@ -2142,13 +2142,21 @@ void SearchWorker::DoBackupUpdate() {
 }
 
 bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
-    Node* n, std::shared_ptr<LowNode>& nl, float& v, float& d, float& m,
-    uint32_t& n_to_fix, float& v_delta, float& d_delta, float& m_delta,
-    bool& update_parent_bounds) const {
+    Node* n, int nr, int nm, std::shared_ptr<LowNode>& nl, float& v, float& d,
+    float& m, uint32_t& n_to_fix, float& v_delta, float& d_delta,
+    float& m_delta, bool& update_parent_bounds) const {
   if (n->IsTerminal()) {
     v = n->GetWL();
     d = n->GetD();
     m = n->GetM();
+
+    return true;
+  }
+
+  if (nr > 0) {
+    v = 0.0f;
+    d = 1.0f;
+    m = nm;
 
     return true;
   }
@@ -2229,13 +2237,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
   }
 
-  if (nr > 0) {
-    v = 0.0f;
-    d = 1.0f;
-    m = nm + 1;
-  } else if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix,
-                                                    v_delta, d_delta, m_delta,
-                                                    update_parent_bounds)) {
+  if (!MaybeAdjustForTerminalOrTransposition(n, nr, nm, nl, v, d, m, n_to_fix,
+                                             v_delta, d_delta, m_delta,
+                                             update_parent_bounds)) {
     // If there is nothing better, use original NN values adjusted for node.
     v = -nl->GetWL();
     d = nl->GetD();
@@ -2256,7 +2260,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // Nothing left to do without ancestors to update.
     if (++it == path.crend()) break;
-    auto p = std::get<0>(*it);
+    auto [p, pr, pm] = *it;
     auto pl = p->GetLowNode();
 
     assert(!p->IsTerminal() ||
@@ -2286,8 +2290,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     v_delta = -v_delta;
     m++;
 
-    MaybeAdjustForTerminalOrTransposition(p, pl, v, d, m, n_to_fix, v_delta,
-                                          d_delta, m_delta,
+    MaybeAdjustForTerminalOrTransposition(p, pr, pm, pl, v, d, m, n_to_fix,
+                                          v_delta, d_delta, m_delta,
                                           update_parent_bounds);
 
     // Update the stats.

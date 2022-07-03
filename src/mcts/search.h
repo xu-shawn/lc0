@@ -439,7 +439,7 @@ class SearchWorker {
   // terminal or its child low node is a transposition. Also update bounds and
   // terminal status of node @n using information from its child low node.
   // Return true if adjustment happened.
-  bool MaybeAdjustForTerminalOrTransposition(Node* n,
+  bool MaybeAdjustForTerminalOrTransposition(Node* n, int nr, int nm,
                                              std::shared_ptr<LowNode>& nl,
                                              float& v, float& d, float& m,
                                              uint32_t& n_to_fix, float& v_delta,
