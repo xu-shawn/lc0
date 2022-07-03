@@ -2224,10 +2224,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
     m = node_to_process.history.Last().GetRepetitions() >= 2
             ? 1
             : node_to_process.history.Last().GetPliesSincePrevRepetition() + 1;
-    n_to_fix = n->GetN();
-    v_delta = v - n->GetWL();
-    d_delta = d - n->GetD();
-    m_delta = m - n->GetM();
   } else if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix,
                                                     v_delta, d_delta, m_delta,
                                                     update_parent_bounds)) {
