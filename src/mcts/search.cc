@@ -1515,8 +1515,6 @@ void SearchWorker::PickNodesToExtendTask(
 
   bool is_repetition;
 
-  const int played_history_length = search_->played_history_.GetLength();
-
   current_path.push_back(-1);
   while (current_path.size() > 0) {
     assert(full_path.size() >= path.size());
@@ -1555,6 +1553,7 @@ void SearchWorker::PickNodesToExtendTask(
               NodeToProcess::Collision(full_path, cur_limit, max_count));
           completed_visits += cur_limit;
         }
+        history.Pop();
         full_path.pop_back();
         node = (full_path.size() > 0) ? full_path.back() : nullptr;
         current_path.pop_back();
@@ -1790,16 +1789,10 @@ void SearchWorker::PickNodesToExtendTask(
       for (auto& child : node->Edges()) {
         idx++;
         if (idx > min_idx && (*visits_to_perform.back())[idx] > 0) {
-          if (static_cast<size_t>(history.GetLength()) !=
-              current_path.size() + path.size() - 1 + played_history_length) {
-            history.Append(child.GetMove());
-          } else {
-            history.Pop();
-            history.Append(child.GetMove());
-          }
           current_path.back() = idx;
           current_path.push_back(-1);
           node = child.GetOrSpawnNode(/* parent */ node);
+          history.Append(child.GetMove());
           full_path.push_back(node);
           found_child = true;
           break;
@@ -1808,11 +1801,9 @@ void SearchWorker::PickNodesToExtendTask(
       }
     }
     if (!found_child) {
+      history.Pop();
       full_path.pop_back();
       node = (full_path.size() > 0) ? full_path.back() : nullptr;
-      if (history.GetLength() > played_history_length) {
-        history.Pop();
-      }
       current_path.pop_back();
       vtp_buffer.push_back(std::move(visits_to_perform.back()));
       visits_to_perform.pop_back();
