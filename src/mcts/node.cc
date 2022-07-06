@@ -336,9 +336,13 @@ void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
   m_ += multivisit * m / n_;
 }
 
-void LowNode::ReleaseChildren() { child_.reset(); }
+void LowNode::ReleaseChildren(
+    std::vector<std::unique_ptr<Node>>& released_nodes) {
+  released_nodes.emplace_back(std::move(child_));
+}
 
-void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
+void LowNode::ReleaseChildrenExceptOne(
+    Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes) {
   // Stores node which will have to survive (or nullptr if it's not found).
   std::unique_ptr<Node> saved_node;
   // Pointer to unique_ptr, so that we could move from it.
@@ -347,13 +351,14 @@ void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
     // If current node is the one that we have to save.
     if (node->get() == node_to_save) {
       // Kill all remaining siblings.
-      (*(*node)->GetSibling()).reset();
+      released_nodes.emplace_back(std::move(*(*node)->GetSibling()));
       // Save the node, and take the ownership from the unique_ptr.
       saved_node = std::move(*node);
       break;
     }
   }
   // Make saved node the only child. (kills previous siblings).
+  released_nodes.emplace_back(std::move(child_));
   child_ = std::move(saved_node);
 }
 
@@ -558,7 +563,10 @@ void NodeTree::MakeMove(Move move) {
     }
   }
   move = board.GetModernMove(move);
-  current_head_->ReleaseChildrenExceptOne(new_head);
+  // Free old released nodes before adding new.
+  released_nodes_.clear();
+  // Release nodes from last move if any.
+  current_head_->ReleaseChildrenExceptOne(new_head, released_nodes_);
   new_head = current_head_->GetChild();
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
@@ -568,7 +576,9 @@ void NodeTree::MakeMove(Move move) {
 
 void NodeTree::TrimTreeAtHead() {
   auto tmp = current_head_->MoveSiblingOut();
-  current_head_->ReleaseChildren();
+  current_head_->ReleaseChildren(released_nodes_);
+  // Free all released nodes.
+  released_nodes_.clear();
   *current_head_ = Node(current_head_->GetParent(), current_head_->Index());
   current_head_->MoveSiblingIn(tmp);
 }
@@ -612,7 +622,9 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
 }
 
 void NodeTree::DeallocateTree() {
-  gamebegin_node_.reset();
+  released_nodes_.emplace_back(std::move(gamebegin_node_));
+  // Free all released nodes.
+  released_nodes_.clear();
   current_head_ = nullptr;
 }
 

@@ -263,12 +263,13 @@ class LowNode {
   void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
 
   // Deletes all children.
-  void ReleaseChildren();
+  void ReleaseChildren(std::vector<std::unique_ptr<Node>>& released_nodes);
 
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
-  void ReleaseChildrenExceptOne(Node* node_to_save);
+  void ReleaseChildrenExceptOne(
+      Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes);
 
   // For a child node, returns corresponding edge.
   Edge* GetEdgeToNode(const Node* node) const;
@@ -468,17 +469,21 @@ class Node {
   VisitedNode_Iterator<false> VisitedNodes();
 
   // Deletes all children.
-  void ReleaseChildren() const {
+  void ReleaseChildren(
+      std::vector<std::unique_ptr<Node>>& released_nodes) const {
     // Low node may not be attached (yet).
-    if (low_node_) low_node_->ReleaseChildren();
+    if (low_node_) low_node_->ReleaseChildren(released_nodes);
   }
 
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
-  void ReleaseChildrenExceptOne(Node* node_to_save) const {
+  void ReleaseChildrenExceptOne(
+      Node* node_to_save,
+      std::vector<std::unique_ptr<Node>>& released_nodes) const {
     // Sometime we have no graph yet or a reverted terminal without low node.
-    if (low_node_) low_node_->ReleaseChildrenExceptOne(node_to_save);
+    if (low_node_)
+      low_node_->ReleaseChildrenExceptOne(node_to_save, released_nodes);
   }
 
   // For a child node, returns corresponding edge.
@@ -861,6 +866,8 @@ class NodeTree {
   std::unique_ptr<Node> gamebegin_node_;
   PositionHistory history_;
   std::vector<Move> moves_;
+  // Nodes released from DAG and to be freed later.
+  std::vector<std::unique_ptr<Node>> released_nodes_;
 };
 
 }  // namespace lczero
