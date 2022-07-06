@@ -367,13 +367,6 @@ class Node {
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON) {}
 
-  // Performs construction time type initialization. For use only with a node
-  // that has not been used beyond its construction.
-  void Reinit(LowNode* parent, uint16_t index) {
-    parent_ = parent;
-    index_ = index;
-  }
-
   // Allocates a new edge and a new node. The node has to be without edges
   // before that.
   Node* CreateSingleChildNode(Move move) {
@@ -381,13 +374,6 @@ class Node {
     auto low_node = std::make_shared<LowNode>(MoveList({move}), 0);
     SetLowNode(low_node);
     return GetChild();
-  }
-
-  // Creates edges from a movelist. There have to be no edges before that.
-  void CreateEdges(const MoveList& moves) {
-    assert(!low_node_);
-    auto low_node = std::make_shared<LowNode>(moves);
-    SetLowNode(low_node);
   }
 
   // Gets parent low node.
@@ -465,8 +451,6 @@ class Node {
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, int multivisit);
-  // Revert visits to a node which ended in a now reverted terminal.
-  void RevertTerminalVisits(float v, float d, float m, int multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.

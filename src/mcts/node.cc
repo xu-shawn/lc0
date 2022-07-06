@@ -402,25 +402,6 @@ void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
   m_ += multivisit * m / n_;
 }
 
-void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
-  // Compute new n_ first, as reducing a node to 0 visits is a special case.
-  const int n_new = n_ - multivisit;
-  if (n_new <= 0) {
-    // If n_new == 0, reset all relevant values to 0.
-    wl_ = 0.0;
-    d_ = 1.0;
-    m_ = 0.0;
-    n_ = 0;
-  } else {
-    // Recompute Q and M.
-    wl_ -= multivisit * (v - wl_) / n_new;
-    d_ -= multivisit * (d - d_) / n_new;
-    m_ -= multivisit * (m - m_) / n_new;
-    // Decrement N.
-    n_ -= multivisit;
-  }
-}
-
 void LowNode::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }
 
 void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
