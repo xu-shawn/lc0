@@ -130,7 +130,7 @@ int PositionHistory::ComputeLastMoveRepetitions(int* cycle_length) const {
   // TODO(crem) implement hash/cache based solution.
   if (last.GetRule50Ply() < 4) return 0;
 
-  for (int idx = positions_.size() - 3; idx >= 0; idx -= 2) {
+  for (int idx = positions_.size() - 5; idx >= 0; idx -= 2) {
     const auto& pos = positions_[idx];
     if (pos.GetBoard() == last.GetBoard()) {
       *cycle_length = positions_.size() - 1 - idx;
