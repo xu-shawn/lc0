@@ -546,11 +546,6 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
   }
-
-  // Use a 0 visit cancel score update to clear out any cached best edge, as
-  // at the next iteration remaining playouts may be different.
-  // TODO(crem) Is it really needed?
-  root_node_->CancelScoreUpdate(0);
 }
 
 // Return the evaluation of the actual best child, regardless of temperature
@@ -1081,7 +1076,7 @@ void SearchWorker::ExecuteOneIteration() {
   }
 
   // 2. Gather minibatch.
-  GatherMinibatch2();
+  GatherMinibatch();
   task_count_.store(-1, std::memory_order_release);
   search_->backend_waiting_counter_.fetch_add(1, std::memory_order_relaxed);
 
@@ -1166,7 +1161,7 @@ int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
 }
 }  // namespace
 
-void SearchWorker::GatherMinibatch2() {
+void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
   int cur_n = 0;
@@ -1518,8 +1513,6 @@ void SearchWorker::PickNodesToExtendTask(
 
   int max_limit = std::numeric_limits<int>::max();
 
-  const int played_history_length = search_->played_history_.GetLength();
-
   current_path.push_back(-1);
   while (current_path.size() > 0) {
     assert(full_path.size() >= path.size());
@@ -1557,6 +1550,7 @@ void SearchWorker::PickNodesToExtendTask(
               NodeToProcess::Collision(full_path, cur_limit, max_count));
           completed_visits += cur_limit;
         }
+        history.Pop();
         full_path.pop_back();
         if (full_path.size() > 0) {
           std::tie(node, repetitions, moves_left) = full_path.back();
@@ -1786,8 +1780,8 @@ void SearchWorker::PickNodesToExtendTask(
               (*visits_to_perform.back())[i] = 0;
             }
           }
-          full_path.pop_back();
           history.Pop();
+          full_path.pop_back();
         }
       }
       // Fall through to select the first child.
@@ -1799,16 +1793,10 @@ void SearchWorker::PickNodesToExtendTask(
       for (auto& child : node->Edges()) {
         idx++;
         if (idx > min_idx && (*visits_to_perform.back())[idx] > 0) {
-          if (static_cast<size_t>(history.GetLength()) !=
-              current_path.size() + path.size() - 1 + played_history_length) {
-            history.Append(child.GetMove());
-          } else {
-            history.Pop();
-            history.Append(child.GetMove());
-          }
           current_path.back() = idx;
           current_path.push_back(-1);
           node = child.GetOrSpawnNode(/* parent */ node);
+          history.Append(child.GetMove());
           std::tie(repetitions, moves_left) =
               GetRepetitions(full_path.size(), history.Last());
           full_path.push_back({node, repetitions, moves_left});
@@ -1819,15 +1807,13 @@ void SearchWorker::PickNodesToExtendTask(
       }
     }
     if (!found_child) {
+      history.Pop();
       full_path.pop_back();
       if (full_path.size() > 0) {
         std::tie(node, repetitions, moves_left) = full_path.back();
       } else {
         node = nullptr;
         repetitions = 0;
-      }
-      if (history.GetLength() > played_history_length) {
-        history.Pop();
       }
       current_path.pop_back();
       vtp_buffer.push_back(std::move(visits_to_perform.back()));
