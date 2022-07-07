@@ -44,72 +44,6 @@
 namespace lczero {
 
 /////////////////////////////////////////////////////////////////////////
-// Node garbage collector
-/////////////////////////////////////////////////////////////////////////
-
-namespace {
-// Periodicity of garbage collection, milliseconds.
-const int kGCIntervalMs = 100;
-
-// Every kGCIntervalMs milliseconds release nodes in a separate GC thread.
-class NodeGarbageCollector {
- public:
-  NodeGarbageCollector() : gc_thread_([this]() { Worker(); }) {}
-
-  // Takes ownership of a subtree, to dispose it in a separate thread when
-  // it has time.
-  void AddToGcQueue(std::unique_ptr<Node> node) {
-    if (!node) return;
-    Mutex::Lock lock(gc_mutex_);
-    subtrees_to_gc_.emplace_back(std::move(node));
-  }
-
-  ~NodeGarbageCollector() {
-    // Flips stop flag and waits for a worker thread to stop.
-    stop_.store(true);
-    gc_thread_.join();
-  }
-
- private:
-  void GarbageCollect() {
-    while (!stop_.load()) {
-      // Node will be released in destructor when mutex is not locked.
-      std::unique_ptr<Node> node_to_gc;
-      {
-        // Lock the mutex and move last subtree from subtrees_to_gc_ into
-        // node_to_gc.
-        Mutex::Lock lock(gc_mutex_);
-        if (subtrees_to_gc_.empty()) return;
-        node_to_gc = std::move(subtrees_to_gc_.back());
-        subtrees_to_gc_.pop_back();
-
-        node_to_gc->UnsetLowNode();
-      }
-    }
-  }
-
-  void Worker() {
-    // Keep garbage collection on same core as where search workers are most
-    // likely to be to make any lock conention on gc mutex cheaper.
-    Numa::BindThread(0);
-    while (!stop_.load()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
-      GarbageCollect();
-    };
-  }
-
-  mutable Mutex gc_mutex_;
-  std::vector<std::unique_ptr<Node>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
-
-  // When true, Worker() should stop and exit.
-  std::atomic<bool> stop_{false};
-  std::thread gc_thread_;
-};
-
-NodeGarbageCollector gNodeGc;
-}  // namespace
-
-/////////////////////////////////////////////////////////////////////////
 // Edge
 /////////////////////////////////////////////////////////////////////////
 
@@ -402,28 +336,13 @@ void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
   m_ += multivisit * m / n_;
 }
 
-void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
-  // Compute new n_ first, as reducing a node to 0 visits is a special case.
-  const int n_new = n_ - multivisit;
-  if (n_new <= 0) {
-    // If n_new == 0, reset all relevant values to 0.
-    wl_ = 0.0;
-    d_ = 1.0;
-    m_ = 0.0;
-    n_ = 0;
-  } else {
-    // Recompute Q and M.
-    wl_ -= multivisit * (v - wl_) / n_new;
-    d_ -= multivisit * (d - d_) / n_new;
-    m_ -= multivisit * (m - m_) / n_new;
-    // Decrement N.
-    n_ -= multivisit;
-  }
+void LowNode::ReleaseChildren(
+    std::vector<std::unique_ptr<Node>>& released_nodes) {
+  released_nodes.emplace_back(std::move(child_));
 }
 
-void LowNode::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }
-
-void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
+void LowNode::ReleaseChildrenExceptOne(
+    Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes) {
   // Stores node which will have to survive (or nullptr if it's not found).
   std::unique_ptr<Node> saved_node;
   // Pointer to unique_ptr, so that we could move from it.
@@ -432,14 +351,14 @@ void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
     // If current node is the one that we have to save.
     if (node->get() == node_to_save) {
       // Kill all remaining siblings.
-      gNodeGc.AddToGcQueue(std::move(*(*node)->GetSibling()));
+      released_nodes.emplace_back(std::move(*(*node)->GetSibling()));
       // Save the node, and take the ownership from the unique_ptr.
       saved_node = std::move(*node);
       break;
     }
   }
   // Make saved node the only child. (kills previous siblings).
-  gNodeGc.AddToGcQueue(std::move(child_));
+  released_nodes.emplace_back(std::move(child_));
   child_ = std::move(saved_node);
 }
 
@@ -644,7 +563,10 @@ void NodeTree::MakeMove(Move move) {
     }
   }
   move = board.GetModernMove(move);
-  current_head_->ReleaseChildrenExceptOne(new_head);
+  // Free old released nodes before adding new.
+  released_nodes_.clear();
+  // Release nodes from last move if any.
+  current_head_->ReleaseChildrenExceptOne(new_head, released_nodes_);
   new_head = current_head_->GetChild();
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
@@ -654,8 +576,9 @@ void NodeTree::MakeMove(Move move) {
 
 void NodeTree::TrimTreeAtHead() {
   auto tmp = current_head_->MoveSiblingOut();
-  // Send dependent nodes for GC instead of destroying them immediately.
-  current_head_->ReleaseChildren();
+  current_head_->ReleaseChildren(released_nodes_);
+  // Free all released nodes.
+  released_nodes_.clear();
   *current_head_ = Node(current_head_->GetParent(), current_head_->Index());
   current_head_->MoveSiblingIn(tmp);
 }
@@ -699,10 +622,9 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
 }
 
 void NodeTree::DeallocateTree() {
-  // Same as gamebegin_node_.reset(), but actual deallocation will happen in
-  // GC thread.
-  gNodeGc.AddToGcQueue(std::move(gamebegin_node_));
-  gamebegin_node_ = nullptr;
+  released_nodes_.emplace_back(std::move(gamebegin_node_));
+  // Free all released nodes.
+  released_nodes_.clear();
   current_head_ = nullptr;
 }
 

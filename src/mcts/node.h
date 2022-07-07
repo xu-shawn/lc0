@@ -263,12 +263,13 @@ class LowNode {
   void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
 
   // Deletes all children.
-  void ReleaseChildren();
+  void ReleaseChildren(std::vector<std::unique_ptr<Node>>& released_nodes);
 
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
-  void ReleaseChildrenExceptOne(Node* node_to_save);
+  void ReleaseChildrenExceptOne(
+      Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes);
 
   // For a child node, returns corresponding edge.
   Edge* GetEdgeToNode(const Node* node) const;
@@ -367,13 +368,6 @@ class Node {
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON) {}
 
-  // Performs construction time type initialization. For use only with a node
-  // that has not been used beyond its construction.
-  void Reinit(LowNode* parent, uint16_t index) {
-    parent_ = parent;
-    index_ = index;
-  }
-
   // Allocates a new edge and a new node. The node has to be without edges
   // before that.
   Node* CreateSingleChildNode(Move move) {
@@ -381,13 +375,6 @@ class Node {
     auto low_node = std::make_shared<LowNode>(MoveList({move}), 0);
     SetLowNode(low_node);
     return GetChild();
-  }
-
-  // Creates edges from a movelist. There have to be no edges before that.
-  void CreateEdges(const MoveList& moves) {
-    assert(!low_node_);
-    auto low_node = std::make_shared<LowNode>(moves);
-    SetLowNode(low_node);
   }
 
   // Gets parent low node.
@@ -465,8 +452,6 @@ class Node {
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, int multivisit);
-  // Revert visits to a node which ended in a now reverted terminal.
-  void RevertTerminalVisits(float v, float d, float m, int multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -484,17 +469,21 @@ class Node {
   VisitedNode_Iterator<false> VisitedNodes();
 
   // Deletes all children.
-  void ReleaseChildren() const {
+  void ReleaseChildren(
+      std::vector<std::unique_ptr<Node>>& released_nodes) const {
     // Low node may not be attached (yet).
-    if (low_node_) low_node_->ReleaseChildren();
+    if (low_node_) low_node_->ReleaseChildren(released_nodes);
   }
 
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
-  void ReleaseChildrenExceptOne(Node* node_to_save) const {
+  void ReleaseChildrenExceptOne(
+      Node* node_to_save,
+      std::vector<std::unique_ptr<Node>>& released_nodes) const {
     // Sometime we have no graph yet or a reverted terminal without low node.
-    if (low_node_) low_node_->ReleaseChildrenExceptOne(node_to_save);
+    if (low_node_)
+      low_node_->ReleaseChildrenExceptOne(node_to_save, released_nodes);
   }
 
   // For a child node, returns corresponding edge.
@@ -877,6 +866,8 @@ class NodeTree {
   std::unique_ptr<Node> gamebegin_node_;
   PositionHistory history_;
   std::vector<Move> moves_;
+  // Nodes released from DAG and to be freed later.
+  std::vector<std::unique_ptr<Node>> released_nodes_;
 };
 
 }  // namespace lczero
