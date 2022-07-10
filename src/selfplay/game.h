@@ -102,9 +102,6 @@ class SelfPlayGame {
   // Node tree for player1 and player2. If the tree is shared between players,
   // tree_[0] == tree_[1].
   std::shared_ptr<NodeTree> tree_[2];
-  // Transposition table for player1 and player2. If the tree is shared between
-  // players, tt_[0] == tt_[1].
-  std::shared_ptr<TranspositionTable> tt_[2];
 
   std::string orig_fen_;
 

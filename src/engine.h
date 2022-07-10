@@ -98,7 +98,6 @@ class EngineController {
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
   std::unique_ptr<Network> network_;
   NNCache cache_;
-  TranspositionTable tt_;
 
   // Store current TB and network settings to track when they change so that
   // they are reloaded.

@@ -34,6 +34,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <sstream>
 #include <thread>
 
@@ -143,20 +144,20 @@ class MEvaluator {
 
 }  // namespace
 
-Search::Search(const NodeTree& tree, Network* network,
+Search::Search(NodeTree* dag, Network* network,
                std::unique_ptr<UciResponder> uci_responder,
                const MoveList& searchmoves,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
                const OptionsDict& options, NNCache* cache,
-               TranspositionTable* tt, SyzygyTablebase* syzygy_tb)
+               SyzygyTablebase* syzygy_tb)
     : ok_to_respond_bestmove_(!infinite),
       stopper_(std::move(stopper)),
-      root_node_(tree.GetCurrentHead()),
+      root_node_(dag->GetCurrentHead()),
       cache_(cache),
-      tt_(tt),
+      dag_(dag),
       syzygy_tb_(syzygy_tb),
-      played_history_(tree.GetPositionHistory()),
+      played_history_(dag->GetPositionHistory()),
       network_(network),
       params_(options),
       searchmoves_(searchmoves),
@@ -166,11 +167,6 @@ Search::Search(const NodeTree& tree, Network* network,
           searchmoves_, syzygy_tb_, played_history_,
           params_.GetSyzygyFastPlay(), &tb_hits_, &root_is_in_dtz_)),
       uci_responder_(std::move(uci_responder)) {
-  // Evict expired entries from the transposition table.
-  // Garbage collection may lead to expiration at any time so this is not
-  // enough to prevent expired entries later during the search.
-  absl::erase_if(*tt_, [](const auto& item) { return item.second.expired(); });
-
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
                              std::memory_order_release);
@@ -378,8 +374,7 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 }  // namespace
 
 std::vector<std::string> Search::GetVerboseStats(Node* node) const {
-  assert(node == root_node_ ||
-         node->GetParent() == root_node_->GetLowNode().get());
+  assert(node == root_node_ || node->GetParent() == root_node_->GetLowNode());
   const bool is_root = (node == root_node_);
   const bool is_odd_depth = !is_root;
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
@@ -1428,7 +1423,7 @@ bool SearchWorker::ShouldStopPickingHere(Node* node, bool is_root_node,
   if (repetitions >= 2) return true;
 
   // Check if Node and LowNode differ significantly.
-  auto low_node = node->GetLowNode().get();
+  auto low_node = node->GetLowNode();
   assert(low_node);
 
   // Only known transpositions can differ.
@@ -1904,13 +1899,9 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
   // Check the transposition table first and NN cache second before asking for
   // NN evaluation.
   picked_node.hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
-  auto tt_iter = search_->tt_->find(picked_node.hash);
-  // Transposition table entry might be expired.
-  if (tt_iter != search_->tt_->end()) {
-    picked_node.tt_low_node = tt_iter->second.lock();
-  }
-  if (picked_node.tt_low_node) {
-    assert(!tt_iter->second.expired());
+  auto tt_low_node = search_->dag_->TTFind(picked_node.hash);
+  if (tt_low_node != nullptr) {
+    picked_node.tt_low_node = tt_low_node;
     picked_node.is_tt_hit = true;
   } else {
     picked_node.lock = NNCacheLock(search_->cache_, picked_node.hash);
@@ -2073,25 +2064,15 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (!node_to_process->nn_queried) return;
 
   if (!node_to_process->is_tt_hit) {
-    node_to_process->tt_low_node = std::make_shared<LowNode>();
+    auto [tt_low_node, is_tt_miss] =
+        search_->dag_->TTGetOrCreate(node_to_process->hash);
 
-    auto [tt_iter, is_tt_miss] = search_->tt_->insert(
-        {node_to_process->hash, node_to_process->tt_low_node});
+    assert(tt_low_node != nullptr);
+    node_to_process->tt_low_node = tt_low_node;
 
     if (is_tt_miss) {
-      assert(!tt_iter->second.expired());
       node_to_process->tt_low_node->SetNNEval(
           computation.GetNNEval(idx_in_computation).get());
-    } else {
-      auto tt_low_node = tt_iter->second.lock();
-      if (!tt_low_node) {
-        tt_iter->second = node_to_process->tt_low_node;
-        node_to_process->tt_low_node->SetNNEval(
-            computation.GetNNEval(idx_in_computation).get());
-      } else {
-        assert(!tt_iter->second.expired());
-        node_to_process->tt_low_node = tt_iter->second.lock();
-      }
     }
   }
 
@@ -2099,8 +2080,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   Node* node = node_to_process->node;
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
-    node->SetLowNode(
-        std::make_shared<LowNode>(*node_to_process->tt_low_node.get()));
+    auto low_node = search_->dag_->NoTTAddClone(*node_to_process->tt_low_node);
+    assert(low_node != nullptr);
+    node->SetLowNode(low_node);
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
                         params_.GetNoiseAlpha());
     node->SortEdges();
@@ -2128,9 +2110,9 @@ void SearchWorker::DoBackupUpdate() {
 }
 
 bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
-    Node* n, int nr, int nm, std::shared_ptr<LowNode>& nl, float& v, float& d,
-    float& m, uint32_t& n_to_fix, float& v_delta, float& d_delta,
-    float& m_delta, bool& update_parent_bounds) const {
+    Node* n, int nr, int nm, const LowNode* nl, float& v, float& d, float& m,
+    uint32_t& n_to_fix, float& v_delta, float& d_delta, float& m_delta,
+    bool& update_parent_bounds) const {
   if (n->IsTerminal()) {
     v = n->GetWL();
     d = n->GetD();

@@ -53,12 +53,12 @@ typedef std::vector<std::tuple<Node*, int, int>> BackupPath;
 
 class Search {
  public:
-  Search(const NodeTree& tree, Network* network,
+  Search(NodeTree* dag, Network* network,
          std::unique_ptr<UciResponder> uci_responder,
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
          std::unique_ptr<SearchStopper> stopper, bool infinite,
-         const OptionsDict& options, NNCache* cache, TranspositionTable* tt,
+         const OptionsDict& options, NNCache* cache,
          SyzygyTablebase* syzygy_tb);
 
   ~Search();
@@ -167,7 +167,7 @@ class Search {
 
   Node* root_node_;
   NNCache* cache_;
-  TranspositionTable* tt_;
+  NodeTree* dag_;
   SyzygyTablebase* syzygy_tb_;
   // Fixed positions which happened before the search.
   const PositionHistory& played_history_;
@@ -322,7 +322,7 @@ class SearchWorker {
 
     // Details that are filled in as we go.
     uint64_t hash;
-    std::shared_ptr<LowNode> tt_low_node;
+    LowNode* tt_low_node;
     NNCacheLock lock;
     PositionHistory history;
     bool ooo_completed = false;
@@ -438,8 +438,8 @@ class SearchWorker {
   // terminal status of node @n using information from its child low node.
   // Return true if adjustment happened.
   bool MaybeAdjustForTerminalOrTransposition(Node* n, int nr, int nm,
-                                             std::shared_ptr<LowNode>& nl,
-                                             float& v, float& d, float& m,
+                                             const LowNode* nl, float& v,
+                                             float& d, float& m,
                                              uint32_t& n_to_fix, float& v_delta,
                                              float& d_delta, float& m_delta,
                                              bool& update_parent_bounds) const;

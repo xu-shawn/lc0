@@ -84,15 +84,12 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
   orig_fen_ = opening.start_fen;
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(orig_fen_, {});
-  tt_[0] = std::make_shared<TranspositionTable>();
 
   if (shared_tree) {
     tree_[1] = tree_[0];
-    tt_[1] = tt_[0];
   } else {
     tree_[1] = std::make_shared<NodeTree>();
     tree_[1]->ResetToPosition(orig_fen_, {});
-    tt_[1] = std::make_shared<TranspositionTable>();
   }
   for (Move m : opening.moves) {
     tree_[0]->MakeMove(m);
@@ -134,7 +131,6 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     const int idx = blacks_move ? 1 : 0;
     if (!options_[idx].uci_options->Get<bool>(kReuseTreeId)) {
       tree_[idx]->TrimTreeAtHead();
-      tt_[idx]->clear();
     }
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -153,11 +149,11 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
 
       search_ = std::make_unique<Search>(
-          *tree_[idx], options_[idx].network, std::move(responder),
+          tree_[idx].get(), options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
           std::move(stoppers),
           /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
-          tt_[idx].get(), syzygy_tb);
+          syzygy_tb);
     }
 
     // Do search.
