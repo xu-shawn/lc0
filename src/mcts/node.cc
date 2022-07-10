@@ -33,6 +33,7 @@
 #include <cstring>
 #include <iostream>
 #include <list>
+#include <memory>
 #include <sstream>
 #include <thread>
 #include <unordered_set>
@@ -140,7 +141,7 @@ Edge* LowNode::GetEdgeToNode(const Node* node) const {
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
-  oss << " <Node> This:" << this << " LowNode:" << low_node_.get()
+  oss << " <Node> This:" << this << " LowNode:" << low_node_
       << " Parent:" << parent_ << " Index:" << index_
       << " Sibling:" << sibling_.get() << " WL:" << wl_ << " D:" << d_
       << " M:" << m_ << " N:" << n_ << " N_:" << n_in_flight_
@@ -336,13 +337,9 @@ void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
   m_ += multivisit * m / n_;
 }
 
-void LowNode::ReleaseChildren(
-    std::vector<std::unique_ptr<Node>>& released_nodes) {
-  released_nodes.emplace_back(std::move(child_));
-}
+void LowNode::ReleaseChildren() { child_.reset(); }
 
-void LowNode::ReleaseChildrenExceptOne(
-    Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes) {
+void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
   // Stores node which will have to survive (or nullptr if it's not found).
   std::unique_ptr<Node> saved_node;
   // Pointer to unique_ptr, so that we could move from it.
@@ -351,14 +348,13 @@ void LowNode::ReleaseChildrenExceptOne(
     // If current node is the one that we have to save.
     if (node->get() == node_to_save) {
       // Kill all remaining siblings.
-      released_nodes.emplace_back(std::move(*(*node)->GetSibling()));
+      (*(*node)->GetSibling()).reset();
       // Save the node, and take the ownership from the unique_ptr.
       saved_node = std::move(*node);
       break;
     }
   }
   // Make saved node the only child. (kills previous siblings).
-  released_nodes.emplace_back(std::move(child_));
   child_ = std::move(saved_node);
 }
 
@@ -404,8 +400,7 @@ std::string LowNode::DotNodeString() const {
 std::string Node::DotEdgeString(bool as_opponent) const {
   std::ostringstream oss;
   oss << (parent_ == nullptr ? "top" : PtrToNodeName(parent_)) << " -> "
-      << (low_node_ ? PtrToNodeName(low_node_.get()) : PtrToNodeName(this))
-      << " [";
+      << (low_node_ ? PtrToNodeName(low_node_) : PtrToNodeName(this)) << " [";
   oss << "label=\""
       << (parent_ == nullptr ? "N/A"
                              : GetOwnEdge()->GetMove(as_opponent).as_string())
@@ -425,7 +420,7 @@ std::string Node::DotEdgeString(bool as_opponent) const {
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2 << "\\n\\nThis=" << this  //
       << std::noshowpos                                               //
-      << "\\nLowNode=" << low_node_.get() << "\\nParent=" << parent_
+      << "\\nLowNode=" << low_node_ << "\\nParent=" << parent_
       << "\\nIndex=" << index_ << "\\nSibling=" << sibling_.get() << "\\n\"";
   oss << "];";
   return oss.str();
@@ -450,7 +445,7 @@ std::string Node::DotGraphString(bool as_opponent) const {
 
   oss << DotEdgeString(!as_opponent) << std::endl;
   if (low_node_) {
-    seen.insert(low_node_.get());
+    seen.insert(low_node_);
     unvisited_fifo.push_back(std::pair(this, as_opponent));
   }
 
@@ -458,7 +453,7 @@ std::string Node::DotGraphString(bool as_opponent) const {
     auto [parent_node, parent_as_opponent] = unvisited_fifo.front();
     unvisited_fifo.pop_front();
 
-    auto parent_low_node = parent_node->GetLowNode().get();
+    auto parent_low_node = parent_node->GetLowNode();
     seen.insert(parent_low_node);
     oss << parent_low_node->DotNodeString() << std::endl;
 
@@ -467,7 +462,7 @@ std::string Node::DotGraphString(bool as_opponent) const {
       if (child == nullptr) break;
 
       oss << child->DotEdgeString(parent_as_opponent) << std::endl;
-      auto child_low_node = child->GetLowNode().get();
+      auto child_low_node = child->GetLowNode();
       if (child_low_node != nullptr &&
           (seen.find(child_low_node) == seen.end())) {
         seen.insert(child_low_node);
@@ -492,7 +487,7 @@ bool Node::ZeroNInFlight() const {
     ++nonzero_node_count;
   }
   if (low_node_) {
-    seen.insert(low_node_.get());
+    seen.insert(low_node_);
     unvisited_fifo.push_back(this);
   }
 
@@ -500,7 +495,7 @@ bool Node::ZeroNInFlight() const {
     auto parent_node = unvisited_fifo.front();
     unvisited_fifo.pop_front();
 
-    auto parent_low_node = parent_node->GetLowNode().get();
+    auto parent_low_node = parent_node->GetLowNode();
     if (parent_low_node->GetNInFlight() > 0) {
       std::cerr << parent_low_node->DebugString() << std::endl;
       ++nonzero_low_node_count;
@@ -515,7 +510,7 @@ bool Node::ZeroNInFlight() const {
         ++nonzero_node_count;
       }
 
-      auto child_low_node = child->GetLowNode().get();
+      auto child_low_node = child->GetLowNode();
       if (child_low_node != nullptr &&
           (seen.find(child_low_node) == seen.end())) {
         seen.insert(child_low_node);
@@ -563,24 +558,29 @@ void NodeTree::MakeMove(Move move) {
     }
   }
   move = board.GetModernMove(move);
-  // Free old released nodes before adding new.
-  released_nodes_.clear();
-  // Release nodes from last move if any.
-  current_head_->ReleaseChildrenExceptOne(new_head, released_nodes_);
+  // Free old released nodes before releasing more.
+  TTMaintenance();
+  current_head_->ReleaseChildrenExceptOne(new_head);
   new_head = current_head_->GetChild();
-  current_head_ =
-      new_head ? new_head : current_head_->CreateSingleChildNode(move);
+  if (new_head) {
+    current_head_ = new_head;
+  } else {
+    other_nodes_.emplace_back(
+        std::make_unique<LowNode>(MoveList({move}), static_cast<uint16_t>(0)));
+    current_head_->SetLowNode(other_nodes_.back().get());
+    current_head_ = current_head_->GetChild();
+  }
   history_.Append(move);
   moves_.push_back(move);
 }
 
 void NodeTree::TrimTreeAtHead() {
   auto tmp = current_head_->MoveSiblingOut();
-  current_head_->ReleaseChildren(released_nodes_);
-  // Free all released nodes.
-  released_nodes_.clear();
+  current_head_->ReleaseChildren();
   *current_head_ = Node(current_head_->GetParent(), current_head_->Index());
   current_head_->MoveSiblingIn(tmp);
+  // Free all normal nodes.
+  tt_.clear();
 }
 
 bool NodeTree::ResetToPosition(const std::string& starting_fen,
@@ -622,10 +622,35 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
 }
 
 void NodeTree::DeallocateTree() {
-  released_nodes_.emplace_back(std::move(gamebegin_node_));
-  // Free all released nodes.
-  released_nodes_.clear();
+  gamebegin_node_.reset();
   current_head_ = nullptr;
+  // Free all nodes.
+  other_nodes_.clear();
+  tt_.clear();
+}
+
+LowNode* NodeTree::TTFind(uint64_t hash) {
+  auto tt_iter = tt_.find(hash);
+  if (tt_iter != tt_.end()) {
+    return tt_iter->second.get();
+  } else {
+    return nullptr;
+  }
+}
+
+std::pair<LowNode*, bool> NodeTree::TTGetOrCreate(uint64_t hash) {
+  auto [tt_iter, is_tt_miss] = tt_.insert({hash, std::make_unique<LowNode>()});
+  return {tt_iter->second.get(), is_tt_miss};
+}
+
+void NodeTree::TTMaintenance() {
+  absl::erase_if(
+      tt_, [](const auto& item) { return item.second->GetNumParents() == 0; });
+}
+
+LowNode* NodeTree::NoTTAddClone(const LowNode& node) {
+  other_nodes_.push_back(std::make_unique<LowNode>(node));
+  return other_nodes_.back().get();
 }
 
 }  // namespace lczero

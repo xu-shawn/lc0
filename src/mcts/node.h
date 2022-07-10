@@ -263,13 +263,12 @@ class LowNode {
   void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
 
   // Deletes all children.
-  void ReleaseChildren(std::vector<std::unique_ptr<Node>>& released_nodes);
+  void ReleaseChildren();
 
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
-  void ReleaseChildrenExceptOne(
-      Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes);
+  void ReleaseChildrenExceptOne(Node* node_to_save);
 
   // For a child node, returns corresponding edge.
   Edge* GetEdgeToNode(const Node* node) const;
@@ -293,6 +292,7 @@ class LowNode {
   }
   // Remove parent and its first visit.
   void RemoveParent() { --num_parents_; }
+  int GetNumParents() const { return num_parents_; }
   bool IsTransposition() const { return is_transposition; }
 
  private:
@@ -367,15 +367,6 @@ class Node {
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON) {}
-
-  // Allocates a new edge and a new node. The node has to be without edges
-  // before that.
-  Node* CreateSingleChildNode(Move move) {
-    assert(!low_node_);
-    auto low_node = std::make_shared<LowNode>(MoveList({move}), 0);
-    SetLowNode(low_node);
-    return GetChild();
-  }
 
   // Gets parent low node.
   LowNode* GetParent() const { return parent_; }
@@ -469,21 +460,17 @@ class Node {
   VisitedNode_Iterator<false> VisitedNodes();
 
   // Deletes all children.
-  void ReleaseChildren(
-      std::vector<std::unique_ptr<Node>>& released_nodes) const {
+  void ReleaseChildren() const {
     // Low node may not be attached (yet).
-    if (low_node_) low_node_->ReleaseChildren(released_nodes);
+    if (low_node_) low_node_->ReleaseChildren();
   }
 
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
-  void ReleaseChildrenExceptOne(
-      Node* node_to_save,
-      std::vector<std::unique_ptr<Node>>& released_nodes) const {
+  void ReleaseChildrenExceptOne(Node* node_to_save) const {
     // Sometime we have no graph yet or a reverted terminal without low node.
-    if (low_node_)
-      low_node_->ReleaseChildrenExceptOne(node_to_save, released_nodes);
+    if (low_node_) low_node_->ReleaseChildrenExceptOne(node_to_save);
   }
 
   // For a child node, returns corresponding edge.
@@ -495,16 +482,16 @@ class Node {
   // Returns edge to the own node.
   Edge* GetOwnEdge() const { return GetParent()->GetEdgeToNode(this); }
 
-  std::shared_ptr<LowNode> GetLowNode() const { return low_node_; }
+  LowNode* GetLowNode() const { return low_node_; }
 
-  void SetLowNode(std::shared_ptr<LowNode> low_node) {
+  void SetLowNode(LowNode* low_node) {
     assert(!low_node_);
     low_node->AddParent(n_in_flight_);
     low_node_ = low_node;
   }
   void UnsetLowNode() {
     if (low_node_) low_node_->RemoveParent();
-    low_node_.reset();
+    low_node_ = nullptr;
   }
 
   // Debug information about the node.
@@ -533,10 +520,6 @@ class Node {
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
 
-  // 16 byte fields on 64-bit platforms, 8 byte on 32-bit.
-  // Shared pointer to the low node.
-  std::shared_ptr<LowNode> low_node_;
-
   // 8 byte fields.
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored. This is from the perspective
@@ -546,6 +529,8 @@ class Node {
   double wl_ = 0.0f;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
+  // Pointer to the low node.
+  LowNode* low_node_ = nullptr;
   // Pointer to a parent low node. nullptr for the root.
   LowNode* parent_ = nullptr;
   // Pointer to a next sibling. nullptr if there are no further siblings.
@@ -716,7 +701,7 @@ class Edge_Iterator : public EdgeAndNode {
     // 2. Create fresh Node(idx_.5):
     //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
     //    tmp -> Node(idx_.7)
-    auto low_parent = parent->GetLowNode().get();
+    auto low_parent = parent->GetLowNode();
     *node_ptr_ = std::make_unique<Node>(low_parent, current_idx_);
     // 3. Attach stored pointer back to a list:
     //    node_ptr_ ->
@@ -830,12 +815,12 @@ inline VisitedNode_Iterator<false> Node::VisitedNodes() {
   return {*this, GetChild()};
 }
 
-// Transposition Table type for holding references to all low nodes in DAG.
-typedef absl::flat_hash_map<uint64_t, std::weak_ptr<LowNode>>
-    TranspositionTable;
-
 class NodeTree {
  public:
+  // Transposition Table type for holding all normal low nodes in the DAG.
+  typedef absl::flat_hash_map<uint64_t, std::unique_ptr<LowNode>>
+      TranspositionTable;
+
   ~NodeTree() { DeallocateTree(); }
   // Adds a move to current_head_.
   void MakeMove(Move move);
@@ -858,16 +843,37 @@ class NodeTree {
   const PositionHistory& GetPositionHistory() const { return history_; }
   const std::vector<Move>& GetMoves() const { return moves_; }
 
+  // Look up a low node in the Transposition Table by @hash and return it, or
+  // nullptr on failure.
+  LowNode* TTFind(uint64_t hash);
+  // Get a low node for the @hash from the Transposition Table or create a
+  // new low node and insert it into the Transposition Table if it is not there
+  // already. Return the low node for the hash.
+  std::pair<LowNode*, bool> TTGetOrCreate(uint64_t hash);
+
+  // Add a clone of low @node to special nodes outside of the Transposition
+  // Table and return it.
+  LowNode* NoTTAddClone(const LowNode& node);
+
  private:
   void DeallocateTree();
+
+  // Evict expired entries from the transposition table.
+  void TTMaintenance();
+
   // A node which to start search from.
   Node* current_head_ = nullptr;
   // Root node of a game tree.
   std::unique_ptr<Node> gamebegin_node_;
   PositionHistory history_;
   std::vector<Move> moves_;
-  // Nodes released from DAG and to be freed later.
-  std::vector<std::unique_ptr<Node>> released_nodes_;
+
+  // Transposition Table type for holding references to all normal low nodes in
+  // DAG.
+  TranspositionTable tt_;
+  // Collection for low nodes that are not fit for Transposition Table due to
+  // noise or incomplete information.
+  std::vector<std::unique_ptr<LowNode>> other_nodes_;
 };
 
 }  // namespace lczero

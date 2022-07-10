@@ -165,7 +165,6 @@ void EngineController::NewGame() {
   ResetMoveTimer();
   SharedLock lock(busy_mutex_);
   cache_.Clear();
-  tt_.clear();
   search_.reset();
   tree_.reset();
   CreateFreshTimeManager();
@@ -295,10 +294,10 @@ void EngineController::Go(const GoParams& params) {
 
   auto stopper = time_manager_->GetStopper(params, *tree_.get());
   search_ = std::make_unique<Search>(
-      *tree_, network_.get(), std::move(responder),
+      tree_.get(), network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite || params.ponder,
-      options_, &cache_, &tt_, syzygy_tb_.get());
+      options_, &cache_, syzygy_tb_.get());
 
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
