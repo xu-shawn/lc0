@@ -850,6 +850,10 @@ class NodeTree {
   // new low node and insert it into the Transposition Table if it is not there
   // already. Return the low node for the hash.
   std::pair<LowNode*, bool> TTGetOrCreate(uint64_t hash);
+  // Evict expired entries from the transposition table.
+  void TTMaintenance();
+  // Clear Transposition Table.
+  void TTClear();
 
   // Add a clone of low @node to special nodes outside of the Transposition
   // Table and return it.
@@ -857,9 +861,6 @@ class NodeTree {
 
  private:
   void DeallocateTree();
-
-  // Evict expired entries from the transposition table.
-  void TTMaintenance();
 
   // A node which to start search from.
   Node* current_head_ = nullptr;

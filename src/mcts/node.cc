@@ -558,8 +558,6 @@ void NodeTree::MakeMove(Move move) {
     }
   }
   move = board.GetModernMove(move);
-  // Free old released nodes before releasing more.
-  TTMaintenance();
   current_head_->ReleaseChildrenExceptOne(new_head);
   new_head = current_head_->GetChild();
   if (new_head) {
@@ -579,8 +577,6 @@ void NodeTree::TrimTreeAtHead() {
   current_head_->ReleaseChildren();
   *current_head_ = Node(current_head_->GetParent(), current_head_->Index());
   current_head_->MoveSiblingIn(tmp);
-  // Free all normal nodes.
-  tt_.clear();
 }
 
 bool NodeTree::ResetToPosition(const std::string& starting_fen,
@@ -603,6 +599,10 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   history_.Reset(starting_board, no_capture_ply,
                  full_moves * 2 - (starting_board.flipped() ? 1 : 2));
   moves_.clear();
+
+  // Free old released nodes before possibly releasing new ones in MakeMove or
+  // TrimTreeAtHead.
+  TTMaintenance();
 
   Node* old_head = current_head_;
   current_head_ = gamebegin_node_.get();
@@ -647,6 +647,8 @@ void NodeTree::TTMaintenance() {
   absl::erase_if(
       tt_, [](const auto& item) { return item.second->GetNumParents() == 0; });
 }
+
+void NodeTree::TTClear() { tt_.clear(); }
 
 LowNode* NodeTree::NoTTAddClone(const LowNode& node) {
   other_nodes_.push_back(std::make_unique<LowNode>(node));
