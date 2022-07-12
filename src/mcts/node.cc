@@ -119,6 +119,28 @@ std::unique_ptr<Edge[]> Edge::FromMovelist(const MoveList& moves) {
 // LowNode + Node
 /////////////////////////////////////////////////////////////////////////
 
+Node& Node::operator=(Node&& n) {
+  wl_ = n.wl_;
+
+  UnsetLowNode();
+  if (n.low_node_) SetLowNode(n.low_node_);
+  parent_ = n.parent_;
+  sibling_ = std::move(n.sibling_);
+
+  d_ = n.d_;
+  m_ = n.m_;
+  n_ = n.n_;
+  n_in_flight_ = n.n_in_flight_;
+
+  index_ = n.index_;
+
+  terminal_type_ = n.terminal_type_;
+  lower_bound_ = n.lower_bound_;
+  upper_bound_ = n.upper_bound_;
+
+  return *this;
+}
+
 void LowNode::CopyPolicy(int max_needed, float* output) const {
   if (num_edges_ == 0) return;
   int loops = std::min(static_cast<int>(num_edges_), max_needed);
