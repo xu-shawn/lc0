@@ -625,6 +625,7 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // Free old released nodes before possibly releasing new ones in MakeMove or
   // TrimTreeAtHead.
   TTMaintenance();
+  TTMaintenance();
 
   Node* old_head = current_head_;
   current_head_ = gamebegin_node_.get();
