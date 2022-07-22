@@ -822,7 +822,7 @@ inline VisitedNode_Iterator<false> Node::VisitedNodes() {
 
 class NodeTree {
  public:
-  // Transposition Table type for holding all normal low nodes in the DAG.
+  // Transposition Table (TT) type for holding all normal low nodes in the DAG.
   typedef absl::flat_hash_map<uint64_t, std::unique_ptr<LowNode>>
       TranspositionTable;
 
@@ -855,17 +855,22 @@ class NodeTree {
   // new low node and insert it into the Transposition Table if it is not there
   // already. Return the low node for the hash.
   std::pair<LowNode*, bool> TTGetOrCreate(uint64_t hash);
-  // Evict expired entries from the transposition table.
-  void TTMaintenance();
-  // Clear Transposition Table.
+  // Clear the Transposition Table.
   void TTClear();
 
   // Add a clone of low @node to special nodes outside of the Transposition
   // Table and return it.
-  LowNode* NoTTAddClone(const LowNode& node);
+  LowNode* NonTTAddClone(const LowNode& node);
 
  private:
   void DeallocateTree();
+
+  // Evict unused low nodes from the Transposition Table.
+  void TTMaintenance();
+  // Evict unused non-TT low nodes.
+  void NonTTMaintenance();
+  // Clear non-TT low nodes.
+  void NonTTClear();
 
   // A node which to start search from.
   Node* current_head_ = nullptr;
@@ -874,12 +879,12 @@ class NodeTree {
   PositionHistory history_;
   std::vector<Move> moves_;
 
-  // Transposition Table type for holding references to all normal low nodes in
-  // DAG.
+  // Transposition Table (TT) for holding references to all normal low nodes in
+  // the DAG.
   TranspositionTable tt_;
-  // Collection for low nodes that are not fit for Transposition Table due to
+  // Collection of low nodes that are not fit for Transposition Table due to
   // noise or incomplete information.
-  std::vector<std::unique_ptr<LowNode>> other_nodes_;
+  std::vector<std::unique_ptr<LowNode>> non_tt_;
 };
 
 }  // namespace lczero

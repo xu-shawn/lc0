@@ -27,6 +27,8 @@
 
 #include "mcts/node.h"
 
+#include <absl/algorithm/container.h>
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -569,6 +571,7 @@ void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
   const auto& board = HeadPosition().GetBoard();
 
+  // Find edge for @move, if it exists.
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
     if (board.IsSameMove(n.GetMove(), move)) {
@@ -580,14 +583,16 @@ void NodeTree::MakeMove(Move move) {
     }
   }
   move = board.GetModernMove(move);
+  // Remove edges that will not be needed any more.
   current_head_->ReleaseChildrenExceptOne(new_head);
   new_head = current_head_->GetChild();
+  // Use an existing edge for @move or make a new one.
   if (new_head) {
     current_head_ = new_head;
   } else {
-    other_nodes_.emplace_back(
+    non_tt_.emplace_back(
         std::make_unique<LowNode>(MoveList({move}), static_cast<uint16_t>(0)));
-    current_head_->SetLowNode(other_nodes_.back().get());
+    current_head_->SetLowNode(non_tt_.back().get());
     current_head_ = current_head_->GetChild();
   }
   history_.Append(move);
@@ -599,6 +604,8 @@ void NodeTree::TrimTreeAtHead() {
   current_head_->ReleaseChildren();
   *current_head_ = Node(current_head_->GetParent(), current_head_->Index());
   current_head_->MoveSiblingIn(tmp);
+  // Free unused non-TT low nodes.
+  NonTTMaintenance();
 }
 
 bool NodeTree::ResetToPosition(const std::string& starting_fen,
@@ -648,8 +655,8 @@ void NodeTree::DeallocateTree() {
   gamebegin_node_.reset();
   current_head_ = nullptr;
   // Free all nodes.
-  other_nodes_.clear();
-  tt_.clear();
+  NonTTClear();
+  TTClear();
 }
 
 LowNode* NodeTree::TTFind(uint64_t hash) {
@@ -671,11 +678,30 @@ void NodeTree::TTMaintenance() {
       tt_, [](const auto& item) { return item.second->GetNumParents() == 0; });
 }
 
-void NodeTree::TTClear() { tt_.clear(); }
+void NodeTree::TTClear() {
+  absl::c_for_each(tt_,
+                   [](const auto& item) { item.second->ReleaseChildren(); });
+  // A single low node might still be attached to the current head.
+  TTMaintenance();
+}
 
-LowNode* NodeTree::NoTTAddClone(const LowNode& node) {
-  other_nodes_.push_back(std::make_unique<LowNode>(node));
-  return other_nodes_.back().get();
+LowNode* NodeTree::NonTTAddClone(const LowNode& node) {
+  non_tt_.push_back(std::make_unique<LowNode>(node));
+  return non_tt_.back().get();
+}
+
+void NodeTree::NonTTMaintenance() {
+  // Find the first parentless low node and remove all low nodes from this low
+  // node on.
+  auto it = non_tt_.cbegin();
+  while (it != non_tt_.cend() && (*it)->GetNumParents() > 0) ++it;
+  non_tt_.erase(it, non_tt_.cend());
+}
+
+void NodeTree::NonTTClear() {
+  absl::c_for_each(non_tt_, [](const auto& item) { item->ReleaseChildren(); });
+  // A single low node might still be attached to the game begin node.
+  NonTTMaintenance();
 }
 
 }  // namespace lczero

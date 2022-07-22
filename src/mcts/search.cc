@@ -2080,7 +2080,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   Node* node = node_to_process->node;
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
-    auto low_node = search_->dag_->NoTTAddClone(*node_to_process->tt_low_node);
+    auto low_node = search_->dag_->NonTTAddClone(*node_to_process->tt_low_node);
     assert(low_node != nullptr);
     node->SetLowNode(low_node);
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
