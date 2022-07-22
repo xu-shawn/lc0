@@ -965,6 +965,11 @@ Search::~Search() {
     assert(root_node_->ZeroNInFlight());
 #endif
   }
+
+  // Free previously released nodes that were not reused during this search.
+  dag_->TTMaintenance();
+  dag_->TTMaintenance();
+
   LOGFILE << "Search destroyed.";
 }
 

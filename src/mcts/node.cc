@@ -623,11 +623,6 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
                  full_moves * 2 - (starting_board.flipped() ? 1 : 2));
   moves_.clear();
 
-  // Free old released nodes before possibly releasing new ones in MakeMove or
-  // TrimTreeAtHead.
-  TTMaintenance();
-  TTMaintenance();
-
   Node* old_head = current_head_;
   current_head_ = gamebegin_node_.get();
   bool seen_old_head = (gamebegin_node_.get() == old_head);
