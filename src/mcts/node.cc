@@ -121,26 +121,23 @@ std::unique_ptr<Edge[]> Edge::FromMovelist(const MoveList& moves) {
 // LowNode + Node
 /////////////////////////////////////////////////////////////////////////
 
-Node& Node::operator=(Node&& n) {
-  wl_ = n.wl_;
+void Node::Trim() {
+  wl_ = 0.0f;
 
   UnsetLowNode();
-  if (n.low_node_) SetLowNode(n.low_node_);
-  parent_ = n.parent_;
-  sibling_ = std::move(n.sibling_);
+  // parent_
+  // sibling_
 
-  d_ = n.d_;
-  m_ = n.m_;
-  n_ = n.n_;
-  n_in_flight_ = n.n_in_flight_;
+  d_ = 0.0f;
+  m_ = 0.0f;
+  n_ = 0;
+  n_in_flight_ = 0;
 
-  index_ = n.index_;
+  // index_
 
-  terminal_type_ = n.terminal_type_;
-  lower_bound_ = n.lower_bound_;
-  upper_bound_ = n.upper_bound_;
-
-  return *this;
+  terminal_type_ = Terminal::NonTerminal;
+  lower_bound_ = GameResult::BLACK_WON;
+  upper_bound_ = GameResult::WHITE_WON;
 }
 
 void LowNode::CopyPolicy(int max_needed, float* output) const {
@@ -600,10 +597,7 @@ void NodeTree::MakeMove(Move move) {
 }
 
 void NodeTree::TrimTreeAtHead() {
-  auto tmp = current_head_->MoveSiblingOut();
-  current_head_->ReleaseChildren();
-  *current_head_ = Node(current_head_->GetParent(), current_head_->Index());
-  current_head_->MoveSiblingIn(tmp);
+  current_head_->Trim();
   // Free unused non-TT low nodes.
   NonTTMaintenance();
 }

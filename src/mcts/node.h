@@ -369,9 +369,8 @@ class Node {
         upper_bound_(GameResult::WHITE_WON) {}
   ~Node() { UnsetLowNode(); }
 
-  // Copy that updates low_node_ using UnsetLowNode/SetLowNode and moves
-  // sibling_ to target.
-  Node& operator=(Node&& n);
+  // Trim node, resetting everything except parent, sibling and index.
+  void Trim();
 
   // Gets parent low node.
   LowNode* GetParent() const { return parent_; }
@@ -382,8 +381,6 @@ class Node {
   }
   // Get next sibling.
   std::unique_ptr<Node>* GetSibling() { return &sibling_; }
-  // Moves sibling out.
-  std::unique_ptr<Node> MoveSiblingOut() { return std::move(sibling_); }
   // Moves sibling in.
   void MoveSiblingIn(std::unique_ptr<Node>& sibling) {
     sibling_ = std::move(sibling);
@@ -463,12 +460,6 @@ class Node {
   // Returns range for iterating over child nodes with N > 0.
   VisitedNode_Iterator<true> VisitedNodes() const;
   VisitedNode_Iterator<false> VisitedNodes();
-
-  // Deletes all children.
-  void ReleaseChildren() const {
-    // Low node may not be attached (yet).
-    if (low_node_) low_node_->ReleaseChildren();
-  }
 
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
