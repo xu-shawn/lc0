@@ -374,7 +374,6 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 }  // namespace
 
 std::vector<std::string> Search::GetVerboseStats(Node* node) const {
-  assert(node == root_node_ || node->GetParent() == root_node_->GetLowNode());
   const bool is_root = (node == root_node_);
   const bool is_odd_depth = !is_root;
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
@@ -425,7 +424,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     } else if (n) {
       auto history = played_history_;
       if (!is_root) {
-        history.Append(node->GetOwnEdge()->GetMove());
+        history.Append(node->GetMove());
       }
       NNCacheLock nneval = GetCachedNNEval(history);
       if (nneval) v = -nneval->eval->q;
@@ -1485,8 +1484,7 @@ void SearchWorker::PickNodesToExtendTask(
     receiver->reserve(receiver->size() + 30);
   }
 
-  // These 2 are 'filled pre-emptively'.
-  std::array<float, 256> current_pol;
+  // This 1 is 'filled pre-emptively'.
   std::array<float, 256> current_util;
 
   // These 3 are 'filled on demand'.
@@ -1591,7 +1589,6 @@ void SearchWorker::PickNodesToExtendTask(
             max_needed, node->GetLowNode()->GetNStarted() + cur_limit + 2);
       }
 
-      node->CopyPolicy(max_needed, current_pol.data());
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
       }
@@ -1603,7 +1600,7 @@ void SearchWorker::PickNodesToExtendTask(
       float visited_pol = 0.0f;
       for (Node* child : node->VisitedNodes()) {
         int index = child->Index();
-        visited_pol += current_pol[index];
+        visited_pol += child->GetP();
         float q = child->GetQ(draw_score);
         current_util[index] = q + m_evaluator.GetM(child, q);
       }
@@ -1642,7 +1639,7 @@ void SearchWorker::PickNodesToExtendTask(
           const float util = current_util[idx];
           if (idx > cache_filled_idx) {
             current_score[idx] =
-                current_pol[idx] * puct_mult / (1 + nstarted) + util;
+                cur_iters[idx].GetP() * puct_mult / (1 + nstarted) + util;
             cache_filled_idx++;
           }
           if (is_root_node) {
@@ -1690,7 +1687,7 @@ void SearchWorker::PickNodesToExtendTask(
           if (best_without_u < second_best) {
             const auto n1 = current_nstarted[best_idx] + 1;
             estimated_visits_to_change_best = static_cast<int>(
-                std::max(1.0f, std::min(current_pol[best_idx] * puct_mult /
+                std::max(1.0f, std::min(cur_iters[best_idx].GetP() * puct_mult /
                                                 (second_best - best_without_u) -
                                             n1 + 1,
                                         1e9f)));
@@ -1728,7 +1725,7 @@ void SearchWorker::PickNodesToExtendTask(
             child_node->IncrementNInFlight(new_visits);
             current_nstarted[best_idx] += new_visits;
           }
-          current_score[best_idx] = current_pol[best_idx] * puct_mult /
+          current_score[best_idx] = cur_iters[best_idx].GetP() * puct_mult /
                                         (1 + current_nstarted[best_idx]) +
                                     current_util[best_idx];
         }

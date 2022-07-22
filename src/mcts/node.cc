@@ -125,13 +125,14 @@ void Node::Trim() {
   wl_ = 0.0f;
 
   UnsetLowNode();
-  // parent_
   // sibling_
 
   d_ = 0.0f;
   m_ = 0.0f;
   n_ = 0;
   n_in_flight_ = 0;
+
+  // edge_
 
   // index_
 
@@ -140,32 +141,20 @@ void Node::Trim() {
   upper_bound_ = GameResult::WHITE_WON;
 }
 
-void LowNode::CopyPolicy(int max_needed, float* output) const {
-  if (num_edges_ == 0) return;
-  int loops = std::min(static_cast<int>(num_edges_), max_needed);
-  for (int i = 0; i < loops; i++) {
-    output[i] = edges_[i].GetP();
-  }
-}
-
 float Node::GetVisitedPolicy() const {
   float sum = 0.0f;
-  for (auto* node : VisitedNodes()) sum += GetEdgeToNode(node)->GetP();
+  for (auto* node : VisitedNodes()) sum += node->GetP();
   return sum;
 }
 
-Edge* LowNode::GetEdgeToNode(const Node* node) const {
-  assert(node->GetParent() == this);
-  assert(node->Index() < num_edges_);
-  return &edges_[node->Index()];
-}
+const Edge& LowNode::GetEdgeAt(uint16_t index) const { return edges_[index]; }
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << " <Node> This:" << this << " LowNode:" << low_node_
-      << " Parent:" << parent_ << " Index:" << index_
-      << " Sibling:" << sibling_.get() << " WL:" << wl_ << " D:" << d_
-      << " M:" << m_ << " N:" << n_ << " N_:" << n_in_flight_
+      << " Index:" << index_ << " Move:" << GetMove().as_string()
+      << " Sibling:" << sibling_.get() << " P:" << GetP() << " WL:" << wl_
+      << " D:" << d_ << " M:" << m_ << " N:" << n_ << " N_:" << n_in_flight_
       << " Term:" << static_cast<int>(terminal_type_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2;
@@ -261,7 +250,7 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
     d_ = 0.0f;
     // Terminal losses have no uncertainty and no reason for their U value to be
     // comparable to another non-loss choice. Force this by clearing the policy.
-    if (GetParent() != nullptr) GetOwnEdge()->SetP(0.0f);
+    SetP(0.0f);
   }
 }
 
@@ -423,22 +412,21 @@ std::string LowNode::DotNodeString() const {
   return oss.str();
 }
 
-std::string Node::DotEdgeString(bool as_opponent) const {
+std::string Node::DotEdgeString(bool as_opponent, const LowNode* parent) const {
   std::ostringstream oss;
-  oss << (parent_ == nullptr ? "top" : PtrToNodeName(parent_)) << " -> "
+  oss << (parent == nullptr ? "top" : PtrToNodeName(parent)) << " -> "
       << (low_node_ ? PtrToNodeName(low_node_) : PtrToNodeName(this)) << " [";
   oss << "label=\""
-      << (parent_ == nullptr ? "N/A"
-                             : GetOwnEdge()->GetMove(as_opponent).as_string())
+      << (parent == nullptr ? "N/A" : GetMove(as_opponent).as_string())
       << "\\lN=" << n_ << "\\lN_=" << n_in_flight_;
   oss << "\\l\"";
   // Set precision for tooltip.
   oss << std::fixed << std::setprecision(5);
   oss << ",labeltooltip=\""
-      << "P=" << (parent_ == nullptr ? 0.0f : GetOwnEdge()->GetP())
-      << std::showpos      //
-      << "\\nWL= " << wl_  //
-      << std::noshowpos    //
+      << "P=" << (parent == nullptr ? 0.0f : GetP())  //
+      << std::showpos                                 //
+      << "\\nWL= " << wl_                             //
+      << std::noshowpos                               //
       << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
       << "\\nN_=" << n_in_flight_
       << "\\nTerm=" << static_cast<int>(terminal_type_)  //
@@ -446,7 +434,7 @@ std::string Node::DotEdgeString(bool as_opponent) const {
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2 << "\\n\\nThis=" << this  //
       << std::noshowpos                                               //
-      << "\\nLowNode=" << low_node_ << "\\nParent=" << parent_
+      << "\\nLowNode=" << low_node_ << "\\nParent=" << parent
       << "\\nIndex=" << index_ << "\\nSibling=" << sibling_.get() << "\\n\"";
   oss << "];";
   return oss.str();
@@ -621,7 +609,7 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   }
 
   if (!gamebegin_node_) {
-    gamebegin_node_ = std::make_unique<Node>(static_cast<LowNode*>(nullptr), 0);
+    gamebegin_node_ = std::make_unique<Node>(0);
   }
 
   history_.Reset(starting_board, no_capture_ply,
