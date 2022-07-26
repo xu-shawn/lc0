@@ -91,6 +91,78 @@ namespace lczero {
 #define __arm__
 #endif
 
+// Atomic unique_ptr based on the public domain code from
+// https://stackoverflow.com/a/42811152 .
+template <class T>
+class atomic_unique_ptr {
+  using pointer = T*;
+  using unique_pointer = std::unique_ptr<T>;
+
+ public:
+  // Manage no pointer.
+  constexpr atomic_unique_ptr() noexcept : ptr() {}
+
+  // Make pointer @p managed.
+  explicit atomic_unique_ptr(pointer p) noexcept : ptr(p) {}
+
+  // Move the managed pointer ownership from another atomic_unique_ptr.
+  atomic_unique_ptr(atomic_unique_ptr&& p) noexcept : ptr(p.release()) {}
+  // Move the managed pointer ownership from another atomic_unique_ptr.
+  atomic_unique_ptr& operator=(atomic_unique_ptr&& p) noexcept {
+    reset(p.release());
+    return *this;
+  }
+
+  // Move the managed object ownership from a unique_ptr.
+  atomic_unique_ptr(unique_pointer&& p) noexcept : ptr(p.release()) {}
+  // Move the managed object ownership from a unique_ptr.
+  atomic_unique_ptr& operator=(unique_pointer&& p) noexcept {
+    reset(p.release());
+    return *this;
+  }
+
+  // Replace the managed pointer, deleting the old one.
+  void reset(pointer p = pointer()) noexcept {
+    auto old = ptr.exchange(p, std::memory_order_acquire);
+    if (old) delete old;
+  }
+  // Release ownership of and delete the owned pointer.
+  ~atomic_unique_ptr() { reset(); }
+
+  // Returns the managed pointer.
+  operator pointer() const noexcept { return ptr; }
+  // Returns the managed pointer.
+  pointer operator->() const noexcept { return ptr; }
+  // Returns the managed pointer.
+  pointer get() const noexcept { return ptr; }
+
+  // Checks whether there is a managed pointer.
+  explicit operator bool() const noexcept { return ptr != pointer(); }
+
+  // Replace the managed pointer, only releasing returning the old one.
+  pointer set(pointer p = pointer()) noexcept {
+    return ptr.exchange(p, std::memory_order_acquire);
+  }
+  // Return the managed pointer and release its ownership.
+  pointer release() noexcept { return set(pointer()); }
+
+  // Move managed pointer from @source, iff the managed pointer equals
+  // @expected.
+  bool compare_exchange(pointer expected,
+                        atomic_unique_ptr<T>& source) noexcept {
+    if (ptr.compare_exchange_strong(expected, source.ptr,
+                                    std::memory_order_acq_rel)) {
+      source.release();
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+ private:
+  std::atomic<pointer> ptr;
+};
+
 class Node;
 class Edge {
  public:
@@ -197,7 +269,7 @@ class LowNode {
   void SetNNEval(const NNEval* eval) {
     assert(!edges_);
     assert(n_ == 0);
-    assert(child_ == nullptr);
+    assert(!child_);
 
     edges_ = std::make_unique<Edge[]>(eval->num_edges);
     std::memcpy(edges_.get(), eval->edges.get(),
@@ -211,7 +283,7 @@ class LowNode {
   }
 
   // Gets the first child.
-  std::unique_ptr<Node>* GetChild() { return &child_; }
+  atomic_unique_ptr<Node>* GetChild() { return &child_; }
 
   // Returns whether a node has children.
   bool HasChildren() const { return num_edges_ > 0; }
@@ -318,7 +390,7 @@ class LowNode {
   // Array of edges.
   std::unique_ptr<Edge[]> edges_;
   // Pointer to the first child. nullptr when no children.
-  std::unique_ptr<Node> child_;
+  atomic_unique_ptr<Node> child_;
 
   // 4 byte fields.
   // Averaged draw probability. Works similarly to WL, except that D is not
@@ -386,9 +458,9 @@ class Node {
     return low_node_->GetChild()->get();
   }
   // Get next sibling.
-  std::unique_ptr<Node>* GetSibling() { return &sibling_; }
+  atomic_unique_ptr<Node>* GetSibling() { return &sibling_; }
   // Moves sibling in.
-  void MoveSiblingIn(std::unique_ptr<Node>& sibling) {
+  void MoveSiblingIn(atomic_unique_ptr<Node>& sibling) {
     sibling_ = std::move(sibling);
   }
 
@@ -540,7 +612,7 @@ class Node {
   // Pointer to a parent low node. nullptr for the root.
   LowNode* parent_ = nullptr;
   // Pointer to a next sibling. nullptr if there are no further siblings.
-  std::unique_ptr<Node> sibling_;
+  atomic_unique_ptr<Node> sibling_;
 
   // 4 byte fields.
   // Averaged draw probability. Works similarly to WL, except that D is not
@@ -656,8 +728,8 @@ class EdgeAndNode {
 template <bool is_const>
 class Edge_Iterator : public EdgeAndNode {
  public:
-  using Ptr = std::conditional_t<is_const, const std::unique_ptr<Node>*,
-                                 std::unique_ptr<Node>*>;
+  using Ptr = std::conditional_t<is_const, const atomic_unique_ptr<Node>*,
+                                 atomic_unique_ptr<Node>*>;
 
   // Creates "end()" iterator.
   Edge_Iterator() {}
@@ -693,26 +765,43 @@ class Edge_Iterator : public EdgeAndNode {
   // If there is node, return it. Otherwise spawn a new one and return it.
   Node* GetOrSpawnNode(Node* parent) {
     if (node_) return node_;  // If there is already a node, return it.
-    Actualize();              // But maybe other thread already did that.
-    if (node_) return node_;  // If it did, return.
-    // Now we are sure we have to create a new node.
-    // Suppose there are nodes with idx 3 and 7, and we want to insert one with
-    // idx 5. Here is how it looks like:
-    //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.7)
-    // Here is how we do that:
-    // 1. Store pointer to a node idx_.7:
-    //    node_ptr_ -> &Node(idx_.3).sibling_  ->  nullptr
-    //    tmp -> Node(idx_.7)
-    std::unique_ptr<Node> tmp = std::move(*node_ptr_);
-    // 2. Create fresh Node(idx_.5):
-    //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
-    //    tmp -> Node(idx_.7)
-    auto low_parent = parent->GetLowNode();
-    *node_ptr_ = std::make_unique<Node>(low_parent, current_idx_);
-    // 3. Attach stored pointer back to a list:
-    //    node_ptr_ ->
-    //         &Node(idx_.3).sibling_ -> Node(idx_.5).sibling_ -> Node(idx_.7)
-    (*node_ptr_)->MoveSiblingIn(tmp);
+
+    // We likely need to add a new node, prepare it now.
+    atomic_unique_ptr<Node> new_node =
+        std::make_unique<Node>(parent->GetLowNode(), current_idx_);
+    while (true) {
+      auto node = Actualize();  // But maybe other thread already did that.
+      if (node_) return node_;  // If it did, return.
+
+      // New node needs to be added, but we might be in a race with another
+      // thread doing what we do or adding a different index to the same
+      // sibling.
+
+      // Suppose there are nodes with idx 3 and 7, and we want to insert one
+      // with idx 5. Here is how it looks like:
+      //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.7)
+      // Here is how we do that:
+      // 1. Store pointer to a node idx_.7:
+      //    node_ptr_ -> &Node(idx_.3).sibling_  ->  nullptr
+      //    tmp -> Node(idx_.7)
+      // 2. Create fresh Node(idx_.5):
+      //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
+      //    tmp -> Node(idx_.7)
+      // 3. Attach stored pointer back to a list:
+      //    node_ptr_ ->
+      //         &Node(idx_.3).sibling_ -> Node(idx_.5).sibling_ -> Node(idx_.7)
+
+      // Atomically add the new node into the right place.
+      // Set new node's sibling to the expected sibling seen by Actualize in
+      // node_ptr_.
+      auto new_sibling = new_node->GetSibling();
+      new_sibling->set(node);
+      // Try to atomically insert the new node and stop if it works.
+      if (node_ptr_->compare_exchange(node, new_node)) break;
+      // Recover from failure and try again.
+      // Release expected sibling to avoid double free.
+      new_sibling->release();
+    }
     // 4. Actualize:
     //    node_ -> &Node(idx_.5)
     //    node_ptr_ -> &Node(idx_.5).sibling_ -> Node(idx_.7)
@@ -721,22 +810,30 @@ class Edge_Iterator : public EdgeAndNode {
   }
 
  private:
-  void Actualize() {
+  // Moves node_ptr_ as close as possible to the target index and returns the
+  // contents of node_ptr_ for use by atomic insert in GetOrSpawnNode.
+  Node* Actualize() {
     // If node_ptr_ is behind, advance it.
     // This is needed (and has to be 'while' rather than 'if') as other threads
     // could spawn new nodes between &node_ptr_ and *node_ptr_ while we didn't
     // see.
-    while (*node_ptr_ && (*node_ptr_)->Index() < current_idx_) {
-      node_ptr_ = (*node_ptr_)->GetSibling();
+    // Read the direct pointer just once as other threads may change it between
+    // uses.
+    auto node = node_ptr_->get();
+    while (node != nullptr && node->Index() < current_idx_) {
+      node_ptr_ = node->GetSibling();
+      node = node_ptr_->get();
     }
     // If in the end node_ptr_ points to the node that we need, populate node_
     // and advance node_ptr_.
-    if (*node_ptr_ && (*node_ptr_)->Index() == current_idx_) {
-      node_ = (*node_ptr_).get();
-      node_ptr_ = node_->GetSibling();
+    if (node != nullptr && node->Index() == current_idx_) {
+      node_ = node;
+      node_ptr_ = node->GetSibling();
     } else {
       node_ = nullptr;
     }
+
+    return node;
   }
 
   // Pointer to a pointer to the next node. Has to be a pointer to pointer
@@ -748,11 +845,11 @@ class Edge_Iterator : public EdgeAndNode {
 
 inline Node::ConstIterator Node::Edges() const {
   return {*this, (low_node_ ? low_node_->GetChild()
-                            : static_cast<std::unique_ptr<Node>*>(nullptr))};
+                            : static_cast<atomic_unique_ptr<Node>*>(nullptr))};
 }
 inline Node::Iterator Node::Edges() {
   return {*this, (low_node_ ? low_node_->GetChild()
-                            : static_cast<std::unique_ptr<Node>*>(nullptr))};
+                            : static_cast<atomic_unique_ptr<Node>*>(nullptr))};
 }
 
 // TODO(crem) Replace this with less hacky iterator once we support C++17.
