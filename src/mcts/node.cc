@@ -141,10 +141,29 @@ void Node::Trim() {
   upper_bound_ = GameResult::WHITE_WON;
 }
 
+Node* Node::GetChild() const {
+  if (!low_node_) return nullptr;
+  return low_node_->GetChild()->get();
+}
+
+bool Node::HasChildren() const { return low_node_ && low_node_->HasChildren(); }
+
 float Node::GetVisitedPolicy() const {
   float sum = 0.0f;
   for (auto* node : VisitedNodes()) sum += node->GetP();
   return sum;
+}
+
+uint32_t Node::GetNInFlight() const {
+  return n_in_flight_.load(std::memory_order_acquire);
+}
+
+uint32_t Node::GetChildrenVisits() const {
+  return low_node_ ? low_node_->GetChildrenVisits() : 0;
+}
+
+uint32_t Node::GetTotalVisits() const {
+  return low_node_ ? low_node_->GetN() : 0;
 }
 
 const Edge& LowNode::GetEdgeAt(uint16_t index) const { return edges_[index]; }
@@ -233,6 +252,10 @@ void LowNode::MakeNotTerminal(const Node* node) {
 void LowNode::SetBounds(GameResult lower, GameResult upper) {
   lower_bound_ = lower;
   upper_bound_ = upper;
+}
+
+uint8_t Node::GetNumEdges() const {
+  return low_node_ ? low_node_->GetNumEdges() : 0;
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
@@ -353,6 +376,11 @@ void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
   m_ += multivisit * m / n_;
 }
 
+void Node::IncrementNInFlight(int multivisit) {
+  if (low_node_) low_node_->IncrementNInFlight(multivisit);
+  n_in_flight_.fetch_add(multivisit, std::memory_order_acq_rel);
+}
+
 void LowNode::ReleaseChildren() { child_.reset(); }
 
 void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
@@ -371,6 +399,21 @@ void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
   }
   // Make saved node the only child. (kills previous siblings).
   child_ = std::move(saved_node);
+}
+
+void Node::ReleaseChildrenExceptOne(Node* node_to_save) const {
+  // Sometime we have no graph yet or a reverted terminal without low node.
+  if (low_node_) low_node_->ReleaseChildrenExceptOne(node_to_save);
+}
+
+void Node::SetLowNode(LowNode* low_node) {
+  assert(!low_node_);
+  low_node->AddParent(n_in_flight_);
+  low_node_ = low_node;
+}
+void Node::UnsetLowNode() {
+  if (low_node_) low_node_->RemoveParent();
+  low_node_ = nullptr;
 }
 
 static std::string PtrToNodeName(const void* ptr) {
@@ -541,6 +584,11 @@ bool Node::ZeroNInFlight() const {
   }
 
   return true;
+}
+
+void Node::SortEdges() const {
+  assert(low_node_);
+  low_node_->SortEdges();
 }
 
 /////////////////////////////////////////////////////////////////////////

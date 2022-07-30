@@ -221,12 +221,208 @@ struct NNEval {
   uint8_t num_edges = 0;
 };
 
+typedef std::pair<GameResult, GameResult> Bounds;
+
+enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase };
+
+class EdgeAndNode;
+template <bool is_const>
+class Edge_Iterator;
+
+template <bool is_const>
+class VisitedNode_Iterator;
+
+class LowNode;
+class Node {
+ public:
+  using Iterator = Edge_Iterator<false>;
+  using ConstIterator = Edge_Iterator<true>;
+
+  // Takes own @index in the parent.
+  Node(uint16_t index)
+      : index_(index),
+        terminal_type_(Terminal::NonTerminal),
+        lower_bound_(GameResult::BLACK_WON),
+        upper_bound_(GameResult::WHITE_WON) {}
+  // Takes own @edge and @index in the parent.
+  Node(const Edge& edge, uint16_t index)
+      : edge_(edge),
+        index_(index),
+        terminal_type_(Terminal::NonTerminal),
+        lower_bound_(GameResult::BLACK_WON),
+        upper_bound_(GameResult::WHITE_WON) {}
+  ~Node() { UnsetLowNode(); }
+
+  // Trim node, resetting everything except parent, sibling, edge and index.
+  void Trim();
+
+  // Get first child.
+  Node* GetChild() const;
+  // Get next sibling.
+  atomic_unique_ptr<Node>* GetSibling() { return &sibling_; }
+  // Moves sibling in.
+  void MoveSiblingIn(atomic_unique_ptr<Node>& sibling) {
+    sibling_ = std::move(sibling);
+  }
+
+  // Returns whether a node has children.
+  bool HasChildren() const;
+
+  // Returns sum of policy priors which have had at least one playout.
+  float GetVisitedPolicy() const;
+  uint32_t GetN() const { return n_; }
+  uint32_t GetNInFlight() const;
+  uint32_t GetChildrenVisits() const;
+  uint32_t GetTotalVisits() const;
+  // Returns n + n_in_flight.
+  int GetNStarted() const {
+    return n_ + n_in_flight_.load(std::memory_order_acquire);
+  }
+
+  float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
+  // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
+  // for terminal nodes.
+  float GetWL() const { return wl_; }
+  float GetD() const { return d_; }
+  float GetM() const { return m_; }
+
+  // Returns whether the node is known to be draw/lose/win.
+  bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
+  bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
+  Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
+
+  uint8_t GetNumEdges() const;
+
+  // Makes the node terminal and sets it's score.
+  void MakeTerminal(GameResult result, float plies_left = 1.0f,
+                    Terminal type = Terminal::EndOfGame);
+  // Makes the node not terminal and recomputes bounds, visits and values.
+  // Changes low node as well unless @also_low_node is false.
+  void MakeNotTerminal(bool also_low_node = true);
+  void SetBounds(GameResult lower, GameResult upper);
+
+  // If this node is not in the process of being expanded by another thread
+  // (which can happen only if n==0 and n-in-flight==1), mark the node as
+  // "being updated" by incrementing n-in-flight, and return true.
+  // Otherwise return false.
+  bool TryStartScoreUpdate();
+  // Decrements n-in-flight back.
+  void CancelScoreUpdate(int multivisit);
+  // Updates the node with newly computed value v.
+  // Updates:
+  // * Q (weighted average of all V in a subtree)
+  // * N (+=multivisit)
+  // * N-in-flight (-=multivisit)
+  void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
+  // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
+  void AdjustForTerminal(float v, float d, float m, int multivisit);
+  // When search decides to treat one visit as several (in case of collisions
+  // or visiting terminal nodes several times), it amplifies the visit by
+  // incrementing n_in_flight.
+  void IncrementNInFlight(int multivisit);
+
+  // Returns range for iterating over edges.
+  ConstIterator Edges() const;
+  Iterator Edges();
+
+  // Returns range for iterating over child nodes with N > 0.
+  VisitedNode_Iterator<true> VisitedNodes() const;
+  VisitedNode_Iterator<false> VisitedNodes();
+
+  // Deletes all children except one.
+  // The node provided may be moved, so should not be relied upon to exist
+  // afterwards.
+  void ReleaseChildrenExceptOne(Node* node_to_save) const;
+
+  // Returns move from the point of view of the player making it (if as_opponent
+  // is false) or as opponent (if as_opponent is true).
+  Move GetMove(bool as_opponent = false) const {
+    return edge_.GetMove(as_opponent);
+  }
+  // Returns or sets value of Move policy prior returned from the neural net
+  // (but can be changed by adding Dirichlet noise or when turning terminal).
+  // Must be in [0,1].
+  float GetP() const { return edge_.GetP(); }
+  void SetP(float val) { edge_.SetP(val); }
+
+  LowNode* GetLowNode() const { return low_node_; }
+
+  void SetLowNode(LowNode* low_node);
+  void UnsetLowNode();
+
+  // Debug information about the node.
+  std::string DebugString() const;
+  // Return string describing the edge from node's parent to its low node in the
+  // Graphviz dot format.
+  std::string DotEdgeString(bool as_opponent = false,
+                            const LowNode* parent = nullptr) const;
+  // Return string describing the graph starting at this node in the Graphviz
+  // dot format.
+  std::string DotGraphString(bool as_opponent = false) const;
+
+  // Returns true if graph under this node has every n_in_flight_ == 0 and
+  // prints offending nodes and low nodes and stats to cerr otherwise.
+  bool ZeroNInFlight() const;
+
+  void SortEdges() const;
+
+  // Index in parent's edges - useful for correlated ordering.
+  uint16_t Index() const { return index_; }
+
+ private:
+  // To minimize the number of padding bytes and to avoid having unnecessary
+  // padding when new fields are added, we arrange the fields by size, largest
+  // to smallest.
+
+  // 8 byte fields.
+  // Average value (from value head of neural network) of all visited nodes in
+  // subtree. For terminal nodes, eval is stored. This is from the perspective
+  // of the player who "just" moved to reach this position, rather than from
+  // the perspective of the player-to-move for the position. WL stands for "W
+  // minus L". Is equal to Q if draw score is 0.
+  double wl_ = 0.0f;
+
+  // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
+  // Pointer to the low node.
+  LowNode* low_node_ = nullptr;
+  // Pointer to a next sibling. nullptr if there are no further siblings.
+  atomic_unique_ptr<Node> sibling_;
+
+  // 4 byte fields.
+  // Averaged draw probability. Works similarly to WL, except that D is not
+  // flipped depending on the side to move.
+  float d_ = 0.0f;
+  // Estimated remaining plies.
+  float m_ = 0.0f;
+  // How many completed visits this node had.
+  uint32_t n_ = 0;
+  // (AKA virtual loss.) How many threads currently process this node (started
+  // but not finished). This value is added to n during selection which node
+  // to pick in MCTS, and also when selecting the best move.
+  std::atomic<uint32_t> n_in_flight_ = 0;
+
+  // Move and policy for this edge.
+  Edge edge_;
+
+  // 2 byte fields.
+  // Index of this node is parent's edge list.
+  uint16_t index_;
+
+  // 1 byte fields.
+  // Bit fields using parts of uint8_t fields initialized in the constructor.
+  // Whether or not this node end game (with a winning of either sides or
+  // draw).
+  Terminal terminal_type_ : 2;
+  // Best and worst result for this node.
+  GameResult lower_bound_ : 2;
+  GameResult upper_bound_ : 2;
+};
+
+// Check that Node still fits into an expected cache line size.
+static_assert(sizeof(Node) <= 64, "Node is too large");
+
 class LowNode {
  public:
-  typedef std::pair<GameResult, GameResult> Bounds;
-
-  enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase };
-
   LowNode()
       : terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
@@ -430,229 +626,6 @@ class LowNode {
 // Check that LowNode still fits into an expected cache line size.
 static_assert(sizeof(LowNode) <= 64, "LowNode is too large");
 
-class EdgeAndNode;
-template <bool is_const>
-class Edge_Iterator;
-
-template <bool is_const>
-class VisitedNode_Iterator;
-
-class Node {
- public:
-  using Iterator = Edge_Iterator<false>;
-  using ConstIterator = Edge_Iterator<true>;
-
-  typedef LowNode::Terminal Terminal;
-  typedef LowNode::Bounds Bounds;
-
-  // Takes own @index in the parent.
-  Node(uint16_t index)
-      : index_(index),
-        terminal_type_(Terminal::NonTerminal),
-        lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {}
-  // Takes own @edge and @index in the parent.
-  Node(const Edge& edge, uint16_t index)
-      : edge_(edge),
-        index_(index),
-        terminal_type_(Terminal::NonTerminal),
-        lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {}
-  ~Node() { UnsetLowNode(); }
-
-  // Trim node, resetting everything except parent, sibling, edge and index.
-  void Trim();
-
-  // Get first child.
-  Node* GetChild() const {
-    if (!low_node_) return nullptr;
-    return low_node_->GetChild()->get();
-  }
-  // Get next sibling.
-  atomic_unique_ptr<Node>* GetSibling() { return &sibling_; }
-  // Moves sibling in.
-  void MoveSiblingIn(atomic_unique_ptr<Node>& sibling) {
-    sibling_ = std::move(sibling);
-  }
-
-  // Returns whether a node has children.
-  bool HasChildren() const { return low_node_ && low_node_->HasChildren(); }
-
-  // Returns sum of policy priors which have had at least one playout.
-  float GetVisitedPolicy() const;
-  uint32_t GetN() const { return n_; }
-  uint32_t GetNInFlight() const {
-    return n_in_flight_.load(std::memory_order_acquire);
-  }
-  uint32_t GetChildrenVisits() const {
-    return low_node_ ? low_node_->GetChildrenVisits() : 0;
-  }
-  uint32_t GetTotalVisits() const { return low_node_ ? low_node_->GetN() : 0; }
-  // Returns n + n_in_flight.
-  int GetNStarted() const {
-    return n_ + n_in_flight_.load(std::memory_order_acquire);
-  }
-
-  float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
-  // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
-  // for terminal nodes.
-  float GetWL() const { return wl_; }
-  float GetD() const { return d_; }
-  float GetM() const { return m_; }
-
-  // Returns whether the node is known to be draw/lose/win.
-  bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
-  bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
-  Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
-
-  uint8_t GetNumEdges() const {
-    return low_node_ ? low_node_->GetNumEdges() : 0;
-  }
-
-  // Makes the node terminal and sets it's score.
-  void MakeTerminal(GameResult result, float plies_left = 1.0f,
-                    Terminal type = Terminal::EndOfGame);
-  // Makes the node not terminal and recomputes bounds, visits and values.
-  // Changes low node as well unless @also_low_node is false.
-  void MakeNotTerminal(bool also_low_node = true);
-  void SetBounds(GameResult lower, GameResult upper);
-
-  // If this node is not in the process of being expanded by another thread
-  // (which can happen only if n==0 and n-in-flight==1), mark the node as
-  // "being updated" by incrementing n-in-flight, and return true.
-  // Otherwise return false.
-  bool TryStartScoreUpdate();
-  // Decrements n-in-flight back.
-  void CancelScoreUpdate(int multivisit);
-  // Updates the node with newly computed value v.
-  // Updates:
-  // * Q (weighted average of all V in a subtree)
-  // * N (+=multivisit)
-  // * N-in-flight (-=multivisit)
-  void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
-  // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
-  void AdjustForTerminal(float v, float d, float m, int multivisit);
-  // When search decides to treat one visit as several (in case of collisions
-  // or visiting terminal nodes several times), it amplifies the visit by
-  // incrementing n_in_flight.
-  void IncrementNInFlight(int multivisit) {
-    if (low_node_) low_node_->IncrementNInFlight(multivisit);
-    n_in_flight_.fetch_add(multivisit, std::memory_order_acq_rel);
-  }
-
-  // Returns range for iterating over edges.
-  ConstIterator Edges() const;
-  Iterator Edges();
-
-  // Returns range for iterating over child nodes with N > 0.
-  VisitedNode_Iterator<true> VisitedNodes() const;
-  VisitedNode_Iterator<false> VisitedNodes();
-
-  // Deletes all children except one.
-  // The node provided may be moved, so should not be relied upon to exist
-  // afterwards.
-  void ReleaseChildrenExceptOne(Node* node_to_save) const {
-    // Sometime we have no graph yet or a reverted terminal without low node.
-    if (low_node_) low_node_->ReleaseChildrenExceptOne(node_to_save);
-  }
-
-  // Returns move from the point of view of the player making it (if as_opponent
-  // is false) or as opponent (if as_opponent is true).
-  Move GetMove(bool as_opponent = false) const {
-    return edge_.GetMove(as_opponent);
-  }
-  // Returns or sets value of Move policy prior returned from the neural net
-  // (but can be changed by adding Dirichlet noise or when turning terminal).
-  // Must be in [0,1].
-  float GetP() const { return edge_.GetP(); }
-  void SetP(float val) { edge_.SetP(val); }
-
-  LowNode* GetLowNode() const { return low_node_; }
-
-  void SetLowNode(LowNode* low_node) {
-    assert(!low_node_);
-    low_node->AddParent(n_in_flight_);
-    low_node_ = low_node;
-  }
-  void UnsetLowNode() {
-    if (low_node_) low_node_->RemoveParent();
-    low_node_ = nullptr;
-  }
-
-  // Debug information about the node.
-  std::string DebugString() const;
-  // Return string describing the edge from node's parent to its low node in the
-  // Graphviz dot format.
-  std::string DotEdgeString(bool as_opponent = false,
-                            const LowNode* parent = nullptr) const;
-  // Return string describing the graph starting at this node in the Graphviz
-  // dot format.
-  std::string DotGraphString(bool as_opponent = false) const;
-
-  // Returns true if graph under this node has every n_in_flight_ == 0 and
-  // prints offending nodes and low nodes and stats to cerr otherwise.
-  bool ZeroNInFlight() const;
-
-  void SortEdges() const {
-    assert(low_node_);
-    low_node_->SortEdges();
-  }
-
-  // Index in parent's edges - useful for correlated ordering.
-  uint16_t Index() const { return index_; }
-
- private:
-  // To minimize the number of padding bytes and to avoid having unnecessary
-  // padding when new fields are added, we arrange the fields by size, largest
-  // to smallest.
-
-  // 8 byte fields.
-  // Average value (from value head of neural network) of all visited nodes in
-  // subtree. For terminal nodes, eval is stored. This is from the perspective
-  // of the player who "just" moved to reach this position, rather than from
-  // the perspective of the player-to-move for the position. WL stands for "W
-  // minus L". Is equal to Q if draw score is 0.
-  double wl_ = 0.0f;
-
-  // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
-  // Pointer to the low node.
-  LowNode* low_node_ = nullptr;
-  // Pointer to a next sibling. nullptr if there are no further siblings.
-  atomic_unique_ptr<Node> sibling_;
-
-  // 4 byte fields.
-  // Averaged draw probability. Works similarly to WL, except that D is not
-  // flipped depending on the side to move.
-  float d_ = 0.0f;
-  // Estimated remaining plies.
-  float m_ = 0.0f;
-  // How many completed visits this node had.
-  uint32_t n_ = 0;
-  // (AKA virtual loss.) How many threads currently process this node (started
-  // but not finished). This value is added to n during selection which node
-  // to pick in MCTS, and also when selecting the best move.
-  std::atomic<uint32_t> n_in_flight_ = 0;
-
-  // Move and policy for this edge.
-  Edge edge_;
-
-  // 2 byte fields.
-  // Index of this node is parent's edge list.
-  uint16_t index_;
-
-  // 1 byte fields.
-  // Bit fields using parts of uint8_t fields initialized in the constructor.
-  // Whether or not this node end game (with a winning of either sides or
-  // draw).
-  Terminal terminal_type_ : 2;
-  // Best and worst result for this node.
-  GameResult lower_bound_ : 2;
-  GameResult upper_bound_ : 2;
-};
-
-// Check that Node still fits into an expected cache line size.
-static_assert(sizeof(Node) <= 64, "Node is too large");
-
 // Contains Edge and Node pair and set of proxy functions to simplify access
 // to them.
 class EdgeAndNode {
@@ -692,9 +665,9 @@ class EdgeAndNode {
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
   bool IsTbTerminal() const { return node_ ? node_->IsTbTerminal() : false; }
-  Node::Bounds GetBounds() const {
+  Bounds GetBounds() const {
     return node_ ? node_->GetBounds()
-                 : Node::Bounds{GameResult::BLACK_WON, GameResult::WHITE_WON};
+                 : Bounds{GameResult::BLACK_WON, GameResult::WHITE_WON};
   }
 
   // Edge related getters.

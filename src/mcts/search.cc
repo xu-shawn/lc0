@@ -1878,13 +1878,11 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
         }
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON, m,
-                             Node::Terminal::Tablebase);
+          node->MakeTerminal(GameResult::BLACK_WON, m, Terminal::Tablebase);
         } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON, m,
-                             Node::Terminal::Tablebase);
+          node->MakeTerminal(GameResult::WHITE_WON, m, Terminal::Tablebase);
         } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
+          node->MakeTerminal(GameResult::DRAW, m, Terminal::Tablebase);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;
@@ -2143,7 +2141,7 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
     // Update bounds.
     if (params_.GetStickyEndgames()) {
       auto tt = nl->GetTerminalType();
-      if (tt != LowNode::Terminal::NonTerminal) {
+      if (tt != Terminal::NonTerminal) {
         GameResult r;
         if (v == 1.0f) {
           r = GameResult::WHITE_WON;
@@ -2335,7 +2333,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
     assert(*n_to_fix > 0);
     pl->MakeTerminal(
         upper, (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m),
-        prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
+        prefer_tb ? Terminal::Tablebase : Terminal::EndOfGame);
     // v, d and m will be set in MaybeAdjustForTerminalOrTransposition.
     *v_delta = pl->GetWL() + p->GetWL();
     *d_delta = pl->GetD() - p->GetD();
@@ -2343,7 +2341,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
     p->MakeTerminal(
         -upper,
         (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m) + 1.0f,
-        prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
+        prefer_tb ? Terminal::Tablebase : Terminal::EndOfGame);
   } else {
     pl->SetBounds(lower, upper);
     p->SetBounds(-upper, -lower);
