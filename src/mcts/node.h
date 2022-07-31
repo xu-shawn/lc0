@@ -287,11 +287,17 @@ class LowNode {
   // Add new parent with @n_in_flight visits.
   void AddParent(int n_in_flight) {
     ++num_parents_;
+
+    assert(num_parents_ > 0);
+
     is_transposition |= num_parents_ > 1;
     IncrementNInFlight(n_in_flight);
   }
   // Remove parent and its first visit.
-  void RemoveParent() { --num_parents_; }
+  void RemoveParent() {
+    assert(num_parents_ > 0);
+    --num_parents_;
+  }
   int GetNumParents() const { return num_parents_; }
   bool IsTransposition() const { return is_transposition; }
 
