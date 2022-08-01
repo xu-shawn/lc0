@@ -178,8 +178,7 @@ std::string LowNode::DebugString() const {
       << " NumEdges:" << static_cast<int>(num_edges_)
       << " Child:" << child_.get() << " WL:" << wl_ << " D:" << d_
       << " M:" << m_ << " N:" << n_ << " N_:" << n_in_flight_
-      << " NP:" << static_cast<int>(num_parents_)
-      << " Term:" << static_cast<int>(terminal_type_)
+      << " NP:" << num_parents_ << " Term:" << static_cast<int>(terminal_type_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2
       << " IsTransposition:" << is_transposition;
@@ -404,7 +403,7 @@ std::string LowNode::DotNodeString() const {
       << "WL=" << wl_    //
       << std::noshowpos  //
       << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
-      << "\\nN_=" << n_in_flight_ << "\\nNP=" << static_cast<int>(num_parents_)
+      << "\\nN_=" << n_in_flight_ << "\\nNP=" << num_parents_
       << "\\nTerm=" << static_cast<int>(terminal_type_)  //
       << std::showpos                                    //
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
