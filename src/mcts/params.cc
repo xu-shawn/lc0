@@ -42,8 +42,7 @@
 #define DEFAULT_MAX_PREFETCH 32
 #endif
 #ifndef DEFAULT_TASK_WORKERS
-// TODO: Set back to 4 once DAG can do parallel picking.
-#define DEFAULT_TASK_WORKERS 0
+#define DEFAULT_TASK_WORKERS 3
 #endif
 
 namespace lczero {
