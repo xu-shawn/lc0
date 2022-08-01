@@ -376,7 +376,7 @@ class LowNode {
     assert(num_parents_ > 0);
     --num_parents_;
   }
-  int GetNumParents() const { return num_parents_; }
+  uint16_t GetNumParents() const { return num_parents_; }
   bool IsTransposition() const { return is_transposition; }
 
  private:
@@ -415,7 +415,7 @@ class LowNode {
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
   // Number of parents.
-  uint8_t num_parents_ = 0;
+  uint16_t num_parents_ = 0;
   // Bit fields using parts of uint8_t fields initialized in the constructor.
   // Whether or not this node end game (with a winning of either sides or draw).
   Terminal terminal_type_ : 2;
