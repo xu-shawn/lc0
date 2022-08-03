@@ -1573,22 +1573,7 @@ void SearchWorker::PickNodesToExtendTask(
 
       // Cache all constant UCT parameters.
 
-      // When we're near the leaves we can copy less of the policy, since there
-      // is no way iteration will ever reach it.
-      // TODO: This is a very conservative formula. It assumes every visit we're
-      // aiming to add is going to trigger a new child, and that any visits
-      // we've already had have also done so and then a couple extra since we go
-      // to 2 unvisited to get second best in worst case.
-      // Unclear we can do better without having already walked the children.
-      // Which we are putting off until after policy is copied so we can create
-      // visited policy without having to cache it in the node (allowing the
-      // node to stay at 64 bytes).
       int max_needed = node->GetNumEdges();
-      if (!is_root_node || root_move_filter.empty()) {
-        max_needed = std::min(
-            max_needed, node->GetLowNode()->GetNStarted() + cur_limit + 2);
-      }
-
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
       }
@@ -2192,13 +2177,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
   // Update the low node at the start of the backup path first, but only visit
   // it the first time that backup sees it.
-  if (nl) {
-    if (nl->GetN() == 0) {
-      nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(),
-                              node_to_process.multivisit);
-    } else {
-      nl->CancelScoreUpdate(node_to_process.multivisit);
-    }
+  if (nl && nl->GetN() == 0) {
+    nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(),
+                            node_to_process.multivisit);
   }
 
   if (!MaybeAdjustForTerminalOrTransposition(n, nr, nm, nl, v, d, m, n_to_fix,

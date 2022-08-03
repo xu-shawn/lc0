@@ -357,7 +357,7 @@ class SearchWorker {
         auto nl = n->GetLowNode();
         oss << n << ":" << n->GetNInFlight();
         if (nl) {
-          oss << "(" << nl << ":" << nl->GetNInFlight() << ")";
+          oss << "(" << nl << ")";
         }
       }
       oss << " --- " << std::get<0>(path.back())->DebugString();
