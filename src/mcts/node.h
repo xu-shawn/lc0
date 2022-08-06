@@ -333,11 +333,13 @@ class LowNode {
   // to pick in MCTS, and also when selecting the best move.
   uint32_t n_in_flight_ = 0;
 
+  // 2 byte fields.
+  // Number of parents.
+  uint16_t num_parents_ = 0;
+
   // 1 byte fields.
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
-  // Number of parents.
-  uint16_t num_parents_ = 0;
   // Bit fields using parts of uint8_t fields initialized in the constructor.
   // Whether or not this node end game (with a winning of either sides or draw).
   Terminal terminal_type_ : 2;
