@@ -343,6 +343,8 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m,
 
 void LowNode::AdjustForTerminal(float v, float d, float m,
                                 uint32_t multivisit) {
+  assert(static_cast<uint32_t>(multivisit) <= n_);
+
   // Recompute Q.
   wl_ += multivisit * v / n_;
   d_ += multivisit * d / n_;
@@ -363,6 +365,8 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit) {
 }
 
 void Node::AdjustForTerminal(float v, float d, float m, uint32_t multivisit) {
+  assert(static_cast<uint32_t>(multivisit) <= n_);
+
   // Recompute Q.
   wl_ += multivisit * v / n_;
   d_ += multivisit * d / n_;
