@@ -369,6 +369,8 @@ class Node {
   // Index in parent's edges - useful for correlated ordering.
   uint16_t Index() const { return index_; }
 
+  bool WLDMInvariantsHold() const;
+
  private:
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
@@ -476,6 +478,8 @@ class LowNode {
     d_ = eval->d;
     m_ = eval->m;
 
+    assert(WLDMInvariantsHold());
+
     num_edges_ = eval->num_edges;
   }
 
@@ -559,6 +563,8 @@ class LowNode {
   }
   uint16_t GetNumParents() const { return num_parents_; }
   bool IsTransposition() const { return is_transposition; }
+
+  bool WLDMInvariantsHold() const;
 
  private:
   // To minimize the number of padding bytes and to avoid having unnecessary
