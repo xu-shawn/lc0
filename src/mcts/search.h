@@ -310,11 +310,11 @@ class SearchWorker {
     BackupPath path;
     // The node to extend.
     Node* node;
-    int multivisit = 0;
+    uint32_t multivisit = 0;
     // If greater than multivisit, and other parameters don't imply a lower
     // limit, multivist could be increased to this value without additional
     // change in outcome of next selection.
-    int maxvisit = 0;
+    uint32_t maxvisit = 0;
     bool nn_queried = false;
     bool is_tt_hit = false;
     bool is_cache_hit = false;
@@ -368,7 +368,8 @@ class SearchWorker {
     }
 
    private:
-    NodeToProcess(const BackupPath& path, int multivisit, int max_count)
+    NodeToProcess(const BackupPath& path, uint32_t multivisit,
+                  uint32_t max_count)
         : path(path),
           node(std::get<0>(path.back())),
           multivisit(multivisit),
@@ -476,7 +477,7 @@ class SearchWorker {
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
-  int number_out_of_order_ = 0;
+  uint32_t number_out_of_order_ = 0;
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
   const bool moves_left_support_;

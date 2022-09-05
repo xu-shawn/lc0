@@ -1162,7 +1162,7 @@ int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
 
 void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
-  int minibatch_size = 0;
+  uint32_t minibatch_size = 0;
   int cur_n = 0;
   {
     SharedMutex::Lock lock(search_->nodes_mutex_);
@@ -1172,7 +1172,7 @@ void SearchWorker::GatherMinibatch() {
   // applied, which doesn't clearly make sense to include here...
   int64_t remaining_n =
       latest_time_manager_hints_.GetEstimatedRemainingPlayouts();
-  int collisions_left = CalculateCollisionsLeft(
+  uint32_t collisions_left = CalculateCollisionsLeft(
       std::min(static_cast<int64_t>(cur_n), remaining_n), params_);
 
   // Number of nodes processed out of order.
