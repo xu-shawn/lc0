@@ -162,7 +162,7 @@ Search::Search(NodeTree* dag, Network* network,
       params_(options),
       searchmoves_(searchmoves),
       start_time_(start_time),
-      initial_visits_(root_node_->GetN()),
+      initial_visits_(dag->AllocatedNodeCount()),
       root_move_filter_(MakeRootMoveFilter(
           searchmoves_, syzygy_tb_, played_history_,
           params_.GetSyzygyFastPlay(), &tb_hits_, &root_is_in_dtz_)),

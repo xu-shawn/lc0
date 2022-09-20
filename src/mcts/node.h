@@ -926,6 +926,8 @@ class NodeTree {
   // Table and return it.
   LowNode* NonTTAddClone(const LowNode& node);
 
+  size_t AllocatedNodeCount() const { return tt_.size() + non_tt_.size(); };
+
  private:
   void DeallocateTree();
 
