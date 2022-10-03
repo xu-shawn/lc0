@@ -139,6 +139,7 @@ void Node::Trim() {
   terminal_type_ = Terminal::NonTerminal;
   lower_bound_ = GameResult::BLACK_WON;
   upper_bound_ = GameResult::WHITE_WON;
+  repetition_ = false;
 }
 
 Node* Node::GetChild() const {
@@ -290,6 +291,7 @@ void Node::MakeNotTerminal(bool also_low_node) {
     return;
 
   terminal_type_ = Terminal::NonTerminal;
+  repetition_ = false;
   if (low_node_) {  // Two-fold or derived terminal.
     // Revert low node first.
     if (also_low_node && low_node_) low_node_->MakeNotTerminal(this);

@@ -2196,7 +2196,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // Stop delta update on repetition "terminal" and propagate a draw above.
     // Only do this after edge update to have good values if play goes here.
-    if (nr > 0) {
+    if (nr > 0 || n->IsRepetition()) {
+      n->SetRepetition();
       n_to_fix = 0;
       v = 0.0f;
       d = 1.0f;
