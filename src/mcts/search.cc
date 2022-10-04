@@ -2189,8 +2189,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
        /* ++it in the body */) {
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
     if (n_to_fix > 0 && !n->IsTerminal()) {
-      // Number of visits may decrease above transposition low node.
-      n_to_fix = std::min(n_to_fix, n->GetN());
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
 
