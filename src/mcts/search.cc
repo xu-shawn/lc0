@@ -2192,14 +2192,17 @@ void SearchWorker::DoBackupUpdateSingleNode(
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
 
-    // Stop delta update on repetition "terminal" and propagate a draw above.
+    // Stop delta update on repetition "terminal" and propagate a draw above
+    // repetitions valid on the current path.
     // Only do this after edge update to have good values if play goes here.
-    if (nr > 0 || n->IsRepetition()) {
+    if (nr > 0) {
       n->SetRepetition();
       n_to_fix = 0;
       v = 0.0f;
       d = 1.0f;
       m = nm;
+    } else if (n->IsRepetition()) {
+      n_to_fix = 0;
     }
 
     // Nothing left to do without ancestors to update.
