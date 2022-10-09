@@ -2175,9 +2175,15 @@ void SearchWorker::DoBackupUpdateSingleNode(
                             node_to_process.multivisit);
   }
 
-  if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix, v_delta,
-                                             d_delta, m_delta,
-                                             update_parent_bounds)) {
+  if (nr >= 2) {
+    // Three-fold itself has to be handled as a terminal to produce relevant
+    // results. Unlike two-folds that can keep updating their "real" values.
+    v = 0.0f;
+    d = 1.0f;
+    m = 1;
+  } else if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix,
+                                                    v_delta, d_delta, m_delta,
+                                                    update_parent_bounds)) {
     // If there is nothing better, use original NN values adjusted for node.
     v = -nl->GetWL();
     d = nl->GetD();
@@ -2200,7 +2206,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       n_to_fix = 0;
       v = 0.0f;
       d = 1.0f;
-      m = nm;
+      m = nm + 1;
     } else if (n->IsRepetition()) {
       n_to_fix = 0;
     }
