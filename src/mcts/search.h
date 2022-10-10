@@ -262,7 +262,7 @@ class SearchWorker {
   // Does one full iteration of MCTS search:
   // 1. Initialize internal structures.
   // 2. Gather minibatch.
-  // 3. Prefetch into cache.
+  // 3.
   // 4. Run NN computation.
   // 5. Retrieve NN computations (and terminal values) into nodes.
   // 6. Propagate the new nodes' information to all their parents in the tree.
@@ -279,9 +279,6 @@ class SearchWorker {
 
   // 2b. Copy collisions into shared_collisions_.
   void CollectCollisions();
-
-  // 3. Prefetch into cache.
-  void MaybePrefetchIntoCache();
 
   // 4. Run NN computation.
   void RunNNComputation();
@@ -433,8 +430,6 @@ class SearchWorker {
   };
 
   NodeToProcess PickNodeToExtend(int collision_limit);
-  bool AddNodeToComputation(Node* node);
-  int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   // Adjust parameters for updating node @n and its parent low node if node is
   // terminal or its child low node is a transposition. Also update bounds and
   // terminal status of node @n using information from its child low node.

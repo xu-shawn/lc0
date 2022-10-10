@@ -1083,9 +1083,6 @@ void SearchWorker::ExecuteOneIteration() {
   // 2b. Collect collisions.
   CollectCollisions();
 
-  // 3. Prefetch into cache.
-  MaybePrefetchIntoCache();
-
   if (params_.GetMaxConcurrentSearchers() != 0) {
     search_->pending_searchers_.fetch_add(1, std::memory_order_acq_rel);
   }
@@ -1891,17 +1888,6 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
   }
 }
 
-// Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation([[maybe_unused]] Node* node) {
-  const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
-  if (search_->cache_->ContainsKey(hash)) {
-    return true;
-  }
-
-  computation_->AddInput(hash, history_);
-  return false;
-}
-
 // 2b. Copy collisions into shared collisions.
 void SearchWorker::CollectCollisions() {
   SharedMutex::Lock lock(search_->nodes_mutex_);
@@ -1912,112 +1898,6 @@ void SearchWorker::CollectCollisions() {
                                                node_to_process.multivisit);
     }
   }
-}
-
-// 3. Prefetch into cache.
-// ~~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::MaybePrefetchIntoCache() {
-  // TODO(mooskagh) Remove prefetch into cache if node collisions work well.
-  // If there are requests to NN, but the batch is not full, try to prefetch
-  // nodes which are likely useful in future.
-  if (search_->stop_.load(std::memory_order_acquire)) return;
-  if (computation_->GetCacheMisses() > 0 &&
-      computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
-    history_.Trim(search_->played_history_.GetLength());
-    SharedMutex::SharedLock lock(search_->nodes_mutex_);
-    PrefetchIntoCache(
-        search_->root_node_,
-        params_.GetMaxPrefetchBatch() - computation_->GetCacheMisses(), false);
-  }
-}
-
-// Prefetches up to @budget nodes into cache. Returns number of nodes
-// prefetched.
-int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
-  const float draw_score = search_->GetDrawScore(is_odd_depth);
-  if (budget <= 0) return 0;
-
-  // We are in a leaf, which is not yet being processed.
-  if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node)) {
-      // Make it return 0 to make it not use the slot, so that the function
-      // tries hard to find something to cache even among unpopular moves.
-      // In practice that slows things down a lot though, as it's not always
-      // easy to find what to cache.
-      return 1;
-    }
-    return 1;
-  }
-
-  assert(node);
-  // n = 0 and n_in_flight_ > 0, that means the node is being extended.
-  if (node->GetN() == 0) return 0;
-  // The node is terminal; don't prefetch it.
-  if (node->IsTerminal()) return 0;
-
-  // Populate all subnodes and their scores.
-  typedef std::pair<float, EdgeAndNode> ScoredEdge;
-  std::vector<ScoredEdge> scores;
-  const float cpuct = ComputeCpuct(params_, node->GetTotalVisits(),
-                                   node == search_->root_node_);
-  const float puct_mult =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float fpu =
-      GetFpu(params_, node, node == search_->root_node_, draw_score);
-  for (auto& edge : node->Edges()) {
-    if (edge.GetP() == 0.0f) continue;
-    // Flip the sign of a score to be able to easily sort.
-    // TODO: should this use logit_q if set??
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu, draw_score),
-                        edge);
-  }
-
-  size_t first_unsorted_index = 0;
-  int total_budget_spent = 0;
-  int budget_to_spend = budget;  // Initialize for the case where there's only
-                                 // one child.
-  for (size_t i = 0; i < scores.size(); ++i) {
-    if (search_->stop_.load(std::memory_order_acquire)) break;
-    if (budget <= 0) break;
-
-    // Sort next chunk of a vector. 3 at a time. Most of the time it's fine.
-    if (first_unsorted_index != scores.size() &&
-        i + 2 >= first_unsorted_index) {
-      const int new_unsorted_index =
-          std::min(scores.size(), budget < 2 ? first_unsorted_index + 2
-                                             : first_unsorted_index + 3);
-      std::partial_sort(scores.begin() + first_unsorted_index,
-                        scores.begin() + new_unsorted_index, scores.end(),
-                        [](const ScoredEdge& a, const ScoredEdge& b) {
-                          return a.first < b.first;
-                        });
-      first_unsorted_index = new_unsorted_index;
-    }
-
-    auto edge = scores[i].second;
-    // Last node gets the same budget as prev-to-last node.
-    if (i != scores.size() - 1) {
-      // Sign of the score was flipped for sorting, so flip it back.
-      const float next_score = -scores[i + 1].first;
-      // TODO: As above - should this use logit_q if set?
-      const float q = edge.GetQ(-fpu, draw_score);
-      if (next_score > q) {
-        budget_to_spend =
-            std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
-                                 edge.GetNStarted()) +
-                                 1);
-      } else {
-        budget_to_spend = budget;
-      }
-    }
-    history_.Append(edge.GetMove());
-    const int budget_spent =
-        PrefetchIntoCache(edge.node(), budget_to_spend, !is_odd_depth);
-    history_.Pop();
-    budget -= budget_spent;
-    total_budget_spent += budget_spent;
-  }
-  return total_budget_spent;
 }
 
 // 4. Run NN computation.
