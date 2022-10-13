@@ -2178,6 +2178,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   if (nr >= 2) {
     // Three-fold itself has to be handled as a terminal to produce relevant
     // results. Unlike two-folds that can keep updating their "real" values.
+    n->SetRepetition();
     v = 0.0f;
     d = 1.0f;
     m = 1;
