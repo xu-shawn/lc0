@@ -735,8 +735,14 @@ std::pair<LowNode*, bool> NodeTree::TTGetOrCreate(uint64_t hash) {
 }
 
 void NodeTree::TTMaintenance() {
-  absl::erase_if(
-      tt_, [](const auto& item) { return item.second->GetNumParents() == 0; });
+  absl::erase_if(tt_, [this](auto& item) {
+    if (item.second->GetNumParents() == 0) {
+      gc_queue_.push_back(std::move(item.second));
+      return true;
+    }
+    return false;
+  });
+  gc_queue_.clear();
 }
 
 void NodeTree::TTClear() {

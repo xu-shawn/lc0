@@ -962,6 +962,9 @@ class NodeTree {
   // Collection of low nodes that are not fit for Transposition Table due to
   // noise or incomplete information.
   std::vector<std::unique_ptr<LowNode>> non_tt_;
+
+  // Garbage collection queue.
+  std::list<std::unique_ptr<LowNode>> gc_queue_;
 };
 
 }  // namespace lczero
