@@ -38,9 +38,6 @@
 #ifndef DEFAULT_MINIBATCH_SIZE
 #define DEFAULT_MINIBATCH_SIZE 256
 #endif
-#ifndef DEFAULT_MAX_PREFETCH
-#define DEFAULT_MAX_PREFETCH 32
-#endif
 #ifndef DEFAULT_TASK_WORKERS
 #define DEFAULT_TASK_WORKERS 3
 #endif
@@ -62,11 +59,6 @@ const OptionId SearchParams::kMiniBatchSizeId{
     "How many positions the engine tries to batch together for parallel NN "
     "computation. Larger batches may reduce strength a bit, especially with a "
     "small number of playouts."};
-const OptionId SearchParams::kMaxPrefetchBatchId{
-    "max-prefetch", "MaxPrefetch",
-    "When the engine cannot gather a large enough batch for immediate use, try "
-    "to prefetch up to X positions which are likely to be useful soon, and put "
-    "them into cache."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -317,7 +309,6 @@ void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
-  options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.745f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 1.745f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 38739.0f;
