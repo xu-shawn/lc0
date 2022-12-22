@@ -42,7 +42,6 @@
 
 #include "utils/exception.h"
 #include "utils/hashcat.h"
-#include "utils/numa.h"
 
 namespace lczero {
 

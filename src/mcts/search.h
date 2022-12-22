@@ -45,7 +45,6 @@
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
-#include "utils/numa.h"
 
 namespace lczero {
 
@@ -220,11 +219,10 @@ class SearchWorker {
         params_(params),
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
                             pblczero::NetworkFormat::MOVES_LEFT_NONE) {
-    Numa::BindThread(id);
+    search_->network_->InitThread(id);
     for (int i = 0; i < params.GetTaskWorkersPerSearchWorker(); i++) {
       task_workspaces_.emplace_back();
       task_threads_.emplace_back([this, i]() {
-        Numa::BindThread(i);
         this->RunTasks(i);
       });
     }
