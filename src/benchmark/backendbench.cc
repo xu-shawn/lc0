@@ -96,7 +96,7 @@ void BackendBenchmark::Run() {
 
     auto network = NetworkFactory::LoadNetwork(option_dict);
 
-    NodeTree tree;
+    NodeTree tree = {option_dict};
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
 
     // Do any backend initialization outside the loop.

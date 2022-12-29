@@ -509,7 +509,7 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
 }
 
 NNCacheLock Search::GetCachedNNEval(const PositionHistory& history) const {
-  const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
+  const auto hash = dag_->GetHistoryHash(history);
   NNCacheLock nneval(cache_, hash);
   return nneval;
 }
@@ -1885,7 +1885,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
 
   // Check the transposition table first and NN cache second before asking for
   // NN evaluation.
-  picked_node.hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
+  picked_node.hash = search_->dag_->GetHistoryHash(history);
   auto tt_low_node = search_->dag_->TTFind(picked_node.hash);
   if (tt_low_node != nullptr) {
     picked_node.tt_low_node = tt_low_node;

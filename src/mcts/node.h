@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -39,6 +40,7 @@
 #include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/position.h"
+#include "mcts/params.h"
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -901,7 +903,10 @@ class NodeTree {
   typedef absl::flat_hash_map<uint64_t, std::unique_ptr<LowNode>>
       TranspositionTable;
 
+  NodeTree(const SearchParams& params)
+      : hash_history_length_(params.GetCacheHistoryLength() + 1) {}
   ~NodeTree() { DeallocateTree(); }
+
   // Adds a move to current_head_.
   void MakeMove(Move move);
   // Resets the current head to ensure it doesn't carry over details from a
@@ -941,6 +946,11 @@ class NodeTree {
 
   size_t AllocatedNodeCount() const { return tt_.size() + non_tt_.size(); };
 
+  // Get position hash used for TT nodes and NN cache.
+  uint64_t GetHistoryHash(const PositionHistory& history) const {
+    return history.HashLast(hash_history_length_);
+  }
+
  private:
   void DeallocateTree();
 
@@ -962,6 +972,9 @@ class NodeTree {
   // Collection of low nodes that are not fit for Transposition Table due to
   // noise or incomplete information.
   std::vector<std::unique_ptr<LowNode>> non_tt_;
+
+  // History positions to hash in node hashes used in TT and NN cache.
+  int hash_history_length_;
 
   // Garbage collection queue.
   std::list<std::unique_ptr<LowNode>> gc_queue_;
