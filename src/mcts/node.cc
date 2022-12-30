@@ -649,31 +649,54 @@ void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
   const auto& board = HeadPosition().GetBoard();
   auto hash = GetHistoryHash(history_);
+  move = board.GetModernMove(move);  // TODO: Why convert here?
 
   // Find edge for @move, if it exists.
   Node* new_head = nullptr;
-  for (auto& n : current_head_->Edges()) {
-    if (board.IsSameMove(n.GetMove(), move)) {
-      new_head = n.GetOrSpawnNode(current_head_);
-      // Ensure head is not terminal, so search can extend or visit children of
-      // "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
-      if (new_head->IsTerminal()) new_head->MakeNotTerminal();
-      break;
+  while (new_head == nullptr) {
+    for (auto& n : current_head_->Edges()) {
+      if (board.IsSameMove(n.GetMove(), move)) {
+        new_head = n.GetOrSpawnNode(current_head_);
+        // Ensure head is not terminal, so search can extend or visit children
+        // of "terminal" positions, e.g., WDL hits, converted terminals, 3-fold
+        // draw.
+        if (new_head->IsTerminal()) new_head->MakeNotTerminal();
+        break;
+      }
+    }
+
+    if (new_head != nullptr) break;
+
+    // Current head node (if any) is non-TT, does not have a matching edge and
+    // will be removed by NonTTMaintenance later.
+    current_head_->UnsetLowNode();
+
+    // Check TT first, then create, if necessary.
+    auto tt_iter = tt_.find(hash);
+    if (tt_iter != tt_.end()) {
+      current_head_->SetLowNode(tt_iter->second.get());
+      if (current_head_->IsTerminal()) current_head_->MakeNotTerminal();
+    } else {
+      non_tt_.emplace_back(std::make_unique<LowNode>(hash, MoveList({move}),
+                                                     static_cast<uint16_t>(0)));
+      current_head_->SetLowNode(non_tt_.back().get());
     }
   }
-  move = board.GetModernMove(move);
+
   // Remove edges that will not be needed any more.
   current_head_->ReleaseChildrenExceptOne(new_head);
   new_head = current_head_->GetChild();
-  // Use an existing edge for @move or make a new one.
-  if (new_head) {
-    current_head_ = new_head;
-  } else {
-    non_tt_.emplace_back(std::make_unique<LowNode>(hash, MoveList({move}),
-                                                   static_cast<uint16_t>(0)));
-    current_head_->SetLowNode(non_tt_.back().get());
-    current_head_ = current_head_->GetChild();
+
+  // Move damaged node from TT to non-TT to avoid reuse.
+  if (current_head_->IsTT()) {
+    auto tt_iter = tt_.find(current_head_->GetHash());
+    tt_iter->second->ClearTT();
+    non_tt_.emplace_back(std::move(tt_iter->second));
+    tt_.erase(tt_iter);
   }
+
+  current_head_ = new_head;
+
   history_.Append(move);
   moves_.push_back(move);
 }
@@ -713,6 +736,8 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
     if (old_head == current_head_) seen_old_head = true;
   }
 
+  // Remove any non-TT nodes that were not reused.
+  NonTTMaintenance();
   // MakeMove guarantees that no siblings exist; but, if we didn't see the old
   // head, it means we might have a position that was an ancestor to a
   // previously searched position, which means that the current_head_ might
@@ -769,11 +794,18 @@ LowNode* NodeTree::NonTTAddClone(const LowNode& node) {
 }
 
 void NodeTree::NonTTMaintenance() {
-  // Find the first parentless low node and remove all low nodes from this low
-  // node on.
-  auto it = non_tt_.cbegin();
-  while (it != non_tt_.cend() && (*it)->GetNumParents() > 0) ++it;
-  non_tt_.erase(it, non_tt_.cend());
+  // Release children of parent-less nodes.
+  absl::c_for_each(non_tt_, [](const auto& item) {
+    if (item->GetNumParents() == 0) item->ReleaseChildren();
+  });
+  // Erase parent-less nodes.
+  for (auto item = non_tt_.begin(); item != non_tt_.end();) {
+    if ((*item)->GetNumParents() == 0) {
+      item = non_tt_.erase(item);
+    } else {
+      ++item;
+    }
+  }
 }
 
 void NodeTree::NonTTClear() {
