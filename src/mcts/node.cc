@@ -182,7 +182,8 @@ std::string Node::DebugString() const {
 
 std::string LowNode::DebugString() const {
   std::ostringstream oss;
-  oss << " <LowNode> This:" << this << " Edges:" << edges_.get()
+  oss << " <LowNode> This:" << this << " Hash:" << hash_
+      << " Edges:" << edges_.get()
       << " NumEdges:" << static_cast<int>(num_edges_)
       << " Child:" << child_.get() << " WL:" << wl_ << " D:" << d_
       << " M:" << m_ << " N:" << n_ << " NP:" << num_parents_
@@ -595,6 +596,15 @@ void Node::SortEdges() const {
   low_node_->SortEdges();
 }
 
+uint64_t Node::GetHash() const {
+  if (low_node_) {
+    return low_node_->GetHash();
+  } else {
+    return 0;
+  }
+}
+bool Node::IsTT() const { return low_node_ && low_node_->IsTT(); }
+
 static constexpr float wld_tolerance = 0.000001f;
 static constexpr float m_tolerance = 0.000001f;
 
@@ -638,6 +648,7 @@ std::string EdgeAndNode::DebugString() const {
 void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
   const auto& board = HeadPosition().GetBoard();
+  auto hash = GetHistoryHash(history_);
 
   // Find edge for @move, if it exists.
   Node* new_head = nullptr;
@@ -658,8 +669,8 @@ void NodeTree::MakeMove(Move move) {
   if (new_head) {
     current_head_ = new_head;
   } else {
-    non_tt_.emplace_back(
-        std::make_unique<LowNode>(MoveList({move}), static_cast<uint16_t>(0)));
+    non_tt_.emplace_back(std::make_unique<LowNode>(hash, MoveList({move}),
+                                                   static_cast<uint16_t>(0)));
     current_head_->SetLowNode(non_tt_.back().get());
     current_head_ = current_head_->GetChild();
   }
@@ -729,7 +740,8 @@ LowNode* NodeTree::TTFind(uint64_t hash) {
 }
 
 std::pair<LowNode*, bool> NodeTree::TTGetOrCreate(uint64_t hash) {
-  auto [tt_iter, is_tt_miss] = tt_.insert({hash, std::make_unique<LowNode>()});
+  auto [tt_iter, is_tt_miss] =
+      tt_.insert({hash, std::make_unique<LowNode>(hash)});
   return {tt_iter->second.get(), is_tt_miss};
 }
 

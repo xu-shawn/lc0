@@ -376,6 +376,9 @@ class Node {
   void SetRepetition() { repetition_ = true; }
   bool IsRepetition() const { return repetition_; }
 
+  uint64_t GetHash() const;
+  bool IsTT() const;
+
   bool WLDMInvariantsHold() const;
 
  private:
@@ -434,42 +437,42 @@ static_assert(sizeof(Node) <= 64, "Node is too large");
 
 class LowNode {
  public:
-  LowNode()
-      : terminal_type_(Terminal::NonTerminal),
+  // For TT nodes.
+  LowNode(uint64_t hash)
+      : hash_(hash),
+        terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {}
-  // Init from from another low node, but use it for NNEval only.
+        is_transposition(false),
+        is_tt_(true) {}
+  // Init from another low node, but use it for NNEval only.
+  // For non-TT nodes.
   LowNode(const LowNode& p)
       : wl_(p.wl_),
+        hash_(p.hash_),
         d_(p.d_),
         m_(p.m_),
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {
+        is_transposition(false),
+        is_tt_(false) {
     assert(p.edges_);
     edges_ = std::make_unique<Edge[]>(num_edges_);
     std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
   }
   // Init @edges_ with moves from @moves and 0 policy.
-  LowNode(const MoveList& moves)
-      : num_edges_(moves.size()),
-        terminal_type_(Terminal::NonTerminal),
-        lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {
-    edges_ = Edge::FromMovelist(moves);
-  }
-  // Init @edges_ with moves from @moves and 0 policy.
   // Also create the first child at @index.
-  LowNode(const MoveList& moves, uint16_t index)
-      : num_edges_(moves.size()),
+  // For non-TT nodes.
+  LowNode(uint64_t hash, const MoveList& moves, uint16_t index)
+      : hash_(hash),
+        num_edges_(moves.size()),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {
+        is_transposition(false),
+        is_tt_(false) {
     edges_ = Edge::FromMovelist(moves);
     child_ = std::make_unique<Node>(edges_[index], index);
   }
@@ -573,6 +576,10 @@ class LowNode {
   uint16_t GetNumParents() const { return num_parents_; }
   bool IsTransposition() const { return is_transposition; }
 
+  uint64_t GetHash() const { return hash_; }
+  bool IsTT() const { return is_tt_; }
+  void ClearTT() { is_tt_ = !is_tt_; }
+
   bool WLDMInvariantsHold() const;
 
  private:
@@ -587,6 +594,8 @@ class LowNode {
   // perspective of the player-to-move for the position.
   // WL stands for "W minus L". Is equal to Q if draw score is 0.
   double wl_ = 0.0f;
+  // Position hash and a TT key.
+  uint64_t hash_ = 0;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Array of edges.
@@ -618,6 +627,8 @@ class LowNode {
   GameResult upper_bound_ : 2;
   // Low node is a transposition (for ever).
   bool is_transposition : 1;
+  // Low node is in TT, i.e. was not evaluated or was modified.
+  bool is_tt_ : 1;
 };
 
 // Check that LowNode still fits into an expected cache line size.
