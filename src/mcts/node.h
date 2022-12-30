@@ -235,6 +235,7 @@ template <bool is_const>
 class VisitedNode_Iterator;
 
 class LowNode;
+typedef std::list<uint64_t> GCQueue;
 class Node {
  public:
   using Iterator = Edge_Iterator<false>;
@@ -258,7 +259,7 @@ class Node {
   ~Node() { UnsetLowNode(); }
 
   // Trim node, resetting everything except parent, sibling, edge and index.
-  void Trim();
+  void Trim(GCQueue* gc_queue);
 
   // Get first child.
   Node* GetChild() const;
@@ -336,7 +337,7 @@ class Node {
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
-  void ReleaseChildrenExceptOne(Node* node_to_save) const;
+  void ReleaseChildrenExceptOne(Node* node_to_save, GCQueue* gc_queue) const;
 
   // Returns move from the point of view of the player making it (if as_opponent
   // is false) or as opponent (if as_opponent is true).
@@ -539,12 +540,12 @@ class LowNode {
   void AdjustForTerminal(float v, float d, float m, uint32_t multivisit);
 
   // Deletes all children.
-  void ReleaseChildren();
+  void ReleaseChildren(GCQueue* gc_queue);
 
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
-  void ReleaseChildrenExceptOne(Node* node_to_save);
+  void ReleaseChildrenExceptOne(Node* node_to_save, GCQueue* gc_queue);
 
   // Return move policy for edge/node at @index.
   const Edge& GetEdgeAt(uint16_t index) const;
@@ -924,8 +925,6 @@ class NodeTree {
   // previous search.
   void TrimTreeAtHead();
   // Sets the position in the tree, trying to reuse the tree.
-  // If @auto_garbage_collect, old tree is garbage collected immediately. (may
-  // take some milliseconds)
   // Returns whether the new position is the same game as the old position (with
   // some moves added). Returns false, if the position is completely different,
   // or if it's shorter than before.
@@ -949,7 +948,11 @@ class NodeTree {
   // Evict unused low nodes from the Transposition Table.
   void TTMaintenance();
   // Clear the Transposition Table.
+  // NOTE: Safe only when non-TT nodes were already detached.
   void TTClear();
+  // Release the first @count items from TT GC list. @count == 0 means release
+  // all. Return true, if there is more to release.
+  bool TTGCSome(size_t count = 1);
 
   // Add a clone of low @node to special nodes outside of the Transposition
   // Table and return it.
@@ -967,8 +970,6 @@ class NodeTree {
 
   // Evict unused non-TT low nodes.
   void NonTTMaintenance();
-  // Clear non-TT low nodes.
-  void NonTTClear();
 
   // A node which to start search from.
   Node* current_head_ = nullptr;
@@ -988,7 +989,7 @@ class NodeTree {
   int hash_history_length_;
 
   // Garbage collection queue.
-  std::list<std::unique_ptr<LowNode>> gc_queue_;
+  GCQueue gc_queue_;
 };
 
 }  // namespace lczero
