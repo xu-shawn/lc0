@@ -120,10 +120,19 @@ std::unique_ptr<Edge[]> Edge::FromMovelist(const MoveList& moves) {
 // LowNode + Node
 /////////////////////////////////////////////////////////////////////////
 
+// Put @low_node at the end of TT @gc_queue, if both @gc_queue and @low_node
+// are not null and &low_node is TT and about to become parent-less (has only
+// one parent).
+static void TTGCEnqueue(GCQueue* gc_queue, const LowNode* low_node) {
+  if (gc_queue && low_node && low_node->IsTT() &&
+      low_node->GetNumParents() == 1)
+    gc_queue->push_back(low_node->GetHash());
+}
+
 void Node::Trim(GCQueue* gc_queue) {
   wl_ = 0.0f;
 
-  if (low_node_ && low_node_->IsTT()) gc_queue->push_back(low_node_->GetHash());
+  TTGCEnqueue(gc_queue, low_node_);
   UnsetLowNode();
   // sibling_
 
@@ -399,9 +408,7 @@ void Node::IncrementNInFlight(uint32_t multivisit) {
 void LowNode::ReleaseChildren(GCQueue* gc_queue) {
   for (auto child = GetChild()->get(); child != nullptr;
        child = child->GetSibling()->get()) {
-    auto low_node = child->GetLowNode();
-    if (gc_queue && low_node && low_node->IsTT())
-      gc_queue->push_back(low_node->GetHash());
+    TTGCEnqueue(gc_queue, child->GetLowNode());
   }
   child_.reset();
 }
@@ -417,9 +424,7 @@ void LowNode::ReleaseChildrenExceptOne(Node* node_to_save, GCQueue* gc_queue) {
       saved_node = std::move(*node);
       node = &saved_node;
     } else {
-      auto low_node = (*node)->GetLowNode();
-      if (low_node && low_node->IsTT())
-        gc_queue->push_back(low_node->GetHash());
+      TTGCEnqueue(gc_queue, (*node)->GetLowNode());
     }
   }
   // Kill all remaining siblings.
