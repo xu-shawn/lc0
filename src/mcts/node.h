@@ -915,8 +915,11 @@ class NodeTree {
   typedef absl::flat_hash_map<uint64_t, std::unique_ptr<LowNode>>
       TranspositionTable;
 
+  // Apply search params.
   NodeTree(const SearchParams& params)
       : hash_history_length_(params.GetCacheHistoryLength() + 1) {}
+  // When search params are not available.
+  NodeTree() : hash_history_length_(1) {}
   ~NodeTree() { DeallocateTree(); }
 
   // Adds a move to current_head_.
