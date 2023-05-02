@@ -110,6 +110,11 @@ class MEvaluator {
     const float child_m = child.GetM(parent_m_);
     float m = std::clamp(m_slope_ * (child_m - parent_m_), -m_cap_, m_cap_);
     m *= FastSign(-q);
+    if (q_threshold_ > 0.0f && q_threshold_ < 1.0f) {
+      // This allows a smooth M effect with higher q thresholds, which is
+      // necessary for using MLH together with contempt.
+      q = std::max(0.0f, (std::abs(q) - q_threshold_)) / (1.0f - q_threshold_);
+    }
     m *= a_constant_ + a_linear_ * std::abs(q) + a_square_ * q * q;
     return m;
   }
@@ -194,6 +199,44 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }
 }  // namespace
 
+namespace {
+// WDL conversion formula based on random walk model.
+inline void WDLRescale(float& v, float& d, float* mu_uci,
+                       float wdl_rescale_ratio, float wdl_rescale_diff,
+                       float sign, bool invert) {
+  if (invert) {
+    wdl_rescale_diff = -wdl_rescale_diff;
+    wdl_rescale_ratio = 1.0f / wdl_rescale_ratio;
+  }
+  auto w = (1 + v - d) / 2;
+  auto l = (1 - v - d) / 2;
+  // Safeguard against numerical issues; skip WDL transformation if WDL is too
+  // extreme.
+  const float zero = 0.0001f;
+  const float one = 0.9999f;
+  if (w > zero && d > zero && l > zero && w < one && d < one && l < one) {
+    auto a = FastLog(1 / l - 1);
+    auto b = FastLog(1 / w - 1);
+    auto s = 2 / (a + b);
+    // Safeguard against unrealistically broad WDL distributions coming from
+    // the NN. Could be made into a parameter, but probably unnecessary.
+    if (!invert) s = std::min(1.4f, s);
+    auto mu = (a - b) / (a + b);
+    auto s_new = s * wdl_rescale_ratio;
+    if (invert) {
+      std::swap(s, s_new);
+      s = std::min(1.4f, s);
+    }
+    auto mu_new = mu + sign * s * s * wdl_rescale_diff;
+    auto w_new = FastLogistic((-1.0f + mu_new) / s_new);
+    auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
+    v = w_new - l_new;
+    d = std::max(0.0f, 1.0f - w_new - l_new);
+    if (mu_uci) *mu_uci = mu_new;
+  }
+}
+}  // namespace
+
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto max_pv = params_.GetMultiPv();
   const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv, 0);
@@ -235,8 +278,21 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    const auto wl = edge.GetWL(default_wl);
-    const auto floatD = edge.GetD(default_d);
+    auto wl = edge.GetWL(default_wl);
+    auto d = edge.GetD(default_d);
+    float mu_uci = 0.0f;
+    // Only the diff effect is inverted, so we only need to call if diff != 0.
+    if (params_.GetContemptPerspective() != ContemptPerspective::NONE) {
+      auto sign =
+          ((params_.GetContemptPerspective() == ContemptPerspective::STM) ||
+           ((params_.GetContemptPerspective() == ContemptPerspective::BLACK) ==
+            played_history_.IsBlackToMove()))
+              ? 1.0f
+              : -1.0f;
+      WDLRescale(wl, d, &mu_uci, params_.GetWDLRescaleRatio(),
+                 params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
+                 sign, true);
+    }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
       uci_info.mate = std::copysign(
@@ -256,20 +312,30 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       uci_info.score = q * 10000;
     } else if (score_type == "W-L") {
       uci_info.score = wl * 10000;
+    } else if (score_type == "WDL_mu") {
+      // Reports the WDL mu value whenever it is reasonable, and defaults to
+      // centipawn otherwise.
+      float centipawn_score = 90 * tan(1.5637541897 * wl);
+      uci_info.score =
+          mu_uci != 0.0f && std::abs(wl) + d < 0.99f &&
+                  (std::abs(mu_uci) < 1.0f ||
+                   std::abs(centipawn_score) < std::abs(100 * mu_uci))
+              ? 100 * mu_uci
+              : centipawn_score;
     }
 
-    auto w =
-        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - floatD))));
-    auto l =
-        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - floatD))));
+    auto wdl_w =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - d))));
+    auto wdl_l =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - d))));
     // Using 1000-w-l so that W+D+L add up to 1000.0.
-    auto d = 1000 - w - l;
-    if (d < 0) {
-      w = std::min(1000, std::max(0, w + d / 2));
-      l = 1000 - w;
-      d = 0;
+    auto wdl_d = 1000 - wdl_w - wdl_l;
+    if (wdl_d < 0) {
+      wdl_w = std::min(1000, std::max(0, wdl_w + wdl_d / 2));
+      wdl_l = 1000 - wdl_w;
+      wdl_d = 0;
     }
-    uci_info.wdl = ThinkingInfo::WDL{w, d, l};
+    uci_info.wdl = ThinkingInfo::WDL{wdl_w, wdl_d, wdl_l};
     if (network_->GetCapabilities().has_mlh()) {
       uci_info.moves_left = static_cast<int>(
           (1.0f + edge.GetM(1.0f + root_node_->GetM())) / 2.0f);
@@ -442,10 +508,13 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         up = -up;
         std::swap(lo, up);
       }
-      *oss << (lo == up                                                ? "(T) "
-               : lo == GameResult::DRAW && up == GameResult::WHITE_WON ? "(W) "
-               : lo == GameResult::BLACK_WON && up == GameResult::DRAW ? "(L) "
-                                                                       : "");
+      *oss << (lo == up
+                   ? "(T) "
+                   : lo == GameResult::DRAW && up == GameResult::WHITE_WON
+                         ? "(W) "
+                         : lo == GameResult::BLACK_WON && up == GameResult::DRAW
+                               ? "(L) "
+                               : "");
     }
   };
 
@@ -1939,10 +2008,28 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
 
     assert(tt_low_node != nullptr);
     node_to_process->tt_low_node = tt_low_node;
-
     if (is_tt_miss) {
-      node_to_process->tt_low_node->SetNNEval(
-          computation.GetNNEval(idx_in_computation).get());
+      auto nn_eval = computation.GetNNEval(idx_in_computation).get();
+      if (params_.GetContemptPerspective() != ContemptPerspective::NONE) {
+        bool root_stm =
+            (params_.GetContemptPerspective() == ContemptPerspective::STM
+                 ? !(search_->played_history_.Last().IsBlackToMove())
+                 : (params_.GetContemptPerspective() ==
+                    ContemptPerspective::WHITE));
+        auto sign = (root_stm ^ node_to_process->history.IsBlackToMove())
+                        ? 1.0f
+                        : -1.0f;
+        if (params_.GetWDLRescaleRatio() != 1.0f ||
+            params_.GetWDLRescaleDiff() != 0.0f) {
+          float v = nn_eval->q;
+          float d = nn_eval->d;
+          WDLRescale(v, d, nullptr, params_.GetWDLRescaleRatio(),
+                     params_.GetWDLRescaleDiff(), sign, false);
+          nn_eval->q = v;
+          nn_eval->d = d;
+        }
+      }
+      node_to_process->tt_low_node->SetNNEval(nn_eval);
     }
   }
 
