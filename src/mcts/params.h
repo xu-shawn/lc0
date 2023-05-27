@@ -33,19 +33,28 @@
 
 namespace lczero {
 
+enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
+
 class SearchParams {
  public:
   SearchParams(const OptionsDict& options);
   SearchParams(const SearchParams&) = delete;
 
+  // Use struct for WDLRescaleParams calculation to make them const.
+  struct WDLRescaleParams {
+    WDLRescaleParams(float r, float d) {
+      ratio = r;
+      diff = d;
+    }
+    float ratio;
+    float diff;
+  };
+
   // Populates UciOptions with search parameters.
   static void Populate(OptionsParser* options);
 
   // Parameter getters.
-  int GetMiniBatchSize() const { return kMiniBatchSize; }
-  int GetMaxPrefetchBatch() const {
-    return options_.Get<int>(kMaxPrefetchBatchId);
-  }
+  uint32_t GetMiniBatchSize() const { return kMiniBatchSize; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
   float GetCpuctBase(bool at_root) const {
     return at_root ? kCpuctBaseAtRoot : kCpuctBase;
@@ -104,13 +113,18 @@ class SearchParams {
   }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
+  ContemptPerspective GetContemptPerspective() const {
+    return kContemptPerspective;
+  }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
   float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
   float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
-  int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
+  float GetWDLRescaleRatio() const { return kWDLRescaleParams.ratio; }
+  float GetWDLRescaleDiff() const { return kWDLRescaleParams.diff; }
+  float GetWDLEvalObjectivity() const { return kWDLEvalObjectivity; }
+  uint32_t GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
   float GetNpsLimit() const { return kNpsLimit; }
-  int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
 
   int GetTaskWorkersPerSearchWorker() const {
     return kTaskWorkersPerSearchWorker;
@@ -141,7 +155,6 @@ class SearchParams {
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
-  static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
   static const OptionId kCpuctBaseId;
@@ -184,13 +197,21 @@ class SearchParams {
   static const OptionId kMovesLeftSlopeId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
+  static const OptionId kContemptPerspectiveId;
   static const OptionId kDrawScoreSidetomoveId;
   static const OptionId kDrawScoreOpponentId;
   static const OptionId kDrawScoreWhiteId;
   static const OptionId kDrawScoreBlackId;
+  static const OptionId kContemptId;
+  static const OptionId kContemptMaxValueId;
+  static const OptionId kWDLCalibrationEloId;
+  static const OptionId kWDLContemptAttenuationId;
+  static const OptionId kWDLEvalObjectivityId;
+  static const OptionId kWDLDrawRateTargetId;
+  static const OptionId kWDLDrawRateReferenceId;
+  static const OptionId kWDLBookExitBiasId;
   static const OptionId kMaxOutOfOrderEvalsId;
   static const OptionId kNpsLimitId;
-  static const OptionId kSolidTreeThresholdId;
   static const OptionId kTaskWorkersPerSearchWorkerId;
   static const OptionId kMinimumWorkSizeForProcessingId;
   static const OptionId kMinimumWorkSizeForPickingId;
@@ -201,6 +222,8 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingStartId;
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
+  static const OptionId kUCIOpponentId;
+  static const OptionId kUCIRatingAdvId;
 
  private:
   const OptionsDict& options_;
@@ -244,9 +267,12 @@ class SearchParams {
   const float kDrawScoreOpponent;
   const float kDrawScoreWhite;
   const float kDrawScoreBlack;
+  const ContemptPerspective kContemptPerspective;
+  const float kContempt;
+  const WDLRescaleParams kWDLRescaleParams;
+  const float kWDLEvalObjectivity;
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
-  const int kSolidTreeThreshold;
   const int kTaskWorkersPerSearchWorker;
   const int kMinimumWorkSizeForProcessing;
   const int kMinimumWorkSizeForPicking;

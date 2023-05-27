@@ -96,7 +96,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
-  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
+  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000;
   SearchParams::Populate(options);
 
   options->Add<StringOption>(kSyzygyTablebaseId);
@@ -132,9 +132,11 @@ void EngineController::UpdateFromUciOptions() {
     if (!syzygy_tb_->init(tb_paths)) {
       CERR << "Failed to load Syzygy tablebases!";
       syzygy_tb_ = nullptr;
-    } else {
-      tb_paths_ = tb_paths;
     }
+    tb_paths_ = tb_paths;
+  } else if (tb_paths.empty()) {
+    syzygy_tb_ = nullptr;
+    tb_paths_.clear();
   }
 
   // Network.
@@ -189,7 +191,7 @@ Position EngineController::ApplyPositionMoves() {
   board.SetFromFen(current_position_.fen, &no_capture_ply, &game_move);
   int game_ply = 2 * game_move - (board.flipped() ? 1 : 2);
   Position pos(board, no_capture_ply, game_ply);
-  for (std::string move_str: current_position_.moves) {
+  for (std::string move_str : current_position_.moves) {
     Move move(move_str);
     if (pos.IsBlackToMove()) move.Mirror();
     pos = Position(pos, move);
@@ -204,7 +206,7 @@ void EngineController::SetupPosition(
 
   UpdateFromUciOptions();
 
-  if (!tree_) tree_ = std::make_unique<NodeTree>();
+  if (!tree_) tree_ = std::make_unique<NodeTree>(options_);
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
@@ -294,7 +296,7 @@ void EngineController::Go(const GoParams& params) {
 
   auto stopper = time_manager_->GetStopper(params, *tree_.get());
   search_ = std::make_unique<Search>(
-      *tree_, network_.get(), std::move(responder),
+      tree_.get(), network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite || params.ponder,
       options_, &cache_, syzygy_tb_.get());

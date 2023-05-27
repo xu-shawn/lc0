@@ -97,12 +97,12 @@ void Benchmark::Run() {
       NNCache cache;
       cache.SetCapacity(option_dict.Get<int>(kNNCacheSizeId));
 
-      NodeTree tree;
+      NodeTree tree = {option_dict};
       tree.ResetToPosition(position, {});
 
       const auto start = std::chrono::steady_clock::now();
       auto search = std::make_unique<Search>(
-          tree, network.get(),
+          &tree, network.get(),
           std::make_unique<CallbackUciResponder>(
               std::bind(&Benchmark::OnBestMove, this, std::placeholders::_1),
               std::bind(&Benchmark::OnInfo, this, std::placeholders::_1)),
