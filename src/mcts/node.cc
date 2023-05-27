@@ -138,6 +138,7 @@ void Node::Trim(GCQueue* gc_queue) {
 
   d_ = 0.0f;
   m_ = 0.0f;
+  vs_ = 0.0f;
   n_ = 0;
   n_in_flight_ = 0;
 
@@ -225,6 +226,7 @@ void LowNode::MakeTerminal(GameResult result, float plies_left, Terminal type) {
     wl_ = -1.0f;
     d_ = 0.0f;
   }
+  vs_ = wl_ * wl_;
 
   assert(WLDMInvariantsHold());
 }
@@ -240,6 +242,7 @@ void LowNode::MakeNotTerminal(const Node* node) {
   wl_ = 0.0;
   d_ = 0.0;
   m_ = 0.0;
+  vs_ = 0.0;
 
   // Include children too.
   if (node->GetNumEdges() > 0) {
@@ -252,6 +255,7 @@ void LowNode::MakeNotTerminal(const Node* node) {
         wl_ += child.GetWL(0.0f) * n;
         d_ += child.GetD(0.0f) * n;
         m_ += child.GetM(0.0f) * n;
+        vs_ += child.GetVS(0.0f) * n;
       }
     }
 
@@ -259,6 +263,7 @@ void LowNode::MakeNotTerminal(const Node* node) {
     wl_ /= n_;
     d_ /= n_;
     m_ /= n_;
+    vs_ /= n_;
   }
 
   assert(WLDMInvariantsHold());
@@ -290,6 +295,7 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
     // comparable to another non-loss choice. Force this by clearing the policy.
     SetP(0.0f);
   }
+  vs_ = wl_ * wl_;
 
   assert(WLDMInvariantsHold());
 }
@@ -313,6 +319,7 @@ void Node::MakeNotTerminal(bool also_low_node) {
     wl_ = -low_node_->GetWL();
     d_ = low_node_->GetD();
     m_ = low_node_->GetM() + 1;
+    vs_ = low_node_->GetVS();
   } else {  // Real terminal.
     lower_bound_ = GameResult::BLACK_WON;
     upper_bound_ = GameResult::WHITE_WON;
@@ -320,6 +327,7 @@ void Node::MakeNotTerminal(bool also_low_node) {
     wl_ = 0.0f;
     d_ = 0.0f;
     m_ = 0.0f;
+    vs_ = 0.0f;
   }
 
   assert(WLDMInvariantsHold());
@@ -349,13 +357,15 @@ void Node::CancelScoreUpdate(uint32_t multivisit) {
   n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
-void LowNode::FinalizeScoreUpdate(float v, float d, float m,
+void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
                                   uint32_t multivisit) {
   assert(edges_);
   // Recompute Q.
   wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
   m_ += multivisit * (m - m_) / (n_ + multivisit);
+  vs_ += multivisit * (vs - vs_) / (n_ + multivisit);
+
 
   assert(WLDMInvariantsHold());
 
@@ -363,7 +373,7 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m,
   n_ += multivisit;
 }
 
-void LowNode::AdjustForTerminal(float v, float d, float m,
+void LowNode::AdjustForTerminal(float v, float d, float m, float vs,
                                 uint32_t multivisit) {
   assert(static_cast<uint32_t>(multivisit) <= n_);
 
@@ -371,15 +381,17 @@ void LowNode::AdjustForTerminal(float v, float d, float m,
   wl_ += multivisit * v / n_;
   d_ += multivisit * d / n_;
   m_ += multivisit * m / n_;
+  vs_ += multivisit * vs / n_;
 
   assert(WLDMInvariantsHold());
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, float vs, uint32_t multivisit) {
   // Recompute Q.
   wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
   m_ += multivisit * (m - m_) / (n_ + multivisit);
+  vs_ += multivisit * (vs - vs_) / (n_ + multivisit);
 
   assert(WLDMInvariantsHold());
 
@@ -390,13 +402,14 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit) {
   n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
-void Node::AdjustForTerminal(float v, float d, float m, uint32_t multivisit) {
+void Node::AdjustForTerminal(float v, float d, float m, float vs, uint32_t multivisit) {
   assert(static_cast<uint32_t>(multivisit) <= n_);
 
   // Recompute Q.
   wl_ += multivisit * v / n_;
   d_ += multivisit * d / n_;
   m_ += multivisit * m / n_;
+  vs_ += multivisit * vs / n_;
 
   assert(WLDMInvariantsHold());
 }

@@ -447,6 +447,22 @@ const OptionId SearchParams::kUCIRatingAdvId{
     "", "UCI_RatingAdv",
     "UCI extension used by some GUIs to pass the estimated Elo advantage over "
     "the current opponent, used as the default contempt value."};
+const OptionId SearchParams::kCpuctUtilityStdevPriorId{
+    "cpuct-utility-stdev-prior", "CpuctUtilityStdevPrior",
+    "Prior for stdev cpuct formula."};
+const OptionId SearchParams::kCpuctUtilityStdevScaleId{
+    "cpuct-utility-stdev-scale", "CpuctUtilityStdevScale",
+    "Scale value for the utility stdev in the cpuct formula."};
+const OptionId SearchParams::kCpuctUtilityStdevPriorWeightId{
+    "cpuct-utility-stdev-prior-weight", "CpuctUtilityStdevPriorWeight",
+    "How much to weigh the prior value in the calculation of stdev."};
+const OptionId SearchParams::kCpuctAdvantageScaleId{
+    "cpuct-advantage-scale", "CpuctAdvantageScale",
+    "How heavily to weight the advantage when modulating cpuct. IGNORED BY ENGINE."};
+const OptionId SearchParams::kCpuctAdvantagePriorWeightId{
+    "cpuct-advantage-prior-weight", "CpuctAdvantagePriorWeight",
+    "Effectively how long to wait before applying advantage modulation to "
+    "cpuct. IGNORED BY ENGINE."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -544,6 +560,13 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
   options->Add<StringOption>(kUCIOpponentId);
   options->Add<FloatOption>(kUCIRatingAdvId, -10000.0f, 10000.0f) = 0.0f;
+  options->Add<FloatOption>(kCpuctUtilityStdevPriorId, 0.0f, 2.0f) = 0.1f;
+  options->Add<FloatOption>(kCpuctUtilityStdevScaleId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kCpuctUtilityStdevPriorWeightId, 0.0f, 10000.0f) =
+      10.0f;
+  options->Add<FloatOption>(kCpuctAdvantageScaleId, -1.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kCpuctAdvantagePriorWeightId, 0.0f, 10000.0f) =
+      10.0f;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -657,7 +680,14 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionVisitsScalingEnd(
           options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMaxCollisionVisitsScalingPower(
-          options.Get<float>(kMaxCollisionVisitsScalingPowerId)) {
+          options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
+      kCpuctUtilityStdevPrior(options.Get<float>(kCpuctUtilityStdevPriorId)),
+      kCpuctUtilityStdevScale(options.Get<float>(kCpuctUtilityStdevScaleId)),
+      kCpuctUtilityStdevPriorWeight(
+          options.Get<float>(kCpuctUtilityStdevPriorWeightId)),
+      kCpuctAdvantageScale(options.Get<float>(kCpuctAdvantageScaleId)),
+      kCpuctAdvantagePriorWeight(
+          options.Get<float>(kCpuctAdvantagePriorWeightId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

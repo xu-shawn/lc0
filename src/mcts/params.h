@@ -152,6 +152,16 @@ class SearchParams {
   float GetMaxCollisionVisitsScalingPower() const {
     return kMaxCollisionVisitsScalingPower;
   }
+  float GetCpuctUtilityStdevPrior() const { return kCpuctUtilityStdevPrior; }
+  float GetCpuctUtilityStdevScale() const { return kCpuctUtilityStdevScale; }
+  float GetCpuctUtilityStdevPriorWeight() const {
+    return kCpuctUtilityStdevPriorWeight;
+  }
+
+  float GetCpuctAdvantageScale() const { return kCpuctAdvantageScale; }
+  float GetCpuctAdvantagePriorWeight() const {
+    return kCpuctAdvantagePriorWeight;
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -224,6 +234,11 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingPowerId;
   static const OptionId kUCIOpponentId;
   static const OptionId kUCIRatingAdvId;
+  static const OptionId kCpuctUtilityStdevPriorId;
+  static const OptionId kCpuctUtilityStdevScaleId;
+  static const OptionId kCpuctUtilityStdevPriorWeightId;
+  static const OptionId kCpuctAdvantageScaleId;
+  static const OptionId kCpuctAdvantagePriorWeightId;
 
  private:
   const OptionsDict& options_;
@@ -283,6 +298,11 @@ class SearchParams {
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
+  const float kCpuctUtilityStdevPrior;
+  const float kCpuctUtilityStdevScale;
+  const float kCpuctUtilityStdevPriorWeight;
+  const float kCpuctAdvantageScale;
+  const float kCpuctAdvantagePriorWeight;
 };
 
 }  // namespace lczero

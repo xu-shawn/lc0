@@ -290,6 +290,8 @@ class Node {
   float GetWL() const { return wl_; }
   float GetD() const { return d_; }
   float GetM() const { return m_; }
+  float GetVS() const { return vs_; }
+
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
@@ -318,9 +320,9 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
-  void FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit);
+  void FinalizeScoreUpdate(float v, float d, float m, float vs, uint32_t multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
-  void AdjustForTerminal(float v, float d, float m, uint32_t multivisit);
+  void AdjustForTerminal(float v, float d, float m, float vs, uint32_t multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -393,7 +395,8 @@ class Node {
   // of the player who "just" moved to reach this position, rather than from
   // the perspective of the player-to-move for the position. WL stands for "W
   // minus L". Is equal to Q if draw score is 0.
-  double wl_ = 0.0f;
+  double wl_ = 0.0;
+  double vs_ = 0.0;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Pointer to the low node.
@@ -453,6 +456,7 @@ class LowNode {
         hash_(p.hash_),
         d_(p.d_),
         m_(p.m_),
+        vs_(p.vs_),
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
@@ -490,6 +494,7 @@ class LowNode {
     wl_ = eval->q;
     d_ = eval->d;
     m_ = eval->m;
+    vs_ = wl_ * wl_;
 
     assert(WLDMInvariantsHold());
 
@@ -510,6 +515,8 @@ class LowNode {
   float GetWL() const { return wl_; }
   float GetD() const { return d_; }
   float GetM() const { return m_; }
+  float GetVS() const { return vs_; }
+
 
   // Returns whether the node is known to be draw/loss/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
@@ -535,9 +542,9 @@ class LowNode {
   // * Q (weighted average of all V in a subtree)
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
-  void FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit);
+  void FinalizeScoreUpdate(float v, float d, float m, float vs, uint32_t multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
-  void AdjustForTerminal(float v, float d, float m, uint32_t multivisit);
+  void AdjustForTerminal(float v, float d, float m, float vs, uint32_t multivisit);
 
   // Deletes all children.
   void ReleaseChildren(GCQueue* gc_queue);
@@ -595,6 +602,7 @@ class LowNode {
   // perspective of the player-to-move for the position.
   // WL stands for "W minus L". Is equal to Q if draw score is 0.
   double wl_ = 0.0f;
+  double vs_ = 0.0f;
   // Position hash and a TT key.
   uint64_t hash_ = 0;
 
@@ -665,6 +673,9 @@ class EdgeAndNode {
   }
   float GetM(float default_m) const {
     return (node_ && node_->GetN() > 0) ? node_->GetM() : default_m;
+  }
+  float GetVS(float default_vs) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetVS() : default_vs;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }

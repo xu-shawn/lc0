@@ -432,14 +432,14 @@ class SearchWorker {
   // terminal status of node @n using information from its child low node.
   // Return true if adjustment happened.
   bool MaybeAdjustForTerminalOrTransposition(Node* n, const LowNode* nl,
-                                             float& v, float& d, float& m,
+                                             float& v, float& d, float& m, float& vs,
                                              uint32_t& n_to_fix, float& v_delta,
-                                             float& d_delta, float& m_delta,
+                                             float& d_delta, float& m_delta, float& vs_delta,
                                              bool& update_parent_bounds) const;
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
   bool MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix, float* v_delta,
-                      float* d_delta, float* m_delta) const;
+                      float* d_delta, float* m_delta, float* vs_delta) const;
   void PickNodesToExtend(int collision_limit);
   void PickNodesToExtendTask(const BackupPath& path, int collision_limit,
                              PositionHistory& history,

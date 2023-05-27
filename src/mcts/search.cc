@@ -412,6 +412,48 @@ float Search::GetDrawScore(bool is_odd_depth) const {
 }
 
 namespace {
+	
+
+inline float ComputeStdev(const SearchParams& params, float q, uint32_t n,
+                          float vs) {
+  float util_sq_avg = vs;
+  const float util_sq = q * q;
+  util_sq_avg = std::max(util_sq_avg,
+                         util_sq);  // avoid negative variance
+
+  const float var_estimate = util_sq_avg - util_sq;
+  float stdev_estimate = sqrt(std::max(var_estimate, 0.0f));
+  return stdev_estimate;
+}
+
+inline float ComputeStdevFactor(const SearchParams& params, float q, uint32_t n,
+                                float vs) {
+  float util_sq_avg = vs;
+  const float util_sq = q * q;
+  util_sq_avg = std::max(util_sq_avg,
+                         util_sq);  // avoid negative variance
+
+  const float stdev_prior = params.GetCpuctUtilityStdevPrior();
+  const float variance_prior = stdev_prior * stdev_prior;
+  const float prior_weight = params.GetCpuctUtilityStdevPriorWeight();
+  const float stdev_factor_scale = params.GetCpuctUtilityStdevScale();
+  const float var_estimate =
+      ((util_sq + variance_prior) * prior_weight + util_sq_avg * n) /
+          (prior_weight + n - 1.0f) -
+      util_sq;
+
+  const float stdev_estimate = sqrt(std::max(var_estimate, 0.0f));
+  float stdev_factor =
+      1.0f + stdev_factor_scale * (stdev_estimate / stdev_prior - 1.0f);
+  return stdev_factor;
+}
+
+inline float ComputeStdevFactor(const SearchParams& params, Node* node) {
+  return ComputeStdevFactor(params, node->GetWL(), node->GetN(),
+                            node->GetVS());
+}
+
+
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
@@ -437,6 +479,15 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
   const float base = params.GetCpuctBase(is_root_node);
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
 }
+
+inline float ComputeCpuct(const SearchParams& params, uint32_t n, float q, float vs, bool is_root_node) {
+  const float init = params.GetCpuct(is_root_node);
+  const float k = params.GetCpuctFactor(is_root_node);
+  const float base = params.GetCpuctBase(is_root_node);
+  const float stdev_factor = ComputeStdevFactor(params, q, n, vs);
+  return stdev_factor * (init + (k ? k * FastLog((n + base) / base) : 0.0f)) ;
+}
+
 }  // namespace
 
 std::vector<std::string> Search::GetVerboseStats(Node* node) const {
@@ -445,7 +496,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
   const float fpu = GetFpu(params_, node, is_root, draw_score);
-  const float cpuct = ComputeCpuct(params_, node->GetTotalVisits(), is_root);
+  const float cpuct =
+      ComputeCpuct(params_, node->GetTotalVisits(), node->GetWL(), node->GetVS(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   std::vector<EdgeAndNode> edges;
@@ -477,6 +529,14 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
       print(oss, "(WL: ", sign * n->GetWL(), ") ", 8, 5);
       print(oss, "(D: ", n->GetD(), ") ", 5, 3);
       print(oss, "(M: ", n->GetM(), ") ", 4, 1);
+      print(oss, "(STD: ", ComputeStdev(params_, n->GetWL(), n->GetN(), n->GetVS()),
+            ") ",
+            6, 5);
+      print(oss, "(STDF: ",
+            ComputeStdevFactor(params_, n->GetWL(), n->GetN(), n->GetVS()),
+            ") ", 6, 5);
+      print(oss, "(VS: ", n->GetVS(),
+            ") ", 6, 5);
     } else {
       *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
     }
@@ -1673,7 +1733,7 @@ void SearchWorker::PickNodesToExtendTask(
       }
 
       const float cpuct =
-          ComputeCpuct(params_, node->GetTotalVisits(), is_root_node);
+          ComputeCpuct(params_, node->GetTotalVisits(), node->GetWL(), node->GetVS(), is_root_node);
       const float puct_mult =
           cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
       int cache_filled_idx = -1;
@@ -2067,13 +2127,14 @@ void SearchWorker::DoBackupUpdate() {
 }
 
 bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
-    Node* n, const LowNode* nl, float& v, float& d, float& m,
-    uint32_t& n_to_fix, float& v_delta, float& d_delta, float& m_delta,
+    Node* n, const LowNode* nl, float& v, float& d, float& m, float& vs,
+    uint32_t& n_to_fix, float& v_delta, float& d_delta, float& m_delta, float& vs_delta,
     bool& update_parent_bounds) const {
   if (n->IsTerminal()) {
     v = n->GetWL();
     d = n->GetD();
     m = n->GetM();
+    vs = n->GetVS();
 
     return true;
   }
@@ -2085,12 +2146,14 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
     v = -nl->GetWL();
     d = nl->GetD();
     m = nl->GetM() + 1;
+    vs = nl->GetVS();
     // When starting at or going through a transposition/terminal, make sure to
     // use the information it has already acquired.
     n_to_fix = n->GetN();
     v_delta = v - n->GetWL();
     d_delta = d - n->GetD();
     m_delta = m - n->GetM();
+    vs_delta = vs - n->GetVS();
     // Update bounds.
     if (params_.GetStickyEndgames()) {
       auto tt = nl->GetTerminalType();
@@ -2138,15 +2201,18 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v = 0.0f;
   float d = 0.0f;
   float m = 0.0f;
+  float vs = v * v;
   uint32_t n_to_fix = 0;
   float v_delta = 0.0f;
   float d_delta = 0.0f;
   float m_delta = 0.0f;
+  float vs_delta = 0.0f;
+	
 
   // Update the low node at the start of the backup path first, but only visit
   // it the first time that backup sees it.
   if (nl && nl->GetN() == 0) {
-    nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(),
+    nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(), nl->GetVS(),
                             node_to_process.multivisit);
   }
 
@@ -2157,23 +2223,24 @@ void SearchWorker::DoBackupUpdateSingleNode(
     v = 0.0f;
     d = 1.0f;
     m = 1;
-  } else if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, n_to_fix,
-                                                    v_delta, d_delta, m_delta,
+  } else if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, vs, n_to_fix,
+                                                    v_delta, d_delta, m_delta, vs_delta,
                                                     update_parent_bounds)) {
     // If there is nothing better, use original NN values adjusted for node.
     v = -nl->GetWL();
     d = nl->GetD();
     m = nl->GetM() + 1;
+    vs = nl->GetVS();
   }
 
   // Backup V value up to a root. After 1 visit, V = Q.
   for (auto it = path.crbegin(); it != path.crend();
        /* ++it in the body */) {
-    n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v, d, m, vs, node_to_process.multivisit);
     if (n_to_fix > 0 && !n->IsTerminal()) {
       // First part of the path might be never as it was removed and recreated.
       n_to_fix = std::min(n_to_fix, n->GetN());
-      n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
+      n->AdjustForTerminal(v_delta, d_delta, m_delta, vs_delta, n_to_fix);
     }
 
     // Stop delta update on repetition "terminal" and propagate a draw above
@@ -2201,26 +2268,27 @@ void SearchWorker::DoBackupUpdateSingleNode(
       v = pl->GetWL();
       d = pl->GetD();
       m = pl->GetM();
+      vs = pl->GetVS();
       n_to_fix = 0;
     }
-    pl->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    pl->FinalizeScoreUpdate(v, d, m, vs, node_to_process.multivisit);
     if (n_to_fix > 0) {
-      pl->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
+      pl->AdjustForTerminal(v_delta, d_delta, m_delta, vs_delta, n_to_fix);
     }
 
     bool old_update_parent_bounds = update_parent_bounds;
     // Try setting parent bounds except the root or those already terminal.
     update_parent_bounds =
         update_parent_bounds && p != search_->root_node_ && !pl->IsTerminal() &&
-        MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta, &m_delta);
+        MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta, &m_delta, &vs_delta);
 
     // Q will be flipped for opponent.
     v = -v;
     v_delta = -v_delta;
     m++;
 
-    MaybeAdjustForTerminalOrTransposition(p, pl, v, d, m, n_to_fix, v_delta,
-                                          d_delta, m_delta,
+    MaybeAdjustForTerminalOrTransposition(p, pl, v, d, m, vs, n_to_fix, v_delta,
+                                          d_delta, m_delta, vs_delta,
                                           update_parent_bounds);
 
     // Update the stats.
@@ -2252,7 +2320,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
 bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
                                   float* v_delta, float* d_delta,
-                                  float* m_delta) const {
+                                  float* m_delta, float* vs_delta) const {
   auto losing_m = 0.0f;
   auto prefer_tb = false;
 
@@ -2307,6 +2375,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
     *v_delta = pl->GetWL() + p->GetWL();
     *d_delta = pl->GetD() - p->GetD();
     *m_delta = pl->GetM() + 1 - p->GetM();
+    *vs_delta = pl->GetVS() - p->GetVS();
     p->MakeTerminal(
         -upper,
         (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m) + 1.0f,
