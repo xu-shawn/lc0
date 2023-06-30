@@ -2045,7 +2045,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
           }
         } else {
           if (n > late_visits) {
-            early_q = q;
+            late_q = q;
           }
         }
       }
