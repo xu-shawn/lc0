@@ -77,9 +77,7 @@ Position::Position(const ChessBoard& board, int rule50_ply, int game_ply)
   them_board_.Mirror();
 }
 
-uint64_t Position::Hash() const {
-  return us_board_.Hash();
-}
+uint64_t Position::Hash() const { return us_board_.Hash(); }
 
 std::string Position::DebugString() const { return us_board_.DebugString(); }
 
@@ -150,14 +148,17 @@ bool PositionHistory::DidRepeatSinceLastZeroingMove() const {
   return false;
 }
 
-uint64_t PositionHistory::HashLast(int positions) const {
+uint64_t PositionHistory::HashLast(int positions, int r50_ply) const {
   uint64_t hash = positions;
   for (auto iter = positions_.rbegin(), end = positions_.rend(); iter != end;
        ++iter) {
     if (!positions--) break;
     hash = HashCat(hash, iter->Hash());
   }
-  return HashCat(hash, Last().GetRule50Ply());
+  if (r50_ply < 0) {
+    r50_ply = Last().GetRule50Ply();
+  }
+  return HashCat(hash, r50_ply);
 }
 
 std::string GetFen(const Position& pos) {

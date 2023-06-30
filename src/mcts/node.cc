@@ -366,7 +366,6 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
   m_ += multivisit * (m - m_) / (n_ + multivisit);
   vs_ += multivisit * (vs - vs_) / (n_ + multivisit);
 
-
   assert(WLDMInvariantsHold());
 
   // Increment N.
@@ -386,7 +385,8 @@ void LowNode::AdjustForTerminal(float v, float d, float m, float vs,
   assert(WLDMInvariantsHold());
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, float vs, uint32_t multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, float vs,
+                               uint32_t multivisit) {
   // Recompute Q.
   wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
@@ -402,7 +402,8 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, float vs, uint32_t mul
   n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
-void Node::AdjustForTerminal(float v, float d, float m, float vs, uint32_t multivisit) {
+void Node::AdjustForTerminal(float v, float d, float m, float vs,
+                             uint32_t multivisit) {
   assert(static_cast<uint32_t>(multivisit) <= n_);
 
   // Recompute Q.
