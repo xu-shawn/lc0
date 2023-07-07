@@ -412,7 +412,6 @@ float Search::GetDrawScore(bool is_odd_depth) const {
 }
 
 namespace {
-	
 
 inline float ComputeStdev(const SearchParams& params, float q, uint32_t n,
                           float vs) {
@@ -449,10 +448,8 @@ inline float ComputeStdevFactor(const SearchParams& params, float q, uint32_t n,
 }
 
 inline float ComputeStdevFactor(const SearchParams& params, Node* node) {
-  return ComputeStdevFactor(params, node->GetWL(), node->GetN(),
-                            node->GetVS());
+  return ComputeStdevFactor(params, node->GetWL(), node->GetN(), node->GetVS());
 }
-
 
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                     float draw_score) {
@@ -480,12 +477,13 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
 }
 
-inline float ComputeCpuct(const SearchParams& params, uint32_t n, float q, float vs, bool is_root_node) {
+inline float ComputeCpuct(const SearchParams& params, uint32_t n, float q,
+                          float vs, bool is_root_node) {
   const float init = params.GetCpuct(is_root_node);
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
   const float stdev_factor = ComputeStdevFactor(params, q, n, vs);
-  return stdev_factor * (init + (k ? k * FastLog((n + base) / base) : 0.0f)) ;
+  return stdev_factor * (init + (k ? k * FastLog((n + base) / base) : 0.0f));
 }
 
 }  // namespace
@@ -496,8 +494,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
   const float fpu = GetFpu(params_, node, is_root, draw_score);
-  const float cpuct =
-      ComputeCpuct(params_, node->GetTotalVisits(), node->GetWL(), node->GetVS(), is_root);
+  const float cpuct = ComputeCpuct(params_, node->GetTotalVisits(),
+                                   node->GetWL(), node->GetVS(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   std::vector<EdgeAndNode> edges;
@@ -529,14 +527,13 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
       print(oss, "(WL: ", sign * n->GetWL(), ") ", 8, 5);
       print(oss, "(D: ", n->GetD(), ") ", 5, 3);
       print(oss, "(M: ", n->GetM(), ") ", 4, 1);
-      print(oss, "(STD: ", ComputeStdev(params_, n->GetWL(), n->GetN(), n->GetVS()),
-            ") ",
-            6, 5);
+      print(oss,
+            "(STD: ", ComputeStdev(params_, n->GetWL(), n->GetN(), n->GetVS()),
+            ") ", 6, 5);
       print(oss, "(STDF: ",
             ComputeStdevFactor(params_, n->GetWL(), n->GetN(), n->GetVS()),
             ") ", 6, 5);
-      print(oss, "(VS: ", n->GetVS(),
-            ") ", 6, 5);
+      print(oss, "(VS: ", n->GetVS(), ") ", 6, 5);
     } else {
       *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
     }
@@ -568,13 +565,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         up = -up;
         std::swap(lo, up);
       }
-      *oss << (lo == up
-                   ? "(T) "
-                   : lo == GameResult::DRAW && up == GameResult::WHITE_WON
-                         ? "(W) "
-                         : lo == GameResult::BLACK_WON && up == GameResult::DRAW
-                               ? "(L) "
-                               : "");
+      *oss << (lo == up                                                ? "(T) "
+               : lo == GameResult::DRAW && up == GameResult::WHITE_WON ? "(W) "
+               : lo == GameResult::BLACK_WON && up == GameResult::DRAW ? "(L) "
+                                                                       : "");
     }
   };
 
@@ -1733,7 +1727,8 @@ void SearchWorker::PickNodesToExtendTask(
       }
 
       const float cpuct =
-          ComputeCpuct(params_, node->GetTotalVisits(), node->GetWL(), node->GetVS(), is_root_node);
+          ComputeCpuct(params_, node->GetTotalVisits(), node->GetWL(),
+                       node->GetVS(), is_root_node);
       const float puct_mult =
           cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
       int cache_filled_idx = -1;
@@ -2020,6 +2015,45 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
     picked_node.tt_low_node = tt_low_node;
     picked_node.is_tt_hit = true;
   } else {
+    // Make list of 100 LowNode references, one for each ply left
+
+    int my_ply = picked_node.GetRule50Ply();
+    float early_q = 99.0f, late_q = 0.0f;
+    int early_visits, late_visits;
+
+    float err_total = 0;
+    float weight_total = 0;
+
+    LowNode* r50_low_nodes[100];
+    for (int r50_ply = 0; r50_ply < 100; r50_ply++) {
+      uint64_t hash = search_->dag_->GetHistoryHash(history, r50_ply);
+      auto r50_low_node = search_->dag_->TTFind(hash);
+      r50_low_nodes[r50_ply] = r50_low_node;
+      if (r50_low_node != nullptr) {
+        int n = r50_low_node->GetN();
+        float q = r50_low_node->GetWL();
+        float v = r50_low_node->GetV();
+        // katago applies an exponent ~.3 < 1 so that the error calculation is
+        // not dominated by a few nodes
+        err_total += n * (q - v);
+        weight_total += n;
+
+        // it is not possible for your ply to equal mine
+        if (r50_ply < my_ply) {
+          if (n > early_visits) {
+            early_q = q;
+          }
+        } else {
+          if (n > late_visits) {
+            late_q = q;
+          }
+        }
+      }
+    }
+    picked_node.comrade_error = err_total / (weight_total + 0.001f);
+    picked_node.early_q = early_q;
+    picked_node.late_q = late_q;
+
     picked_node.lock = NNCacheLock(search_->cache_, picked_node.hash);
     picked_node.is_cache_hit = picked_node.lock;
   }
@@ -2089,6 +2123,19 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
           nn_eval->d = d;
         }
       }
+      // after wdl scaling we adjust based on r50
+      // 0.5 constant is chosen arbitrarily
+      // TODO: some stuff to consider with differing signs
+      float q_adjusted = nn_eval->q + node_to_process->comrade_error * 0.5;
+      float early_q = node_to_process->early_q,
+            late_q = node_to_process->late_q;
+      if (abs(q_adjusted) < abs(late_q)) {
+        q_adjusted = late_q;
+      }
+      if (abs(q_adjusted) > abs(early_q)) {
+        q_adjusted = early_q;
+      }
+      nn_eval->q = q_adjusted;
       node_to_process->tt_low_node->SetNNEval(nn_eval);
     }
   }
@@ -2128,8 +2175,8 @@ void SearchWorker::DoBackupUpdate() {
 
 bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
     Node* n, const LowNode* nl, float& v, float& d, float& m, float& vs,
-    uint32_t& n_to_fix, float& v_delta, float& d_delta, float& m_delta, float& vs_delta,
-    bool& update_parent_bounds) const {
+    uint32_t& n_to_fix, float& v_delta, float& d_delta, float& m_delta,
+    float& vs_delta, bool& update_parent_bounds) const {
   if (n->IsTerminal()) {
     v = n->GetWL();
     d = n->GetD();
@@ -2207,7 +2254,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float d_delta = 0.0f;
   float m_delta = 0.0f;
   float vs_delta = 0.0f;
-	
 
   // Update the low node at the start of the backup path first, but only visit
   // it the first time that backup sees it.
@@ -2223,9 +2269,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     v = 0.0f;
     d = 1.0f;
     m = 1;
-  } else if (!MaybeAdjustForTerminalOrTransposition(n, nl, v, d, m, vs, n_to_fix,
-                                                    v_delta, d_delta, m_delta, vs_delta,
-                                                    update_parent_bounds)) {
+  } else if (!MaybeAdjustForTerminalOrTransposition(
+                 n, nl, v, d, m, vs, n_to_fix, v_delta, d_delta, m_delta,
+                 vs_delta, update_parent_bounds)) {
     // If there is nothing better, use original NN values adjusted for node.
     v = -nl->GetWL();
     d = nl->GetD();
@@ -2278,9 +2324,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     bool old_update_parent_bounds = update_parent_bounds;
     // Try setting parent bounds except the root or those already terminal.
-    update_parent_bounds =
-        update_parent_bounds && p != search_->root_node_ && !pl->IsTerminal() &&
-        MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta, &m_delta, &vs_delta);
+    update_parent_bounds = update_parent_bounds && p != search_->root_node_ &&
+                           !pl->IsTerminal() &&
+                           MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta,
+                                          &m_delta, &vs_delta);
 
     // Q will be flipped for opponent.
     v = -v;

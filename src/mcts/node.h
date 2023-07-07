@@ -292,7 +292,6 @@ class Node {
   float GetM() const { return m_; }
   float GetVS() const { return vs_; }
 
-
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
   bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
@@ -320,9 +319,11 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
-  void FinalizeScoreUpdate(float v, float d, float m, float vs, uint32_t multivisit);
+  void FinalizeScoreUpdate(float v, float d, float m, float vs,
+                           uint32_t multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
-  void AdjustForTerminal(float v, float d, float m, float vs, uint32_t multivisit);
+  void AdjustForTerminal(float v, float d, float m, float vs,
+                         uint32_t multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -453,6 +454,7 @@ class LowNode {
   // For non-TT nodes.
   LowNode(const LowNode& p)
       : wl_(p.wl_),
+        v_(p.wl_),
         hash_(p.hash_),
         d_(p.d_),
         m_(p.m_),
@@ -492,6 +494,7 @@ class LowNode {
                 eval->num_edges * sizeof(Edge));
 
     wl_ = eval->q;
+    v_ = eval->q;
     d_ = eval->d;
     m_ = eval->m;
     vs_ = wl_ * wl_;
@@ -513,10 +516,10 @@ class LowNode {
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
   float GetWL() const { return wl_; }
+  float GetV() const { return v_; }
   float GetD() const { return d_; }
   float GetM() const { return m_; }
   float GetVS() const { return vs_; }
-
 
   // Returns whether the node is known to be draw/loss/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
@@ -542,9 +545,11 @@ class LowNode {
   // * Q (weighted average of all V in a subtree)
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
-  void FinalizeScoreUpdate(float v, float d, float m, float vs, uint32_t multivisit);
+  void FinalizeScoreUpdate(float v, float d, float m, float vs,
+                           uint32_t multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
-  void AdjustForTerminal(float v, float d, float m, float vs, uint32_t multivisit);
+  void AdjustForTerminal(float v, float d, float m, float vs,
+                         uint32_t multivisit);
 
   // Deletes all children.
   void ReleaseChildren(GCQueue* gc_queue);
@@ -618,6 +623,8 @@ class LowNode {
   float d_ = 0.0f;
   // Estimated remaining plies.
   float m_ = 0.0f;
+  // original eval
+  float v_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;
 
@@ -975,8 +982,9 @@ class NodeTree {
   size_t AllocatedNodeCount() const { return tt_.size() + non_tt_.size(); };
 
   // Get position hash used for TT nodes and NN cache.
-  uint64_t GetHistoryHash(const PositionHistory& history) const {
-    return history.HashLast(hash_history_length_);
+  uint64_t GetHistoryHash(const PositionHistory& history,
+                          int r50_ply = -1) const {
+    return history.HashLast(hash_history_length_, r50_ply);
   }
 
  private:

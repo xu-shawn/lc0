@@ -222,9 +222,7 @@ class SearchWorker {
     search_->network_->InitThread(id);
     for (int i = 0; i < params.GetTaskWorkersPerSearchWorker(); i++) {
       task_workspaces_.emplace_back();
-      task_threads_.emplace_back([this, i]() {
-        this->RunTasks(i);
-      });
+      task_threads_.emplace_back([this, i]() { this->RunTasks(i); });
     }
   }
 
@@ -300,6 +298,7 @@ class SearchWorker {
              node->GetLowNode();
     }
     bool ShouldAddToInput() const { return nn_queried && !is_tt_hit; }
+    int GetRule50Ply() const { return history.Last().GetRule50Ply(); }
 
     // The path to the node to extend.
     BackupPath path;
@@ -315,8 +314,14 @@ class SearchWorker {
     bool is_cache_hit = false;
     bool is_collision = false;
 
+    // values for improving r50 estimates, filled in as we go
+    float early_q;
+    float late_q;
+    float comrade_error;
+
     // Details that are filled in as we go.
     uint64_t hash;
+
     LowNode* tt_low_node;
     NNCacheLock lock;
     PositionHistory history;
@@ -333,6 +338,8 @@ class SearchWorker {
                                const PositionHistory& history) {
       return NodeToProcess(path, history);
     }
+
+    void SetR50Bounds(NodeTree* dag) {}
 
     // Method to allow NodeToProcess to conform as a 'Computation'. Only safe
     // to call if is_cache_hit is true in the multigather path.
@@ -432,9 +439,10 @@ class SearchWorker {
   // terminal status of node @n using information from its child low node.
   // Return true if adjustment happened.
   bool MaybeAdjustForTerminalOrTransposition(Node* n, const LowNode* nl,
-                                             float& v, float& d, float& m, float& vs,
-                                             uint32_t& n_to_fix, float& v_delta,
-                                             float& d_delta, float& m_delta, float& vs_delta,
+                                             float& v, float& d, float& m,
+                                             float& vs, uint32_t& n_to_fix,
+                                             float& v_delta, float& d_delta,
+                                             float& m_delta, float& vs_delta,
                                              bool& update_parent_bounds) const;
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
