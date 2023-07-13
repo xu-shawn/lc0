@@ -540,7 +540,7 @@ void SearchParams::Populate(OptionsParser* options) {
   // The default kContemptId is empty, so the initial contempt value is taken
   // from kUCIRatingAdvId. Adding any value (without name) in the comma
   // separated kContemptId list will override this.
-  options->Add<StringOption>(kContemptId) = "";
+  options->Add<StringOption>(kContemptId) = "0";
   options->Add<FloatOption>(kContemptMaxValueId, 0, 10000.0f) = 420.0f;
   options->Add<FloatOption>(kWDLCalibrationEloId, 0, 10000.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
