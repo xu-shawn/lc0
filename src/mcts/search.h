@@ -297,7 +297,7 @@ class SearchWorker {
       return is_tt_hit || is_cache_hit || node->IsTerminal() ||
              node->GetLowNode();
     }
-    bool ShouldAddToInput() const { return nn_queried && !is_tt_hit; }
+    bool ShouldAddToInput() const { return nn_queried && !is_tt_hit && !is_comrade_hit; }
     int GetRule50Ply() const { return history.Last().GetRule50Ply(); }
 
     // The path to the node to extend.
@@ -311,6 +311,8 @@ class SearchWorker {
     uint32_t maxvisit = 0;
     bool nn_queried = false;
     bool is_tt_hit = false;
+    bool is_comrade_hit = false;
+
     bool is_cache_hit = false;
     bool is_collision = false;
 
@@ -323,6 +325,8 @@ class SearchWorker {
     uint64_t hash;
 
     LowNode* tt_low_node;
+    LowNode* comrade_low_node;
+
     NNCacheLock lock;
     PositionHistory history;
     bool ooo_completed = false;
