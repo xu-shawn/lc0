@@ -317,8 +317,6 @@ class SearchWorker {
     bool is_collision = false;
 
     // values for improving r50 estimates, filled in as we go
-    float early_q;
-    float late_q;
     float comrade_error;
 
     // Details that are filled in as we go.

@@ -2045,7 +2045,6 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
         }
       }
     }
-
     if (comrade_low_node != nullptr) {
       picked_node.comrade_low_node = comrade_low_node;
       picked_node.is_comrade_hit = true;
@@ -2071,21 +2070,10 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
         err_total += n * (q - v);
         weight_total += n;
 
-        // it is not possible for your ply to equal mine
-        if (r50_ply < my_ply) {
-          if (n > early_visits) {
-            early_q = q;
-          }
-        } else {
-          if (n > late_visits) {
-            early_q = q;
-          }
-        }
+
       }
     }
     picked_node.comrade_error = err_total / (weight_total + 0.001f);
-    picked_node.early_q = early_q;
-    picked_node.late_q = late_q;
 
     picked_node.lock = NNCacheLock(search_->cache_, picked_node.hash);
     picked_node.is_cache_hit = picked_node.lock;
@@ -2170,14 +2158,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
         // 0.5 constant is chosen arbitrarily
         // TODO: some stuff to consider with differing signs
         float q_adjusted = nn_eval->q + node_to_process->comrade_error * 0.5;
-        float early_q = node_to_process->early_q,
-              late_q = node_to_process->late_q;
-        if (abs(q_adjusted) < abs(late_q)) {
-          q_adjusted = late_q;
-        }
-        if (abs(q_adjusted) > abs(early_q)) {
-          q_adjusted = early_q;
-        }
         nn_eval->q = q_adjusted;
         node_to_process->tt_low_node->SetNNEval(nn_eval);
       }
