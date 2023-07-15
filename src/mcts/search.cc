@@ -2070,7 +2070,6 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
         err_total += n * (q - v);
         weight_total += n;
 
-
       }
     }
     picked_node.comrade_error = err_total / (weight_total + 0.001f);
