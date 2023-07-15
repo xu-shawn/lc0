@@ -469,6 +469,25 @@ class LowNode {
     edges_ = std::make_unique<Edge[]>(num_edges_);
     std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
   }
+
+  LowNode(const LowNode& p, const uint64_t hash)
+      : wl_(p.wl_),
+        v_(p.wl_),
+        hash_(hash),
+        d_(p.d_),
+        m_(p.m_),
+        vs_(p.vs_),
+        num_edges_(p.num_edges_),
+        terminal_type_(Terminal::NonTerminal),
+        lower_bound_(GameResult::BLACK_WON),
+        upper_bound_(GameResult::WHITE_WON),
+        is_transposition(false),
+        is_tt_(false) {
+    assert(p.edges_);
+    edges_ = std::make_unique<Edge[]>(num_edges_);
+    std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
+  }
+
   // Init @edges_ with moves from @moves and 0 policy.
   // Also create the first child at @index.
   // For non-TT nodes.
@@ -966,6 +985,10 @@ class NodeTree {
   // new low node and insert it into the Transposition Table if it is not there
   // already. Return the low node for the hash.
   std::pair<LowNode*, bool> TTGetOrCreate(uint64_t hash);
+
+
+  std::pair<LowNode*, bool> TTGetOrCreate(const LowNode& p, uint64_t hash);
+
   // Evict unused low nodes from the Transposition Table.
   void TTMaintenance();
   // Clear the Transposition Table.

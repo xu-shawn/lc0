@@ -2015,20 +2015,52 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
     picked_node.tt_low_node = tt_low_node;
     picked_node.is_tt_hit = true;
   } else {
-    // Make list of 100 LowNode references, one for each ply left
+
+
+
+
+
 
     int my_ply = picked_node.GetRule50Ply();
+    int ply_lo, ply_hi;
+
+    if (my_ply <= 64) {
+      ply_lo = (my_ply / 8) * 8;
+      ply_hi = ply_lo + 7;
+    } else {
+      ply_lo = my_ply;
+      ply_hi = my_ply;
+    }
+
+    int max_visits = 0;
+    LowNode* comrade_low_node = nullptr;
+    for (int ply = ply_lo; ply <= ply_hi; ply++) {
+      uint64_t hash = search_->dag_->GetHistoryHash(history, ply);
+      auto low_node = search_->dag_->TTFind(hash);
+      if (low_node != nullptr) {
+        int visits = low_node->GetN();
+        if (visits > max_visits) {
+          max_visits = visits;
+          comrade_low_node = low_node;
+        }
+      }
+    }
+    if (comrade_low_node != nullptr) {
+      picked_node.comrade_low_node = comrade_low_node;
+      picked_node.is_comrade_hit = true;
+    }
+
     float early_q = 99.0f, late_q = 0.0f;
     int early_visits, late_visits;
 
     float err_total = 0;
     float weight_total = 0;
 
-    LowNode* r50_low_nodes[100];
+
+    // calculate total error
     for (int r50_ply = 0; r50_ply < 100; r50_ply++) {
       uint64_t hash = search_->dag_->GetHistoryHash(history, r50_ply);
       auto r50_low_node = search_->dag_->TTFind(hash);
-      r50_low_nodes[r50_ply] = r50_low_node;
       if (r50_low_node != nullptr) {
         int n = r50_low_node->GetN();
         float q = r50_low_node->GetWL();
@@ -2038,21 +2070,9 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
         err_total += n * (q - v);
         weight_total += n;
 
-        // it is not possible for your ply to equal mine
-        if (r50_ply < my_ply) {
-          if (n > early_visits) {
-            early_q = q;
-          }
-        } else {
-          if (n > late_visits) {
-            late_q = q;
-          }
-        }
       }
     }
     picked_node.comrade_error = err_total / (weight_total + 0.001f);
-    picked_node.early_q = early_q;
-    picked_node.late_q = late_q;
 
     picked_node.lock = NNCacheLock(search_->cache_, picked_node.hash);
     picked_node.is_cache_hit = picked_node.lock;
@@ -2097,46 +2117,49 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (!node_to_process->nn_queried) return;
 
   if (!node_to_process->is_tt_hit) {
-    auto [tt_low_node, is_tt_miss] =
-        search_->dag_->TTGetOrCreate(node_to_process->hash);
 
-    assert(tt_low_node != nullptr);
-    node_to_process->tt_low_node = tt_low_node;
-    if (is_tt_miss) {
-      auto nn_eval = computation.GetNNEval(idx_in_computation).get();
-      if (params_.GetContemptPerspective() != ContemptPerspective::NONE) {
-        bool root_stm =
-            (params_.GetContemptPerspective() == ContemptPerspective::STM
-                 ? !(search_->played_history_.Last().IsBlackToMove())
-                 : (params_.GetContemptPerspective() ==
-                    ContemptPerspective::WHITE));
-        auto sign = (root_stm ^ node_to_process->history.IsBlackToMove())
-                        ? 1.0f
-                        : -1.0f;
-        if (params_.GetWDLRescaleRatio() != 1.0f ||
-            params_.GetWDLRescaleDiff() != 0.0f) {
-          float v = nn_eval->q;
-          float d = nn_eval->d;
-          WDLRescale(v, d, nullptr, params_.GetWDLRescaleRatio(),
-                     params_.GetWDLRescaleDiff(), sign, false);
-          nn_eval->q = v;
-          nn_eval->d = d;
+
+    if (node_to_process->is_comrade_hit) {
+      LowNode comrade_low_node = *(node_to_process->comrade_low_node);
+      auto [tt_low_node, is_tt_miss] =
+          search_->dag_->TTGetOrCreate(comrade_low_node, node_to_process->hash);
+      assert(tt_low_node != nullptr);
+      node_to_process->tt_low_node = tt_low_node;
+    }
+    else {
+      auto [tt_low_node, is_tt_miss] =
+          search_->dag_->TTGetOrCreate(node_to_process->hash);
+      assert(tt_low_node != nullptr);
+
+      node_to_process->tt_low_node = tt_low_node;
+      if (is_tt_miss) {
+        auto nn_eval = computation.GetNNEval(idx_in_computation).get();
+        if (params_.GetContemptPerspective() != ContemptPerspective::NONE) {
+          bool root_stm =
+              (params_.GetContemptPerspective() == ContemptPerspective::STM
+                   ? !(search_->played_history_.Last().IsBlackToMove())
+                   : (params_.GetContemptPerspective() ==
+                      ContemptPerspective::WHITE));
+          auto sign = (root_stm ^ node_to_process->history.IsBlackToMove())
+                          ? 1.0f
+                          : -1.0f;
+          if (params_.GetWDLRescaleRatio() != 1.0f ||
+              params_.GetWDLRescaleDiff() != 0.0f) {
+            float v = nn_eval->q;
+            float d = nn_eval->d;
+            WDLRescale(v, d, nullptr, params_.GetWDLRescaleRatio(),
+                       params_.GetWDLRescaleDiff(), sign, false);
+            nn_eval->q = v;
+            nn_eval->d = d;
+          }
         }
+        // after wdl scaling we adjust based on r50
+        // 0.5 constant is chosen arbitrarily
+        // TODO: some stuff to consider with differing signs
+        float q_adjusted = nn_eval->q + node_to_process->comrade_error * 0.5;
+        nn_eval->q = q_adjusted;
+        node_to_process->tt_low_node->SetNNEval(nn_eval);
       }
-      // after wdl scaling we adjust based on r50
-      // 0.5 constant is chosen arbitrarily
-      // TODO: some stuff to consider with differing signs
-      float q_adjusted = nn_eval->q + node_to_process->comrade_error * 0.5;
-      float early_q = node_to_process->early_q,
-            late_q = node_to_process->late_q;
-      if (abs(q_adjusted) < abs(late_q)) {
-        q_adjusted = late_q;
-      }
-      if (abs(q_adjusted) > abs(early_q)) {
-        q_adjusted = early_q;
-      }
-      nn_eval->q = q_adjusted;
-      node_to_process->tt_low_node->SetNNEval(nn_eval);
     }
   }
 

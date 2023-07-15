@@ -809,6 +809,12 @@ std::pair<LowNode*, bool> NodeTree::TTGetOrCreate(uint64_t hash) {
   return {tt_iter->second.get(), is_tt_miss};
 }
 
+std::pair<LowNode*, bool> NodeTree::TTGetOrCreate(const LowNode& p, uint64_t hash) {
+  auto [tt_iter, is_tt_miss] =
+      tt_.insert({hash, std::make_unique<LowNode>(p, hash)});
+  return {tt_iter->second.get(), is_tt_miss};
+}
+
 void NodeTree::TTMaintenance() { TTGCSome(0); }
 
 void NodeTree::TTClear() {
