@@ -454,7 +454,7 @@ class LowNode {
   // For non-TT nodes.
   LowNode(const LowNode& p)
       : wl_(p.wl_),
-        v_(p.wl_),
+        v_(p.v_),
         hash_(p.hash_),
         d_(p.d_),
         m_(p.m_),
@@ -472,7 +472,7 @@ class LowNode {
 
   LowNode(const LowNode& p, const uint64_t hash)
       : wl_(p.wl_),
-        v_(p.wl_),
+        v_(p.v_),
         hash_(hash),
         d_(p.d_),
         m_(p.m_),
