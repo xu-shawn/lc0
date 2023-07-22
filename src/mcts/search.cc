@@ -2015,22 +2015,22 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
     picked_node.tt_low_node = tt_low_node;
     picked_node.is_tt_hit = true;
   } else {
-
-
-
-
-
-
     int my_ply = picked_node.GetRule50Ply();
-    int ply_lo, ply_hi;
+    int bs;
 
     if (my_ply <= 64) {
-      ply_lo = (my_ply / 8) * 8;
-      ply_hi = ply_lo + 7;
-    } else {
-      ply_lo = my_ply;
-      ply_hi = my_ply;
+      bs = 8;
+
+    } else if (my_ply <= 80) {
+      bs = 4;
     }
+    else {
+      bs = 1;
+    }
+    int ply_lo = my_ply / bs * bs;
+    int ply_hi = ply_lo + bs - 1;
+
+
 
     int max_visits = 0;
     LowNode* comrade_low_node = nullptr;
@@ -2050,6 +2050,8 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
       picked_node.is_comrade_hit = true;
     }
 
+    /*
+    
     float early_q = 99.0f, late_q = 0.0f;
     int early_visits, late_visits;
 
@@ -2072,7 +2074,9 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
 
       }
     }
+
     picked_node.comrade_error = err_total / (weight_total + 0.001f);
+    */
 
     picked_node.lock = NNCacheLock(search_->cache_, picked_node.hash);
     picked_node.is_cache_hit = picked_node.lock;
@@ -2156,8 +2160,10 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
         // after wdl scaling we adjust based on r50
         // 0.5 constant is chosen arbitrarily
         // TODO: some stuff to consider with differing signs
+        /*
         float q_adjusted = nn_eval->q + node_to_process->comrade_error * 0.5;
         nn_eval->q = q_adjusted;
+        */
         node_to_process->tt_low_node->SetNNEval(nn_eval);
       }
     }
