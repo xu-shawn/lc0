@@ -158,11 +158,6 @@ class SearchParams {
     return kCpuctUtilityStdevPriorWeight;
   }
 
-  float GetCpuctAdvantageScale() const { return kCpuctAdvantageScale; }
-  float GetCpuctAdvantagePriorWeight() const {
-    return kCpuctAdvantagePriorWeight;
-  }
-
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kCpuctId;
@@ -237,8 +232,6 @@ class SearchParams {
   static const OptionId kCpuctUtilityStdevPriorId;
   static const OptionId kCpuctUtilityStdevScaleId;
   static const OptionId kCpuctUtilityStdevPriorWeightId;
-  static const OptionId kCpuctAdvantageScaleId;
-  static const OptionId kCpuctAdvantagePriorWeightId;
 
  private:
   const OptionsDict& options_;
@@ -301,8 +294,6 @@ class SearchParams {
   const float kCpuctUtilityStdevPrior;
   const float kCpuctUtilityStdevScale;
   const float kCpuctUtilityStdevPriorWeight;
-  const float kCpuctAdvantageScale;
-  const float kCpuctAdvantagePriorWeight;
 };
 
 }  // namespace lczero
