@@ -19,3 +19,4 @@ compile_flags.txt
 .vscode
 .mesonpy*
 /.vs
+/src/subprojects
