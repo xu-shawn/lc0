@@ -454,25 +454,19 @@ inline float ComputeStdevFactor(const SearchParams& params, Node* node) {
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
-  const float stdev_factor =
-      ComputeStdevFactor(params, node->GetWL(), node->GetN(), node->GetVS());
-
   return params.GetFpuAbsolute(is_root_node)
              ? value
              : -node->GetQ(-draw_score) -
-                   stdev_factor * value * std::sqrt(node->GetVisitedPolicy());
+                   value * std::sqrt(node->GetVisitedPolicy());
 }
 
 // Faster version for if visited_policy is readily available already.
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                     float draw_score, float visited_pol) {
   const auto value = params.GetFpuValue(is_root_node);
-  const float stdev_factor =
-      ComputeStdevFactor(params, node->GetWL(), node->GetN(), node->GetVS());
   return params.GetFpuAbsolute(is_root_node)
              ? value
-             : -node->GetQ(-draw_score) -
-                   stdev_factor * value * std::sqrt(visited_pol);
+             : -node->GetQ(-draw_score) - value * std::sqrt(visited_pol);
 }
 
 inline float ComputeCpuct(const SearchParams& params, uint32_t N,
@@ -2029,11 +2023,14 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
 
     } else if (my_ply <= 80) {
       bs = 4;
-    } else {
+    }
+    else {
       bs = 1;
     }
     int ply_lo = my_ply / bs * bs;
     int ply_hi = ply_lo + bs - 1;
+
+
 
     int max_visits = 0;
     LowNode* comrade_low_node = nullptr;
@@ -2054,7 +2051,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
     }
 
     /*
-
+    
     float early_q = 99.0f, late_q = 0.0f;
     int early_visits, late_visits;
 
@@ -2124,13 +2121,16 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (!node_to_process->nn_queried) return;
 
   if (!node_to_process->is_tt_hit) {
+
+
     if (node_to_process->is_comrade_hit) {
       LowNode comrade_low_node = *(node_to_process->comrade_low_node);
       auto [tt_low_node, is_tt_miss] =
           search_->dag_->TTGetOrCreate(comrade_low_node, node_to_process->hash);
       assert(tt_low_node != nullptr);
       node_to_process->tt_low_node = tt_low_node;
-    } else {
+    }
+    else {
       auto [tt_low_node, is_tt_miss] =
           search_->dag_->TTGetOrCreate(node_to_process->hash);
       assert(tt_low_node != nullptr);
