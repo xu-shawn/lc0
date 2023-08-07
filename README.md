@@ -4,6 +4,41 @@
 # Lc0
 
 Lc0 is a UCI-compliant chess engine designed to play chess via neural network, specifically those of the [LeelaChessZero project](https://lczero.org).
+This is an experimental repository for testing new features to the Lc0 chess engine. Updates are made frequently so there may be bugs. Please report any issues you find to the Lc0 Discord. All elo measurements were calculated on A100.
+Many of these features are taken from the Katago engine. A detailed description of these methods can be found [here](https://github.com/lightvector/KataGo/blob/master/docs/KataGoMethods.md). A list of the improvements follows.
+
+
+## New features in this fork
+
+### 50 move rule caching
+
+The first 64 plies out of 100 are partitioned into 8 equally sized buckets. Before a position is queried for NN evaluation, the 50 move rule ply is checked. If the bucket containing the position already has nodes, the eval is copied from the one with the most visits.
+The speedup can be anywhere from 5% to 50% depending on how transposition-heavy the position is. The gain was measured at 20 elo on STC.
+
+### CPUCT Utility Variance Scaling
+
+Identical to the [Katago implementation](https://github.com/lightvector/KataGo/blob/master/docs/KataGoMethods.md#dynamic-variance-scaled-cpuct). The new parameters are
+
+```
+CPuctUtilityStdevPrior 
+CPuctUtilityStdevScale 
+CPuctUtilityStdevPriorWeight
+```
+
+and the tuned values are
+
+```
+CPuct 2.3097
+FpuValue 0.5619
+CPuctUtilityStdevPrior 0.2289
+CPuctUtilityStdevScale 0.3437
+CPuctUtilityStdevPriorWeight 10.0 (default, not tuned)
+WDLCalibrationElo 3400
+```
+
+The gain  is around 10 elo on STC and LTC.
+
+
 
 ## Downloading source
 
