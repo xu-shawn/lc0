@@ -13,7 +13,7 @@ set EIGEN=false
 set TEST=false
 
 rem 2. Edit the paths for the build dependencies.
-set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.0
+set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1
 set CUDNN_PATH=%CUDA_PATH%
 set OPENBLAS_PATH=C:\OpenBLAS
 set MKL_PATH=C:\Program Files (x86)\IntelSWTools\compilers_and_libraries\windows\mkl
@@ -63,7 +63,8 @@ meson build --backend %backend% --buildtype release -Ddx=%DX12% -Dcudnn=%CUDNN% 
 -Dmkl_include="%MKL_PATH%\include" -Dmkl_libdirs="%MKL_PATH%\lib\intel64" -Ddnnl_dir="%DNNL_PATH%" ^
 -Dopencl_libdirs="%OPENCL_LIB_PATH%" -Dopencl_include="%OPENCL_INCLUDE_PATH%" ^
 -Dopenblas_include="%OPENBLAS_PATH%\include" -Dopenblas_libdirs="%OPENBLAS_PATH%\lib" ^
--Ddefault_library=static
+-Ddefault_library=static -Donnx_libdir="C:\onnxruntime-win-x64-gpu-1.15.1\onnxruntime-win-x64-gpu-1.15.1\lib" ^
+-Donnx_include="C:\onnxruntime-win-x64-gpu-1.15.1\onnxruntime-win-x64-gpu-1.15.1\include" 
 
 if errorlevel 1 exit /b
 

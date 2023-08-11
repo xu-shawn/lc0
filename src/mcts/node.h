@@ -284,6 +284,12 @@ class Node {
     return n_ + n_in_flight_.load(std::memory_order_acquire);
   }
 
+  float GetWeightStarted() const {
+    // we can't have a weight_in_flight so we have to estimate the weight in
+    // flight
+    return GetWeight() + n_in_flight_.load(std::memory_order_acquire);
+  }
+
   float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
@@ -291,6 +297,9 @@ class Node {
   float GetD() const { return d_; }
   float GetM() const { return m_; }
   float GetVS() const { return vs_; }
+  float GetWeight() const { return weight_; }
+  float GetTotalWeight() const { return weight_; }
+  float GetAvgWeight() const { return weight_ / n_; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
@@ -320,10 +329,10 @@ class Node {
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
   void FinalizeScoreUpdate(float v, float d, float m, float vs,
-                           uint32_t multivisit);
+                           uint32_t multivisit, float multiweight);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, float vs,
-                         uint32_t multivisit);
+                         uint32_t multivisit, float multiweight);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -397,7 +406,14 @@ class Node {
   // the perspective of the player-to-move for the position. WL stands for "W
   // minus L". Is equal to Q if draw score is 0.
   double wl_ = 0.0;
+
+  // Value squared, used in computing variance.
   double vs_ = 0.0;
+  // Weight of node for uncertainty weighting
+  double weight_ = 0.0;
+  // Averaged draw probability. Works similarly to WL, except that D is not
+  // flipped depending on the side to move.
+  double d_ = 0.0f;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Pointer to the low node.
@@ -406,9 +422,7 @@ class Node {
   atomic_unique_ptr<Node> sibling_;
 
   // 4 byte fields.
-  // Averaged draw probability. Works similarly to WL, except that D is not
-  // flipped depending on the side to move.
-  float d_ = 0.0f;
+
   // Estimated remaining plies.
   float m_ = 0.0f;
   // How many completed visits this node had.
@@ -438,7 +452,7 @@ class Node {
 };
 
 // Check that Node still fits into an expected cache line size.
-static_assert(sizeof(Node) <= 64, "Node is too large");
+static_assert(sizeof(Node) <= 128, "Node is too large");
 
 class LowNode {
  public:
@@ -539,6 +553,7 @@ class LowNode {
   float GetD() const { return d_; }
   float GetM() const { return m_; }
   float GetVS() const { return vs_; }
+  float GetWeight() const { return weight_; }
 
   // Returns whether the node is known to be draw/loss/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
@@ -565,10 +580,10 @@ class LowNode {
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
   void FinalizeScoreUpdate(float v, float d, float m, float vs,
-                           uint32_t multivisit);
+                           uint32_t multivisit, float multiweight);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, float vs,
-                         uint32_t multivisit);
+                         uint32_t multivisit, float multiweight);
 
   // Deletes all children.
   void ReleaseChildren(GCQueue* gc_queue);
@@ -626,7 +641,15 @@ class LowNode {
   // perspective of the player-to-move for the position.
   // WL stands for "W minus L". Is equal to Q if draw score is 0.
   double wl_ = 0.0f;
+
+  // Value squared sum. Used to compute variance.
   double vs_ = 0.0f;
+  // Weight on node
+  double weight_ = 0.0f;
+  // Averaged draw probability. Works similarly to WL, except that D is not
+  // flipped depending on the side to move.
+  double d_ = 0.0f;
+
   // Position hash and a TT key.
   uint64_t hash_ = 0;
 
@@ -637,9 +660,7 @@ class LowNode {
   atomic_unique_ptr<Node> child_;
 
   // 4 byte fields.
-  // Averaged draw probability. Works similarly to WL, except that D is not
-  // flipped depending on the side to move.
-  float d_ = 0.0f;
+
   // Estimated remaining plies.
   float m_ = 0.0f;
   // original eval
@@ -667,7 +688,7 @@ class LowNode {
 };
 
 // Check that LowNode still fits into an expected cache line size.
-static_assert(sizeof(LowNode) <= 64, "LowNode is too large");
+static_assert(sizeof(LowNode) <= 128, "LowNode is too large");
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
 // to them.
@@ -707,6 +728,13 @@ class EdgeAndNode {
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
   uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
+
+  float GetWeight() const { return node_ ? node_->GetWeight() : 0.0; }
+  float GetTotalWeight() const { return node_ ? node_->GetWeight() : 0.0; }
+
+  float GetWeightStarted() const {
+    return node_ ? node_->GetWeightStarted() : 0.0;
+  }
 
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }

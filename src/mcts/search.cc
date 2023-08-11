@@ -413,7 +413,7 @@ float Search::GetDrawScore(bool is_odd_depth) const {
 
 namespace {
 
-inline float ComputeStdev(const SearchParams& params, float q, uint32_t n,
+inline float ComputeStdev(const SearchParams& params, float q, float weight,
                           float vs) {
   float util_sq_avg = vs;
   const float util_sq = q * q;
@@ -425,7 +425,7 @@ inline float ComputeStdev(const SearchParams& params, float q, uint32_t n,
   return stdev_estimate;
 }
 
-inline float ComputeStdevFactor(const SearchParams& params, float q, uint32_t n,
+inline float ComputeStdevFactor(const SearchParams& params, float q, float weight,
                                 float vs) {
   float util_sq_avg = vs;
   const float util_sq = q * q;
@@ -437,8 +437,8 @@ inline float ComputeStdevFactor(const SearchParams& params, float q, uint32_t n,
   const float prior_weight = params.GetCpuctUtilityStdevPriorWeight();
   const float stdev_factor_scale = params.GetCpuctUtilityStdevScale();
   const float var_estimate =
-      ((util_sq + variance_prior) * prior_weight + util_sq_avg * n) /
-          (prior_weight + n - 1.0f) -
+      ((util_sq + variance_prior) * prior_weight + util_sq_avg * weight) /
+          (prior_weight + weight - 1.0f) -
       util_sq;
 
   const float stdev_estimate = sqrt(std::max(var_estimate, 0.0f));
@@ -448,7 +448,7 @@ inline float ComputeStdevFactor(const SearchParams& params, float q, uint32_t n,
 }
 
 inline float ComputeStdevFactor(const SearchParams& params, Node* node) {
-  return ComputeStdevFactor(params, node->GetWL(), node->GetN(), node->GetVS());
+  return ComputeStdevFactor(params, node->GetWL(), node->GetWeight(), node->GetVS());
 }
 
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
@@ -477,13 +477,13 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
 }
 
-inline float ComputeCpuct(const SearchParams& params, uint32_t n, float q,
+inline float ComputeCpuct(const SearchParams& params, float weight, float q,
                           float vs, bool is_root_node) {
   const float init = params.GetCpuct(is_root_node);
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
-  const float stdev_factor = ComputeStdevFactor(params, q, n, vs);
-  return stdev_factor * (init + (k ? k * FastLog((n + base) / base) : 0.0f));
+  const float stdev_factor = ComputeStdevFactor(params, q, weight, vs);
+  return stdev_factor * (init + (k ? k * FastLog((weight + base) / base) : 0.0f));
 }
 
 }  // namespace
@@ -524,14 +524,15 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   auto print_stats = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
     if (n) {
+      print(oss, "(WGT: ", n->GetWeight(), ") ", 10, 5);
       print(oss, "(WL: ", sign * n->GetWL(), ") ", 8, 5);
       print(oss, "(D: ", n->GetD(), ") ", 5, 3);
       print(oss, "(M: ", n->GetM(), ") ", 4, 1);
       print(oss,
-            "(STD: ", ComputeStdev(params_, n->GetWL(), n->GetN(), n->GetVS()),
+            "(STD: ", ComputeStdev(params_, n->GetWL(), n->GetWeight(), n->GetVS()),
             ") ", 6, 5);
       print(oss, "(STDF: ",
-            ComputeStdevFactor(params_, n->GetWL(), n->GetN(), n->GetVS()),
+            ComputeStdevFactor(params_, n->GetWL(), n->GetWeight(), n->GetVS()),
             ") ", 6, 5);
       print(oss, "(VS: ", n->GetVS(), ") ", 6, 5);
     } else {
@@ -821,7 +822,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
           // Prefer largest playouts then eval then prior.
-          if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();
+          if (a.GetWeight() != b.GetWeight())
+            return a.GetWeight() > b.GetWeight();
           // Default doesn't matter here so long as they are the same as either
           // both are N==0 (thus we're comparing equal defaults) or N!=0 and
           // default isn't used.
@@ -860,7 +862,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 
   std::vector<float> cumulative_sums;
   float sum = 0.0;
-  float max_n = 0.0;
+  float max_weight = 0.0;
   const float offset = params_.GetTemperatureVisitOffset();
   float max_eval = -1.0f;
   const float fpu =
@@ -872,8 +874,8 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
                   edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
-    if (edge.GetN() + offset > max_n) {
-      max_n = edge.GetN() + offset;
+    if (edge.GetWeight() + offset > max_weight) {
+      max_weight = edge.GetWeight() + offset;
       max_eval = edge.GetQ(fpu, draw_score);
     }
   }
@@ -889,10 +891,10 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
     }
     if (edge.GetQ(fpu, draw_score) < min_eval) continue;
     sum += std::pow(
-        std::max(0.0f,
-                 (max_n <= 0.0f
-                      ? edge.GetP()
-                      : ((static_cast<float>(edge.GetN()) + offset) / max_n))),
+        fmax(0.0f, (max_weight <= 0.0f
+                        ? edge.GetP()
+                        : ((static_cast<float>(edge.GetWeight()) + offset) /
+                           max_weight))),
         1 / temperature);
     cumulative_sums.push_back(sum);
   }
@@ -1618,7 +1620,7 @@ void SearchWorker::PickNodesToExtendTask(
 
   // These 3 are 'filled on demand'.
   std::array<float, 256> current_score;
-  std::array<int, 256> current_nstarted;
+  std::array<float, 256> current_weightstarted;
   auto& cur_iters = workspace->cur_iters;
 
   Node::Iterator best_edge;
@@ -1748,13 +1750,13 @@ void SearchWorker::PickNodesToExtendTask(
               cur_iters[idx] = cur_iters[idx - 1];
               ++cur_iters[idx];
             }
-            current_nstarted[idx] = cur_iters[idx].GetNStarted();
+            current_weightstarted[idx] = cur_iters[idx].GetWeightStarted();
           }
-          int nstarted = current_nstarted[idx];
+          float weightstarted = current_weightstarted[idx];
           const float util = current_util[idx];
           if (idx > cache_filled_idx) {
             current_score[idx] =
-                cur_iters[idx].GetP() * puct_mult / (1 + nstarted) + util;
+                cur_iters[idx].GetP() * puct_mult / (1 + weightstarted) + util;
             cache_filled_idx++;
           }
           if (is_root_node) {
@@ -1789,7 +1791,7 @@ void SearchWorker::PickNodesToExtendTask(
             second_best_edge = cur_iters[idx];
           }
           if (can_exit) break;
-          if (nstarted == 0) {
+          if (weightstarted == 0) {
             // One more loop will get 2 unvisited nodes, which is sufficient to
             // ensure second best is correct. This relies upon the fact that
             // edges are sorted in policy decreasing order.
@@ -1800,7 +1802,7 @@ void SearchWorker::PickNodesToExtendTask(
         if (second_best_edge) {
           int estimated_visits_to_change_best = std::numeric_limits<int>::max();
           if (best_without_u < second_best) {
-            const auto n1 = current_nstarted[best_idx] + 1;
+            const auto n1 = current_weightstarted[best_idx] + 1;
             estimated_visits_to_change_best = static_cast<int>(
                 std::max(1.0f, std::min(cur_iters[best_idx].GetP() * puct_mult /
                                                 (second_best - best_without_u) -
@@ -1828,7 +1830,7 @@ void SearchWorker::PickNodesToExtendTask(
             GetRepetitions(full_path.size(), history.Last());
         full_path.push_back({child_node, child_repetitions, child_moves_left});
         if (child_node->TryStartScoreUpdate()) {
-          current_nstarted[best_idx]++;
+          current_weightstarted[best_idx]++;
           new_visits -= 1;
           if (ShouldStopPickingHere(child_node, false, child_repetitions)) {
             // Reduce 1 for the visits_to_perform to ensure the collision
@@ -1838,10 +1840,10 @@ void SearchWorker::PickNodesToExtendTask(
             completed_visits++;
           } else {
             child_node->IncrementNInFlight(new_visits);
-            current_nstarted[best_idx] += new_visits;
+            current_weightstarted[best_idx] += new_visits;
           }
           current_score[best_idx] = cur_iters[best_idx].GetP() * puct_mult /
-                                        (1 + current_nstarted[best_idx]) +
+                                        (1 + current_weightstarted[best_idx]) +
                                     current_util[best_idx];
         }
         if (best_idx > vtp_last_filled.back() &&
@@ -2129,6 +2131,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
           search_->dag_->TTGetOrCreate(comrade_low_node, node_to_process->hash);
       assert(tt_low_node != nullptr);
       node_to_process->tt_low_node = tt_low_node;
+      // node_to_process->avg_weight = 0.9f; // this value is configurable, the best value may be less than one to increase exploration where transpositions abound.
     }
     else {
       auto [tt_low_node, is_tt_miss] =
@@ -2204,8 +2207,8 @@ void SearchWorker::DoBackupUpdate() {
 
 bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
     Node* n, const LowNode* nl, float& v, float& d, float& m, float& vs,
-    uint32_t& n_to_fix, float& v_delta, float& d_delta, float& m_delta,
-    float& vs_delta, bool& update_parent_bounds) const {
+    uint32_t& n_to_fix, float& weight_to_fix, float& v_delta, float& d_delta,
+    float& m_delta, float& vs_delta, bool& update_parent_bounds) const {
   if (n->IsTerminal()) {
     v = n->GetWL();
     d = n->GetD();
@@ -2226,6 +2229,7 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
     // When starting at or going through a transposition/terminal, make sure to
     // use the information it has already acquired.
     n_to_fix = n->GetN();
+    weight_to_fix = n->GetWeight();
     v_delta = v - n->GetWL();
     d_delta = d - n->GetD();
     m_delta = m - n->GetM();
@@ -2279,16 +2283,19 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float m = 0.0f;
   float vs = v * v;
   uint32_t n_to_fix = 0;
+  float weight_to_fix = 0.0f;
   float v_delta = 0.0f;
   float d_delta = 0.0f;
   float m_delta = 0.0f;
   float vs_delta = 0.0f;
 
+
   // Update the low node at the start of the backup path first, but only visit
   // it the first time that backup sees it.
   if (nl && nl->GetN() == 0) {
     nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(), nl->GetVS(),
-                            node_to_process.multivisit);
+        node_to_process.multivisit,
+        node_to_process.multivisit * node_to_process.avg_weight);
   }
 
   if (nr >= 2) {
@@ -2299,7 +2306,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     d = 1.0f;
     m = 1;
   } else if (!MaybeAdjustForTerminalOrTransposition(
-                 n, nl, v, d, m, vs, n_to_fix, v_delta, d_delta, m_delta,
+                 n, nl, v, d, m, vs, n_to_fix, weight_to_fix, v_delta, d_delta,
+                 m_delta,
                  vs_delta, update_parent_bounds)) {
     // If there is nothing better, use original NN values adjusted for node.
     v = -nl->GetWL();
@@ -2311,11 +2319,14 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Backup V value up to a root. After 1 visit, V = Q.
   for (auto it = path.crbegin(); it != path.crend();
        /* ++it in the body */) {
-    n->FinalizeScoreUpdate(v, d, m, vs, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(
+        v, d, m, vs, node_to_process.multivisit,
+        node_to_process.multivisit * node_to_process.avg_weight);
     if (n_to_fix > 0 && !n->IsTerminal()) {
       // First part of the path might be never as it was removed and recreated.
       n_to_fix = std::min(n_to_fix, n->GetN());
-      n->AdjustForTerminal(v_delta, d_delta, m_delta, vs_delta, n_to_fix);
+      weight_to_fix = std::min(weight_to_fix, n->GetWeight());
+      n->AdjustForTerminal(v_delta, d_delta, m_delta, vs_delta, n_to_fix, weight_to_fix);
     }
 
     // Stop delta update on repetition "terminal" and propagate a draw above
@@ -2345,17 +2356,20 @@ void SearchWorker::DoBackupUpdateSingleNode(
       m = pl->GetM();
       vs = pl->GetVS();
       n_to_fix = 0;
+      weight_to_fix = 0.0f;
     }
-    pl->FinalizeScoreUpdate(v, d, m, vs, node_to_process.multivisit);
+    pl->FinalizeScoreUpdate(
+        v, d, m, vs, node_to_process.multivisit,
+        node_to_process.multivisit * node_to_process.avg_weight);
     if (n_to_fix > 0) {
-      pl->AdjustForTerminal(v_delta, d_delta, m_delta, vs_delta, n_to_fix);
+      pl->AdjustForTerminal(v_delta, d_delta, m_delta, vs_delta, n_to_fix, weight_to_fix);
     }
 
     bool old_update_parent_bounds = update_parent_bounds;
     // Try setting parent bounds except the root or those already terminal.
     update_parent_bounds = update_parent_bounds && p != search_->root_node_ &&
                            !pl->IsTerminal() &&
-                           MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta,
+                           MaybeSetBounds(p, m, &n_to_fix, &weight_to_fix, &v_delta, &d_delta,
                                           &m_delta, &vs_delta);
 
     // Q will be flipped for opponent.
@@ -2363,7 +2377,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     v_delta = -v_delta;
     m++;
 
-    MaybeAdjustForTerminalOrTransposition(p, pl, v, d, m, vs, n_to_fix, v_delta,
+    MaybeAdjustForTerminalOrTransposition(p, pl, v, d, m, vs, n_to_fix, weight_to_fix, v_delta,
                                           d_delta, m_delta, vs_delta,
                                           update_parent_bounds);
 
@@ -2398,6 +2412,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 }
 
 bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
+                                  float* weight_to_fix,
                                   float* v_delta, float* d_delta,
                                   float* m_delta, float* vs_delta) const {
   auto losing_m = 0.0f;
@@ -2446,7 +2461,9 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
     // Search can stop at the parent if the bounds can't change anymore, so make
     // it terminal preferring shorter wins and longer losses.
     *n_to_fix = p->GetN();
+    *weight_to_fix = p->GetWeight();
     assert(*n_to_fix > 0);
+    assert(*weight_to_fix > 0.0f);
     pl->MakeTerminal(
         upper, (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m),
         prefer_tb ? Terminal::Tablebase : Terminal::EndOfGame);
