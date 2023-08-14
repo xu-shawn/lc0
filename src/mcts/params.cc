@@ -456,6 +456,9 @@ const OptionId SearchParams::kCpuctUtilityStdevScaleId{
 const OptionId SearchParams::kCpuctUtilityStdevPriorWeightId{
     "cpuct-utility-stdev-prior-weight", "CpuctUtilityStdevPriorWeight",
     "How much to weigh the prior value in the calculation of stdev."};
+const OptionId SearchParams::kMoveRuleBucketingId{
+		"move-rule-bucketing", "MoveRuleBucketing",
+    "Whether to use move rule bucketing.", 'm'};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -557,6 +560,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctUtilityStdevScaleId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctUtilityStdevPriorWeightId, 0.0f, 10000.0f) =
       10.0f;
+  options->Add<BoolOption>(kMoveRuleBucketingId) = false;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -674,7 +678,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctUtilityStdevPrior(options.Get<float>(kCpuctUtilityStdevPriorId)),
       kCpuctUtilityStdevScale(options.Get<float>(kCpuctUtilityStdevScaleId)),
       kCpuctUtilityStdevPriorWeight(
-          options.Get<float>(kCpuctUtilityStdevPriorWeightId)) {
+          options.Get<float>(kCpuctUtilityStdevPriorWeightId)),
+      kMoveRuleBucketing(
+        options.Get<bool>(kMoveRuleBucketingId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

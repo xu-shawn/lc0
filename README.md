@@ -13,7 +13,10 @@ Many of these features are taken from the Katago engine. A detailed description 
 ### 50 move rule caching
 
 The first 64 plies out of 100 are partitioned into 8 equally sized buckets. Before a position is queried for NN evaluation, the 50 move rule ply is checked. If the bucket containing the position already has nodes, the eval is copied from the one with the most visits.
-The speedup can be anywhere from 5% to 50% depending on how transposition-heavy the position is. The gain was measured at 20 elo on STC.
+The speedup can be anywhere from 5% to 50% depending on how transposition-heavy the position is. The gain was measured at 20 elo on STC. The nodes per second statistic is now calculated by the number of true nodes (called LowNode in the code) rather than edges (technically playouts, called Node in the code) so the reported value may be lower than on previous dag versions.
+
+This feature is disabled by default but can be enabled by specifying `-m` or `--move-rule-bucketing=true` in the config.
+
 
 ### CPUCT Utility Variance Scaling
 

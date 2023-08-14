@@ -2017,68 +2017,42 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
     picked_node.tt_low_node = tt_low_node;
     picked_node.is_tt_hit = true;
   } else {
-    int my_ply = picked_node.GetRule50Ply();
-    int bs;
-
-    if (my_ply <= 64) {
-      bs = 8;
-
-    } else if (my_ply <= 80) {
-      bs = 4;
-    }
-    else {
-      bs = 1;
-    }
-    int ply_lo = my_ply / bs * bs;
-    int ply_hi = ply_lo + bs - 1;
 
 
+    if (params_.GetMoveRuleBucketing()) {
+      int my_ply = picked_node.GetRule50Ply();
+      int bs;
 
-    int max_visits = 0;
-    LowNode* comrade_low_node = nullptr;
-    for (int ply = ply_lo; ply <= ply_hi; ply++) {
-      uint64_t hash = search_->dag_->GetHistoryHash(history, ply);
-      auto low_node = search_->dag_->TTFind(hash);
-      if (low_node != nullptr) {
-        int visits = low_node->GetN();
-        if (visits > max_visits) {
-          max_visits = visits;
-          comrade_low_node = low_node;
+      if (my_ply <= 64) {
+        bs = 8;
+
+      } else if (my_ply <= 80) {
+        bs = 4;
+      }
+      else {
+        bs = 1;
+      }
+      int ply_lo = my_ply / bs * bs;
+      int ply_hi = ply_lo + bs - 1;
+
+      int max_visits = 0;
+      LowNode* comrade_low_node = nullptr;
+      for (int ply = ply_lo; ply <= ply_hi; ply++) {
+        uint64_t hash = search_->dag_->GetHistoryHash(history, ply);
+        auto low_node = search_->dag_->TTFind(hash);
+        if (low_node != nullptr) {
+          int visits = low_node->GetN();
+          if (visits > max_visits) {
+            max_visits = visits;
+            comrade_low_node = low_node;
+          }
         }
       }
-    }
-    if (comrade_low_node != nullptr) {
-      picked_node.comrade_low_node = comrade_low_node;
-      picked_node.is_comrade_hit = true;
-    }
-
-    /*
-    
-    float early_q = 99.0f, late_q = 0.0f;
-    int early_visits, late_visits;
-
-    float err_total = 0;
-    float weight_total = 0;
-
-
-    // calculate total error
-    for (int r50_ply = 0; r50_ply < 100; r50_ply++) {
-      uint64_t hash = search_->dag_->GetHistoryHash(history, r50_ply);
-      auto r50_low_node = search_->dag_->TTFind(hash);
-      if (r50_low_node != nullptr) {
-        int n = r50_low_node->GetN();
-        float q = r50_low_node->GetWL();
-        float v = r50_low_node->GetV();
-        // katago applies an exponent ~.3 < 1 so that the error calculation is
-        // not dominated by a few nodes
-        err_total += n * (q - v);
-        weight_total += n;
-
+      if (comrade_low_node != nullptr) {
+        picked_node.comrade_low_node = comrade_low_node;
+        picked_node.is_comrade_hit = true;
       }
-    }
-
-    picked_node.comrade_error = err_total / (weight_total + 0.001f);
-    */
+    } // end if (params_->GetMoveRuleBucketing()) {
 
     picked_node.lock = NNCacheLock(search_->cache_, picked_node.hash);
     picked_node.is_cache_hit = picked_node.lock;
