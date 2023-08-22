@@ -457,8 +457,13 @@ const OptionId SearchParams::kCpuctUtilityStdevPriorWeightId{
     "cpuct-utility-stdev-prior-weight", "CpuctUtilityStdevPriorWeight",
     "How much to weigh the prior value in the calculation of stdev."};
 const OptionId SearchParams::kMoveRuleBucketingId{
-		"move-rule-bucketing", "MoveRuleBucketing",
-    "Whether to use move rule bucketing.", 'm'};
+    "move-rule-bucketing", "MoveRuleBucketing",
+    "Whether to use move rule bucketing."};
+const OptionId SearchParams::kReportedNodesId{
+    "reported-nodes", "ReportedNodes",
+    "What to report as nodes/nps count. Default is "
+    "'nodes' for LowNodes. The other options are 'queries' for neural network"
+    "queries and 'playouts' or 'legacy' for the old value."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -560,7 +565,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctUtilityStdevScaleId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctUtilityStdevPriorWeightId, 0.0f, 10000.0f) =
       10.0f;
-  options->Add<BoolOption>(kMoveRuleBucketingId) = false;
+  options->Add<BoolOption>(kMoveRuleBucketingId) = true;
+  std::vector<std::string> reported_nodes = {"nodes", "queries", "playouts",
+                                             "legacy"};
+  options->Add<ChoiceOption>(kReportedNodesId, reported_nodes) = "nodes";
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -679,8 +687,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctUtilityStdevScale(options.Get<float>(kCpuctUtilityStdevScaleId)),
       kCpuctUtilityStdevPriorWeight(
           options.Get<float>(kCpuctUtilityStdevPriorWeightId)),
-      kMoveRuleBucketing(
-        options.Get<bool>(kMoveRuleBucketingId)) {
+      kMoveRuleBucketing(options.Get<bool>(kMoveRuleBucketingId))
+
+{
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

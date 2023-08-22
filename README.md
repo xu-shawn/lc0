@@ -4,18 +4,24 @@
 # Lc0
 
 Lc0 is a UCI-compliant chess engine designed to play chess via neural network, specifically those of the [LeelaChessZero project](https://lczero.org).
-This is an experimental repository for testing new features to the Lc0 chess engine. Updates are made frequently so there may be bugs. Please report any issues you find to the Lc0 Discord. All elo measurements were calculated on A100.
+This is an experimental repository for testing new features to the Lc0 chess engine. Updates are made frequently so there may be bugs. Please report any issues you find to the Lc0 Discord. All elo measurements were calculated on A100 with unbalanced human openings.
 Many of these features are taken from the Katago engine. A detailed description of these methods can be found [here](https://github.com/lightvector/KataGo/blob/master/docs/KataGoMethods.md). A list of the improvements follows.
 
 
 ## New features in this fork
+
+### Node reporting
+
+The nps statistic used to represent the number of playouts per second, which may not be what the user wants. The new `--reported-nodes` option specifies what the node count and nps statistic represent. 
+The default is `"nodes"` for LowNodes. The other options are `"queries"` for neural network queries and `"playouts"` or `"legacy"` for playouts.
+
 
 ### 50 move rule caching
 
 The first 64 plies out of 100 are partitioned into 8 equally sized buckets. Before a position is queried for NN evaluation, the 50 move rule ply is checked. If the bucket containing the position already has nodes, the eval is copied from the one with the most visits.
 The speedup can be anywhere from 5% to 50% depending on how transposition-heavy the position is. The gain was measured at 20 elo on STC. The nodes per second statistic is now calculated by the number of true nodes (called LowNode in the code) rather than edges (technically playouts, called Node in the code) so the reported value may be lower than on previous dag versions.
 
-This feature is disabled by default but can be enabled by specifying `-m` or `--move-rule-bucketing=true` in the config.
+This feature is enabled by default and can be disabled by specifying `--move-rule-bucketing=false` in the config.
 
 
 ### CPUCT Utility Variance Scaling
@@ -23,20 +29,20 @@ This feature is disabled by default but can be enabled by specifying `-m` or `--
 Identical to the [Katago implementation](https://github.com/lightvector/KataGo/blob/master/docs/KataGoMethods.md#dynamic-variance-scaled-cpuct). The new parameters are
 
 ```
-CPuctUtilityStdevPrior 
-CPuctUtilityStdevScale 
-CPuctUtilityStdevPriorWeight
+--cpuct-utility-stdev-prior 
+--cpuct-utility-stdev-scale
+--cpuct-utility-stdev-prior-weight
 ```
 
-and the tuned values are
+and the tuned values (excluding the prior weight) for masterkni's T1 are
 
 ```
-CPuct 2.3097
-FpuValue 0.5619
-CPuctUtilityStdevPrior 0.2289
-CPuctUtilityStdevScale 0.3437
-CPuctUtilityStdevPriorWeight 10.0 (default, not tuned)
-WDLCalibrationElo 3400
+--cpuct=2.3097
+--fpu-value=0.5619
+--cpuct-utility-stdev-prior=0.2289
+--cpuct-utility-stdev-scale=0.3437
+--cpuct-utility-stdev-prior-weight=10.0
+--wdl-calibration-elo=3400
 ```
 
 The gain  is around 10 elo on STC and LTC.
