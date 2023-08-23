@@ -463,7 +463,18 @@ const OptionId SearchParams::kReportedNodesId{
     "reported-nodes", "ReportedNodes",
     "What to report as nodes/nps count. Default is "
     "'nodes' for LowNodes. The other options are 'queries' for neural network"
-    "queries and 'playouts' or 'legacy' for the old value."};
+      "queries and 'playouts' or 'legacy' for the old value."};
+const OptionId SearchParams::kUncertaintyWeightingMinimumId{
+    "uncertainty-weighting-minimum", "UncertaintyWeightingMinimum",
+		"Minimum number of visits for uncertainty weighting."};
+const OptionId SearchParams::kUncertaintyWeightingAlphaId{
+		"uncertainty-weighting-alpha", "UncertaintyWeightingAlpha",
+    "Alpha value for uncertainty weighting."};
+const OptionId SearchParams::kUncertaintyWeightingBetaId{
+"uncertainty-weighting-beta", "UncertaintyWeightingBeta",
+		"Beta value for uncertainty weighting."};
+
+
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -569,6 +580,10 @@ void SearchParams::Populate(OptionsParser* options) {
   std::vector<std::string> reported_nodes = {"nodes", "queries", "playouts",
                                              "legacy"};
   options->Add<ChoiceOption>(kReportedNodesId, reported_nodes) = "nodes";
+  options->Add<FloatOption>(kUncertaintyWeightingMinimumId, 0.0f, 2.0f) =
+			0.5f;
+  options->Add<FloatOption>(kUncertaintyWeightingAlphaId, 0.0f, 100.0f) = 1.0f;
+  options->Add<FloatOption>(kUncertaintyWeightingBetaId, 0.0f, 100.0f) = 1.0f;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -687,7 +702,10 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctUtilityStdevScale(options.Get<float>(kCpuctUtilityStdevScaleId)),
       kCpuctUtilityStdevPriorWeight(
           options.Get<float>(kCpuctUtilityStdevPriorWeightId)),
-      kMoveRuleBucketing(options.Get<bool>(kMoveRuleBucketingId))
+      kMoveRuleBucketing(options.Get<bool>(kMoveRuleBucketingId)),
+      kUncertaintyWeightingMinimum(options.Get<float>(kUncertaintyWeightingMinimumId)),
+      kUncertaintyWeightingAlpha(options.Get<float>(kUncertaintyWeightingAlphaId)),
+      kUncertaintyWeightingBeta(options.Get<float>(kUncertaintyWeightingBetaId))
 
 {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +

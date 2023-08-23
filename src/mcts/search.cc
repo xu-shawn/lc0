@@ -498,6 +498,13 @@ inline float ComputeCpuct(const SearchParams& params, float weight, float q,
          (init + (k ? k * FastLog((weight + base) / base) : 0.0f));
 }
 
+inline float ComputeWeight(const SearchParams& params, float uncertainty) {
+  const float minimum = params.GetUncertaintyWeightingMinimum();
+  const float alpha = params.GetUncertaintyWeightingAlpha();
+  const float beta = params.GetUncertaintyWeightingBeta();
+  return fmin(minimum, alpha * pow(uncertainty, beta));
+}
+
 }  // namespace
 
 std::vector<std::string> Search::GetVerboseStats(Node* node) const {

@@ -161,6 +161,16 @@ class SearchParams {
   std::string GetReportedNodes() const {
     return options_.Get<std::string>(kReportedNodesId);
   }
+  float GetUncertaintyWeightingMinimum() const {
+		return kUncertaintyWeightingMinimum;
+	}
+  float GetUncertaintyWeightingAlpha() const {
+    return kUncertaintyWeightingAlpha;
+  }
+  float GetUncertaintyWeightingBeta() const {
+    return kUncertaintyWeightingBeta;
+  }
+
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -238,6 +248,9 @@ class SearchParams {
   static const OptionId kCpuctUtilityStdevPriorWeightId;
   static const OptionId kMoveRuleBucketingId;
   static const OptionId kReportedNodesId;
+  static const OptionId kUncertaintyWeightingMinimumId;
+  static const OptionId kUncertaintyWeightingAlphaId;
+  static const OptionId kUncertaintyWeightingBetaId;
 
  private:
   const OptionsDict& options_;
@@ -301,6 +314,10 @@ class SearchParams {
   const float kCpuctUtilityStdevScale;
   const float kCpuctUtilityStdevPriorWeight;
   const bool kMoveRuleBucketing;
+  const float kUncertaintyWeightingMinimum;
+  const float kUncertaintyWeightingAlpha;
+  const float kUncertaintyWeightingBeta;
+
 };
 
 }  // namespace lczero
