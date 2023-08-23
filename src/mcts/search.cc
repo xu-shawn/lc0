@@ -593,6 +593,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     }
   };
 
+
   std::vector<std::string> infos;
   const auto m_evaluator = network_->GetCapabilities().has_mlh()
                                ? MEvaluator(params_, node)
@@ -619,6 +620,12 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
              node->GetNInFlight(), node->GetVisitedPolicy());
   print_stats(&oss, node);
   print_tail(&oss, node);
+
+  oss << std::endl << "Low nodes: " << total_low_nodes_
+       << " NN queries: " << total_nn_queries_
+       << " Playouts: " << total_playouts_ + initial_visits_;
+
+
   infos.emplace_back(oss.str());
   return infos;
 }
