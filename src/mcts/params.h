@@ -161,8 +161,8 @@ class SearchParams {
   std::string GetReportedNodes() const {
     return options_.Get<std::string>(kReportedNodesId);
   }
-  float GetUncertaintyWeightingMinimum() const {
-		return kUncertaintyWeightingMinimum;
+  float GetUncertaintyWeightingCap() const {
+		return kUncertaintyWeightingCap;
 	}
   float GetUncertaintyWeightingAlpha() const {
     return kUncertaintyWeightingAlpha;
@@ -248,7 +248,7 @@ class SearchParams {
   static const OptionId kCpuctUtilityStdevPriorWeightId;
   static const OptionId kMoveRuleBucketingId;
   static const OptionId kReportedNodesId;
-  static const OptionId kUncertaintyWeightingMinimumId;
+  static const OptionId kUncertaintyWeightingCapId;
   static const OptionId kUncertaintyWeightingAlphaId;
   static const OptionId kUncertaintyWeightingBetaId;
 
@@ -314,7 +314,7 @@ class SearchParams {
   const float kCpuctUtilityStdevScale;
   const float kCpuctUtilityStdevPriorWeight;
   const bool kMoveRuleBucketing;
-  const float kUncertaintyWeightingMinimum;
+  const float kUncertaintyWeightingCap;
   const float kUncertaintyWeightingAlpha;
   const float kUncertaintyWeightingBeta;
 

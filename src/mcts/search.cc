@@ -499,10 +499,10 @@ inline float ComputeCpuct(const SearchParams& params, float weight, float q,
 }
 
 inline float ComputeWeight(const SearchParams& params, float uncertainty) {
-  const float minimum = params.GetUncertaintyWeightingMinimum();
+  const float cap = params.GetUncertaintyWeightingCap();
   const float alpha = params.GetUncertaintyWeightingAlpha();
   const float beta = params.GetUncertaintyWeightingBeta();
-  return fmin(minimum, alpha * pow(uncertainty, beta));
+  return fmin(cap, alpha * pow(uncertainty, beta));
 }
 
 }  // namespace
