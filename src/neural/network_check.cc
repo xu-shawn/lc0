@@ -113,6 +113,10 @@ class CheckComputation : public NetworkComputation {
     return work_comp_->GetPVal(sample, move_id);
   }
 
+  float GetErrVal(int sample) const override {
+    return work_comp_->GetErrVal(sample);
+  }
+
  private:
   const CheckParams& params_;
   std::vector<MoveList> moves_;

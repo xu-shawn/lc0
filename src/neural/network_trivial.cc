@@ -450,6 +450,8 @@ class TrivialNetworkComputation : public NetworkComputation {
     return kLogPolicy[move_id];
   }
 
+  float GetErrVal(int) const override { return 0.0f; }
+
  private:
   std::vector<float> q_;
 };

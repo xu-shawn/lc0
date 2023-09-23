@@ -167,6 +167,11 @@ class CudaNetworkComputation : public NetworkComputation {
     return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }
 
+  float GetErrVal(int sample) const override {
+    auto err = inputs_outputs_->op_value_mem_[3 * sample + 0];
+    return err;
+  }
+
   float GetMVal(int sample) const override {
     if (moves_left_) {
       return inputs_outputs_->op_moves_left_mem_[sample];
@@ -180,6 +185,7 @@ class CudaNetworkComputation : public NetworkComputation {
   int batch_size_;
   bool wdl_;
   bool moves_left_;
+  bool error_;
 
   CudaNetwork<DataType>* network_;
 };
@@ -514,6 +520,7 @@ class CudaNetwork : public Network {
 
       wdl_ = file.format().network_format().value() ==
              pblczero::NetworkFormat::VALUE_WDL;
+      error_ = true;
       auto fc2_tanh = !wdl_;
 
       auto FCVal2 = std::make_unique<FCLayer<DataType>>(
@@ -933,6 +940,7 @@ class CudaNetwork : public Network {
   int l2_cache_size_;
   int max_batch_size_;
   bool wdl_;
+  bool error_;
   bool moves_left_;
   bool use_res_block_winograd_fuse_opt_;  // fuse operations inside the residual
                                           // tower

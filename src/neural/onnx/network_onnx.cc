@@ -67,6 +67,7 @@ class OnnxComputation : public NetworkComputation {
   float GetDVal(int sample) const override;
   float GetPVal(int sample, int move_id) const override;
   float GetMVal(int sample) const override;
+  float GetErrVal(int sample) const override;
 
  private:
   Ort::Value PrepareInputs(int start, int batch_size);
@@ -186,6 +187,11 @@ float OnnxComputation<DataType>::GetMVal(int sample) const {
   if (network_->mlh_head_ == -1) return 0.0f;
   const auto& data = output_tensors_data_[network_->mlh_head_];
   return AsFloat(data[sample]);
+}
+
+template <typename DataType>
+float OnnxComputation<DataType>::GetErrVal(int sample) const {
+  return AsFloat(0.0f);
 }
 
 template <typename DataType>

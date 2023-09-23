@@ -377,6 +377,9 @@ class TFNetworkComputation : public NetworkComputation {
     }
   }
 
+  float GetErrVal(int /* sapmle */) const override { return 0.0f; }
+
+
  private:
   void PrepareInput();
 

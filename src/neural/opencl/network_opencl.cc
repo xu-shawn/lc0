@@ -194,6 +194,10 @@ class OpenCLComputation : public NetworkComputation {
     }
   }
 
+  float GetErrVal(int sample) const override {
+    return 0.0f;
+  }
+
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const override {
     return policies_[sample][move_id];

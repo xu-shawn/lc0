@@ -134,6 +134,8 @@ class DxNetworkComputation : public NetworkComputation {
     return 0.0f;
   }
 
+  float GetMVal(int sample) const override { return 0.0f;
+  }
  private:
   // Memory holding inputs, outputs.
   std::unique_ptr<InputsOutputsDx> inputs_outputs_;

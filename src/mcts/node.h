@@ -217,7 +217,8 @@ struct NNEval {
   float q = 0.0f;
   float d = 0.0f;
   float m = 0.0f;
-
+  float err = 0.0f;
+ 
   // 1 byte fields.
   // Number of edges in @edges.
   uint8_t num_edges = 0;
@@ -473,6 +474,7 @@ class LowNode {
         d_(p.d_),
         m_(p.m_),
         vs_(p.vs_),
+        err_(p.err_),
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
@@ -491,6 +493,7 @@ class LowNode {
         d_(p.d_),
         m_(p.m_),
         vs_(p.vs_),
+        err_(p.err_),
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
@@ -530,6 +533,7 @@ class LowNode {
     v_ = eval->q;
     d_ = eval->d;
     m_ = eval->m;
+    err_ = eval->err;
     vs_ = wl_ * wl_;
 
     assert(WLDMInvariantsHold());
@@ -554,6 +558,7 @@ class LowNode {
   float GetM() const { return m_; }
   float GetVS() const { return vs_; }
   float GetWeight() const { return weight_; }
+  float GetErr() const { return err_; }
 
   // Returns whether the node is known to be draw/loss/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
@@ -665,6 +670,7 @@ class LowNode {
   float m_ = 0.0f;
   // original eval
   float v_ = 0.0f;
+  float err_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;
 
