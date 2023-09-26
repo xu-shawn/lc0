@@ -2210,6 +2210,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
         float q_adjusted = nn_eval->q + node_to_process->comrade_error * 0.5;
         nn_eval->q = q_adjusted;
         */
+        nn_eval->wgt = ComputeWeight(params_, nn_eval->e);
         node_to_process->tt_low_node->SetNNEval(nn_eval);
       }
     }
