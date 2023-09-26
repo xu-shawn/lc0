@@ -132,6 +132,10 @@ class CudnnNetworkComputation : public NetworkComputation {
     }
   }
 
+  float GetEVal(int sample) const override {
+    return 0.0f;
+  }
+
   float GetPVal(int sample, int move_id) const override {
     return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }
@@ -512,9 +516,10 @@ class CudnnNetwork : public Network {
 
     // Policy head.
     if (attn_policy_) {
+      std::string policy_head = options.GetOrDefault<std::string>("policy_head", "vanilla");
       auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
           getLastLayer(), weights, scratch_mem_, false, ACTIVATION_SELU,
-          max_batch_size_);
+          policy_head, max_batch_size_);
       network_.emplace_back(std::move(AttentionPolicy));
 
       auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
@@ -920,7 +925,7 @@ class CudnnNetwork : public Network {
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
+      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_, false,
                                              moves_left_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
@@ -938,7 +943,7 @@ class CudnnNetwork : public Network {
   // Apparently nvcc doesn't see constructor invocations through make_unique.
   // This function invokes constructor just to please complier and silence
   // warning. Is never called (but compiler thinks that it could).
-  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false, false); }
+  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false, false, false); }
 
  private:
   const NetworkCapabilities capabilities_;

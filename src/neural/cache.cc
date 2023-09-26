@@ -106,6 +106,7 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     item.eval->q = parent_->GetQVal(item.idx_in_parent);
     item.eval->d = parent_->GetDVal(item.idx_in_parent);
     item.eval->m = parent_->GetMVal(item.idx_in_parent);
+    item.eval->e = parent_->GetEVal(item.idx_in_parent);
 
     // Calculate maximum first.
     float max_p = -std::numeric_limits<float>::infinity();
