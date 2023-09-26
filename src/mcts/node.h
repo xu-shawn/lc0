@@ -217,6 +217,7 @@ struct NNEval {
   float q = 0.0f;
   float d = 0.0f;
   float m = 0.0f;
+  float e = 0.0f;
 
   // 1 byte fields.
   // Number of edges in @edges.
@@ -531,6 +532,7 @@ class LowNode {
     d_ = eval->d;
     m_ = eval->m;
     vs_ = wl_ * wl_;
+    weight_ = eval->e;
 
     assert(WLDMInvariantsHold());
 
