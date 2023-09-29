@@ -58,6 +58,12 @@ class DemuxingComputation : public NetworkComputation {
     return parents_[idx]->GetDVal(offset);
   }
 
+  float GetEVal(int sample) const override {
+    int idx = sample / partial_size_;
+    int offset = sample % partial_size_;
+    return parents_[idx]->GetEVal(offset);
+  }
+
   float GetMVal(int sample) const override {
     int idx = sample / partial_size_;
     int offset = sample % partial_size_;
@@ -69,13 +75,6 @@ class DemuxingComputation : public NetworkComputation {
     const int offset = sample % partial_size_;
     return parents_[idx]->GetPVal(offset, move_id);
   }
-
-  float GetErrVal(int sample) const override {
-    int idx = sample / partial_size_;
-    int offset = sample % partial_size_;
-    return parents_[idx]->GetErrVal(offset);
-  }
-
 
   void NotifyComplete() {
     std::unique_lock<std::mutex> lock(mutex_);

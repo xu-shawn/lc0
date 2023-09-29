@@ -422,6 +422,8 @@ void Node::IncrementNInFlight(uint32_t multivisit) {
   n_in_flight_.fetch_add(multivisit, std::memory_order_acq_rel);
 }
 
+void Node::SetE(float e) { e_ = e; }
+
 void LowNode::ReleaseChildren(GCQueue* gc_queue) {
   for (auto child = GetChild()->get(); child != nullptr;
        child = child->GetSibling()->get()) {

@@ -128,6 +128,10 @@ class OnednnNetworkComputation : public NetworkComputation {
     }
   }
 
+  float GetEVal(int sample) const override {
+    return 0.0f;
+  }
+
   float GetPVal(int sample, int move_id) const override {
     return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }
@@ -137,9 +141,6 @@ class OnednnNetworkComputation : public NetworkComputation {
       return inputs_outputs_->op_moves_left_mem_[sample];
     }
     return 0.0f;
-  }
-
-  float GetErrVal(int sample) const override { return 0.0f;
   }
 
  private:

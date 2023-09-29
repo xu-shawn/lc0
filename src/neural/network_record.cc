@@ -75,6 +75,9 @@ class RecordComputation : public NetworkComputation {
   float GetDVal(int sample) const override {
     return Capture(inner_->GetDVal(sample), sample);
   }
+  float GetEVal(int sample) const override {
+    return Capture(inner_->GetEVal(sample), sample);
+  }
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const override {
     return Capture(inner_->GetPVal(sample, move_id), sample);
@@ -82,10 +85,6 @@ class RecordComputation : public NetworkComputation {
   float GetMVal(int sample) const override {
     return Capture(inner_->GetMVal(sample), sample);
   }
-  float GetErrVal(int sample) const override {
-    return Capture(inner_->GetErrVal(sample), sample);
-  }
-
   virtual ~RecordComputation() {
     Mutex::Lock lock(mutex_);
     std::fstream output(record_file_, std::ios::app | std::ios_base::binary);
@@ -148,11 +147,10 @@ class ReplayComputation : public NetworkComputation {
   // Returns Q value of @sample.
   float GetQVal(int sample) const override { return Replay(sample); }
   float GetDVal(int sample) const override { return Replay(sample); }
+  float GetEVal(int sample) const override { return Replay(sample); }
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int) const override { return Replay(sample); }
   float GetMVal(int sample) const override { return Replay(sample); }
-  float GetErrVal(int sample) const override { return Replay(sample); }
-
   virtual ~ReplayComputation() {}
 
   std::unique_ptr<NetworkComputation> inner_;

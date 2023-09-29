@@ -56,7 +56,7 @@ class Search {
          std::unique_ptr<UciResponder> uci_responder,
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
-         std::unique_ptr<SearchStopper> stopper, bool infinite,
+         std::unique_ptr<SearchStopper> stopper, bool infinite, bool ponder,
          const OptionsDict& options, NNCache* cache,
          SyzygyTablebase* syzygy_tb);
 
@@ -206,7 +206,7 @@ class Search {
       GUARDED_BY(nodes_mutex_);
 
   std::unique_ptr<UciResponder> uci_responder_;
-
+  ContemptMode contempt_mode_;
   friend class SearchWorker;
 };
 
@@ -313,7 +313,7 @@ class SearchWorker {
     // limit, multivist could be increased to this value without additional
     // change in outcome of next selection.
     uint32_t maxvisit = 0;
-    float avg_weight = 1.0f;
+    float error = 0.0f;
     bool nn_queried = false;
     bool is_tt_hit = false;
     bool is_comrade_hit = false;

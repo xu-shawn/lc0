@@ -366,6 +366,9 @@ class TFNetworkComputation : public NetworkComputation {
       return 0.0f;
     }
   }
+  float GetEVal(int sample) const override {
+    return 0.0f;
+  }
   float GetPVal(int sample, int move_id) const override {
     return output_[1].template matrix<float>()(sample, move_id);
   }
@@ -376,9 +379,6 @@ class TFNetworkComputation : public NetworkComputation {
       return 0.0f;
     }
   }
-
-  float GetErrVal(int /* sapmle */) const override { return 0.0f; }
-
 
  private:
   void PrepareInput();

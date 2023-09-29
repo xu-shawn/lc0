@@ -33,6 +33,7 @@
 
 #include "mcts/search.h"
 #include "mcts/stoppers/factory.h"
+#include "utils/commandline.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
 
@@ -51,7 +52,7 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
-const OptionId kPonderId{"ponder", "Ponder",
+const OptionId kPonderId{"", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
 const OptionId kUciChess960{
     "chess960", "UCI_Chess960",
@@ -93,12 +94,21 @@ EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
 
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
-
+  const bool is_simple =
+      CommandLine::BinaryName().find("simple") != std::string::npos;
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000;
   SearchParams::Populate(options);
 
+  ConfigFile::PopulateOptions(options);
+  if (is_simple) {
+    options->HideAllOptions();
+    options->UnhideOption(kThreadsOptionId);
+    options->UnhideOption(NetworkFactory::kWeightsId);
+    options->UnhideOption(SearchParams::kContemptId);
+    options->UnhideOption(SearchParams::kMultiPvId);
+  }
   options->Add<StringOption>(kSyzygyTablebaseId);
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
@@ -107,8 +117,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kShowWDL) = false;
   options->Add<BoolOption>(kShowMovesleft) = false;
 
-  ConfigFile::PopulateOptions(options);
-  PopulateTimeManagementOptions(RunType::kUci, options);
+  PopulateTimeManagementOptions(is_simple ? RunType::kSimpleUci : RunType::kUci,
+                                options);
 
   options->Add<BoolOption>(kStrictUciTiming) = false;
   options->HideOption(kStrictUciTiming);
@@ -238,6 +248,7 @@ class PonderResponseTransformer : public TransformingUciResponder {
         if (ponder_info.score) ponder_info.score = -*ponder_info.score;
         if (ponder_info.depth > 1) ponder_info.depth--;
         if (ponder_info.seldepth > 1) ponder_info.seldepth--;
+        if (ponder_info.wdl) std::swap(ponder_info.wdl->w, ponder_info.wdl->l);
         ponder_info.pv.clear();
       }
       if (!info.pv.empty() && info.pv[0].as_string() == ponder_move_) {
@@ -298,7 +309,7 @@ void EngineController::Go(const GoParams& params) {
   search_ = std::make_unique<Search>(
       tree_.get(), network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
-      *move_start_time_, std::move(stopper), params.infinite || params.ponder,
+      *move_start_time_, std::move(stopper), params.infinite, params.ponder,
       options_, &cache_, syzygy_tb_.get());
 
   LOGFILE << "Timer started at "
