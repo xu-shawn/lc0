@@ -284,7 +284,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   }
 
   if (!per_pv_counters) {
-    common_info.nodes = total_nodes;
+    // Can't use total_nodes since it won't carry over
+    common_info.nodes = total_playouts_ + initial_visits_;
   }
   if (nps_start_time_) {
     const auto time_since_first_batch_ms =
