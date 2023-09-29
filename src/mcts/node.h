@@ -541,7 +541,6 @@ class LowNode {
     m_ = eval->m;
     e_ = eval->e;
     vs_ = wl_ * wl_;
-    weight_ = eval->wgt;
 
     assert(WLDMInvariantsHold());
 
