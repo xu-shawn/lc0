@@ -501,12 +501,12 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
              : -node->GetQ(-draw_score) - value * std::sqrt(visited_pol);
 }
 
-inline float ComputeCpuct(const SearchParams& params, uint32_t N,
+inline float ComputeCpuct(const SearchParams& params, float weight,
                           bool is_root_node) {
   const float init = params.GetCpuct(is_root_node);
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
-  return init + (k ? k * FastLog((N + base) / base) : 0.0f);
+  return init + (k ? k * FastLog((weight + base) / base) : 0.0f);
 }
 
 inline float ComputeCpuct(const SearchParams& params, float weight, float q,
@@ -534,7 +534,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
   const float fpu = GetFpu(params_, node, is_root, draw_score);
-  const float cpuct = ComputeCpuct(params_, node->GetTotalVisits(),
+  const float cpuct = ComputeCpuct(params_, node->GetWeight(),
                                    node->GetWL(), node->GetVS(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
@@ -1804,10 +1804,10 @@ void SearchWorker::PickNodesToExtendTask(
       }
 
       const float cpuct =
-          ComputeCpuct(params_, node->GetTotalVisits(), node->GetWL(),
+          ComputeCpuct(params_, node->GetWeight(), node->GetWL(),
                        node->GetVS(), is_root_node);
       const float puct_mult =
-          cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+          cpuct * std::sqrt(std::max(node->GetWeight(), 1e-5f));
       int cache_filled_idx = -1;
       while (cur_limit > 0) {
         // Perform UCT for current node.
@@ -2449,7 +2449,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (p == search_->root_node_ &&
         ((old_update_parent_bounds && n->IsTerminal()) ||
          (n != search_->current_best_edge_.node() &&
-          search_->current_best_edge_.GetN() <= n->GetN()))) {
+          search_->current_best_edge_.GetWeight() <= n->GetWeight()))) {
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_, 0);
     }
