@@ -218,7 +218,6 @@ struct NNEval {
   float d = 0.0f;
   float m = 0.0f;
   float e = 0.0f;
-  float wgt = 0.0f;
 
   // 1 byte fields.
   // Number of edges in @edges.
@@ -302,6 +301,7 @@ class Node {
   float GetWeight() const { return weight_; }
   float GetTotalWeight() const { return weight_; }
   float GetAvgWeight() const { return weight_ / n_; }
+  float GetE() const { return e_; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
@@ -339,6 +339,8 @@ class Node {
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
   void IncrementNInFlight(uint32_t multivisit);
+
+	void SetE(float e);
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
@@ -427,6 +429,9 @@ class Node {
 
   // Estimated remaining plies.
   float m_ = 0.0f;
+	
+	float e_ = 0.0f;
+
   // How many completed visits this node had.
   uint32_t n_ = 0;
   // (AKA virtual loss.) How many threads currently process this node (started
@@ -475,6 +480,7 @@ class LowNode {
         d_(p.d_),
         m_(p.m_),
         vs_(p.vs_),
+        e_(p.e_), 
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
@@ -493,6 +499,7 @@ class LowNode {
         d_(p.d_),
         m_(p.m_),
         vs_(p.vs_),
+        e_(p.e_), 
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
@@ -532,6 +539,7 @@ class LowNode {
     v_ = eval->q;
     d_ = eval->d;
     m_ = eval->m;
+    e_ = eval->e;
     vs_ = wl_ * wl_;
     weight_ = eval->wgt;
 
@@ -557,6 +565,7 @@ class LowNode {
   float GetM() const { return m_; }
   float GetVS() const { return vs_; }
   float GetWeight() const { return weight_; }
+  float GetE() const { return e_; }
 
   // Returns whether the node is known to be draw/loss/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
@@ -652,6 +661,8 @@ class LowNode {
   // Averaged draw probability. Works similarly to WL, except that D is not
   // flipped depending on the side to move.
   double d_ = 0.0f;
+	
+	
 
   // Position hash and a TT key.
   uint64_t hash_ = 0;
@@ -668,6 +679,9 @@ class LowNode {
   float m_ = 0.0f;
   // original eval
   float v_ = 0.0f;
+
+	float e_ = 0.0f;
+
   // How many completed visits this node had.
   uint32_t n_ = 0;
 

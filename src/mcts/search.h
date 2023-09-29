@@ -313,7 +313,7 @@ class SearchWorker {
     // limit, multivist could be increased to this value without additional
     // change in outcome of next selection.
     uint32_t maxvisit = 0;
-    float avg_weight = 1.0f;
+    float error = 0.0f;
     bool nn_queried = false;
     bool is_tt_hit = false;
     bool is_comrade_hit = false;

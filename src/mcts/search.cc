@@ -284,7 +284,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   }
 
   if (!per_pv_counters) {
-    common_info.nodes = total_nodes;
+    // Can't use total_nodes since it won't carry over
+    common_info.nodes = total_playouts_ + initial_visits_;
   }
   if (nps_start_time_) {
     const auto time_since_first_batch_ms =
@@ -501,12 +502,12 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
              : -node->GetQ(-draw_score) - value * std::sqrt(visited_pol);
 }
 
-inline float ComputeCpuct(const SearchParams& params, uint32_t N,
+inline float ComputeCpuct(const SearchParams& params, float weight,
                           bool is_root_node) {
   const float init = params.GetCpuct(is_root_node);
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
-  return init + (k ? k * FastLog((N + base) / base) : 0.0f);
+  return init + (k ? k * FastLog((weight + base) / base) : 0.0f);
 }
 
 inline float ComputeCpuct(const SearchParams& params, float weight, float q,
@@ -534,7 +535,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
   const float fpu = GetFpu(params_, node, is_root, draw_score);
-  const float cpuct = ComputeCpuct(params_, node->GetTotalVisits(),
+  const float cpuct = ComputeCpuct(params_, node->GetWeight(),
                                    node->GetWL(), node->GetVS(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
@@ -565,7 +566,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   auto print_stats = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
     if (n) {
-      print(oss, "(WGT: ", n->GetWeight(), ") ", 10, 2);
+      print(oss, "(WGT: ", n->GetWeight(), ") ", 11, 3);
       print(oss, "(WL: ", sign * n->GetWL(), ") ", 8, 5);
       print(oss, "(D: ", n->GetD(), ") ", 5, 3);
       print(oss, "(M: ", n->GetM(), ") ", 4, 1);
@@ -576,6 +577,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
             ComputeStdevFactor(params_, n->GetWL(), n->GetWeight(), n->GetVS()),
             ") ", 6, 5);
       print(oss, "(VS: ", n->GetVS(), ") ", 6, 5);
+      print(oss, "(E: ", n->GetE(), ") ", 6, 5);
     } else {
       *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
     }
@@ -1803,10 +1805,10 @@ void SearchWorker::PickNodesToExtendTask(
       }
 
       const float cpuct =
-          ComputeCpuct(params_, node->GetTotalVisits(), node->GetWL(),
+          ComputeCpuct(params_, node->GetWeight(), node->GetWL(),
                        node->GetVS(), is_root_node);
       const float puct_mult =
-          cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+          cpuct * std::sqrt(std::max(node->GetWeight(), 1e-5f));
       int cache_filled_idx = -1;
       while (cur_limit > 0) {
         // Perform UCT for current node.
@@ -2174,9 +2176,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
           search_->dag_->TTGetOrCreate(comrade_low_node, node_to_process->hash);
       assert(tt_low_node != nullptr);
       node_to_process->tt_low_node = tt_low_node;
-      // node_to_process->avg_weight = 0.9f; // this value is configurable, the
-      // best value may be less than one to increase exploration where
-      // transpositions abound.
     } else {
       auto [tt_low_node, is_tt_miss] =
           search_->dag_->TTGetOrCreate(node_to_process->hash);
@@ -2336,11 +2335,22 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
   // Update the low node at the start of the backup path first, but only visit
   // it the first time that backup sees it.
+  float avg_weight;
+  if (nl) {
+    avg_weight = ComputeWeight(params_, nl->GetE());
+    n->SetE(nl->GetE());
+		
+  } else {
+		// game is over so uncertainty is highest possible
+    avg_weight = params_.GetUncertaintyWeightingCap();
+    n->SetE(-1.0f);
+  }
+	
   if (nl && nl->GetN() == 0) {
     nl->FinalizeScoreUpdate(
         nl->GetWL(), nl->GetD(), nl->GetM(), nl->GetVS(),
         node_to_process.multivisit,
-        node_to_process.multivisit * node_to_process.avg_weight);
+        node_to_process.multivisit * avg_weight);
   }
 
   if (nr >= 2) {
@@ -2365,7 +2375,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
        /* ++it in the body */) {
     n->FinalizeScoreUpdate(
         v, d, m, vs, node_to_process.multivisit,
-        node_to_process.multivisit * node_to_process.avg_weight);
+        node_to_process.multivisit * avg_weight);
     if (n_to_fix > 0 && !n->IsTerminal()) {
       // First part of the path might be never as it was removed and recreated.
       n_to_fix = std::min(n_to_fix, n->GetN());
@@ -2408,7 +2418,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
     pl->FinalizeScoreUpdate(
         v, d, m, vs, node_to_process.multivisit,
-        node_to_process.multivisit * node_to_process.avg_weight);
+        node_to_process.multivisit * avg_weight);
     if (n_to_fix > 0) {
       pl->AdjustForTerminal(v_delta, d_delta, m_delta, vs_delta, n_to_fix,
                             weight_to_fix);
@@ -2441,7 +2451,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (p == search_->root_node_ &&
         ((old_update_parent_bounds && n->IsTerminal()) ||
          (n != search_->current_best_edge_.node() &&
-          search_->current_best_edge_.GetN() <= n->GetN()))) {
+          search_->current_best_edge_.GetWeight() <= n->GetWeight()))) {
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_, 0);
     }

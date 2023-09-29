@@ -464,7 +464,7 @@ const OptionId SearchParams::kUncertaintyWeightingAlphaId{
 		"uncertainty-weighting-alpha", "UncertaintyWeightingAlpha",
     "Alpha value for uncertainty weighting."};
 const OptionId SearchParams::kUncertaintyWeightingBetaId{
-"uncertainty-weighting-beta", "UncertaintyWeightingBeta",
+    "uncertainty-weighting-beta", "UncertaintyWeightingBeta",
 		"Beta value for uncertainty weighting."};
 const OptionId SearchParams::kSearchSpinBackoffId{
     "search-spin-backoff", "SearchSpinBackoff",
@@ -571,7 +571,7 @@ void SearchParams::Populate(OptionsParser* options) {
   std::vector<std::string> reported_nodes = {"nodes", "queries", "playouts",
                                              "legacy"};
   options->Add<ChoiceOption>(kReportedNodesId, reported_nodes) = "nodes";
-  options->Add<FloatOption>(kUncertaintyWeightingCapId, 0.0f, 2.0f) =
+  options->Add<FloatOption>(kUncertaintyWeightingCapId, 0.0f, 10000.0f) =
 			2.0f;
   options->Add<FloatOption>(kUncertaintyWeightingAlphaId, 0.0f, 100.0f) = 1.0f;
   options->Add<FloatOption>(kUncertaintyWeightingBetaId, -10.0f, 0.0f) = -0.4f;
