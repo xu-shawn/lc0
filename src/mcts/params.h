@@ -172,6 +172,9 @@ class SearchParams {
   float GetUncertaintyWeightingExponent() const {
     return kUncertaintyWeightingExponent;
   }
+  float GetEasyEvalWeightDecay() const {
+    return kEasyEvalWeightDecay;
+  }
   bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
 
   // Search parameter IDs.
@@ -250,6 +253,7 @@ class SearchParams {
   static const OptionId kUncertaintyWeightingCapId;
   static const OptionId kUncertaintyWeightingCoefficientId;
   static const OptionId kUncertaintyWeightingExponentId;
+  static const OptionId kEasyEvalWeightDecayId;
   static const OptionId kSearchSpinBackoffId;
 
  private:
@@ -313,6 +317,7 @@ class SearchParams {
   const float kUncertaintyWeightingCap;
   const float kUncertaintyWeightingCoefficient;
   const float kUncertaintyWeightingExponent;
+  const float kEasyEvalWeightDecay;
   const bool kSearchSpinBackoff;
 
 };

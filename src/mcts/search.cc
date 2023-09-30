@@ -2337,6 +2337,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
     avg_weight = params_.GetUncertaintyWeightingCap();
     n->SetE(-1.0f);
   }
+
+  if (!node_to_process.ShouldAddToInput()) {
+    avg_weight *= params_.GetEasyEvalWeightDecay();
+  }
 	
   if (nl && nl->GetN() == 0) {
     nl->FinalizeScoreUpdate(
