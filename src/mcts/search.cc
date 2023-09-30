@@ -522,9 +522,9 @@ inline float ComputeCpuct(const SearchParams& params, float weight, float q,
 
 inline float ComputeWeight(const SearchParams& params, float uncertainty) {
   const float cap = params.GetUncertaintyWeightingCap();
-  const float alpha = params.GetUncertaintyWeightingAlpha();
-  const float beta = params.GetUncertaintyWeightingBeta();
-  return fmin(cap, alpha * pow(uncertainty, beta));
+  const float coefficient = params.GetUncertaintyWeightingCoefficient();
+  const float exponent = params.GetUncertaintyWeightingExponent();
+  return fmin(cap, coefficient * pow(uncertainty, exponent));
 }
 
 }  // namespace
