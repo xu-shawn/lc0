@@ -300,7 +300,7 @@ class SearchWorker {
              node->GetLowNode();
     }
     bool ShouldAddToInput() const {
-      return nn_queried && !is_tt_hit && !is_comrade_hit;
+      return nn_queried && !is_tt_hit && !is_twin_hit;
     }
     int GetRule50Ply() const { return history.Last().GetRule50Ply(); }
 
@@ -316,19 +316,19 @@ class SearchWorker {
     float error = 0.0f;
     bool nn_queried = false;
     bool is_tt_hit = false;
-    bool is_comrade_hit = false;
+    bool is_twin_hit = false;
 
     bool is_cache_hit = false;
     bool is_collision = false;
 
     // values for improving r50 estimates, filled in as we go
-    float comrade_error;
+    float twin_error;
 
     // Details that are filled in as we go.
     uint64_t hash;
 
     LowNode* tt_low_node;
-    LowNode* comrade_low_node;
+    LowNode* twin_low_node;
 
     NNCacheLock lock;
     PositionHistory history;

@@ -2109,7 +2109,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
       int ply_hi = ply_lo + bs - 1;
 
       int max_visits = 0;
-      LowNode* comrade_low_node = nullptr;
+      LowNode* twin_low_node = nullptr;
       for (int ply = ply_lo; ply <= ply_hi; ply++) {
         uint64_t hash = search_->dag_->GetHistoryHash(history, ply);
         auto low_node = search_->dag_->TTFind(hash);
@@ -2117,13 +2117,13 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
           int visits = low_node->GetN();
           if (visits > max_visits) {
             max_visits = visits;
-            comrade_low_node = low_node;
+            twin_low_node = low_node;
           }
         }
       }
-      if (comrade_low_node != nullptr) {
-        picked_node.comrade_low_node = comrade_low_node;
-        picked_node.is_comrade_hit = true;
+      if (twin_low_node != nullptr) {
+        picked_node.twin_low_node = twin_low_node;
+        picked_node.is_twin_hit = true;
       }
     }  // end if (params_->GetMoveRuleBucketing()) {
 
@@ -2170,10 +2170,10 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (!node_to_process->nn_queried) return;
 
   if (!node_to_process->is_tt_hit) {
-    if (node_to_process->is_comrade_hit) {
-      LowNode comrade_low_node = *(node_to_process->comrade_low_node);
+    if (node_to_process->is_twin_hit) {
+      LowNode twin_low_node = *(node_to_process->twin_low_node);
       auto [tt_low_node, is_tt_miss] =
-          search_->dag_->TTGetOrCreate(comrade_low_node, node_to_process->hash);
+          search_->dag_->TTGetOrCreate(twin_low_node, node_to_process->hash);
       assert(tt_low_node != nullptr);
       node_to_process->tt_low_node = tt_low_node;
     } else {
@@ -2202,13 +2202,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
           nn_eval->q = v;
           nn_eval->d = d;
         }
-        // after wdl scaling we adjust based on r50
-        // 0.5 constant is chosen arbitrarily
-        // TODO: some stuff to consider with differing signs
-        /*
-        float q_adjusted = nn_eval->q + node_to_process->comrade_error * 0.5;
-        nn_eval->q = q_adjusted;
-        */
         node_to_process->tt_low_node->SetNNEval(nn_eval);
       }
     }
