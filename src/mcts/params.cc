@@ -574,7 +574,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kUncertaintyWeightingCapId, 0.0f, 10000.0f) =
 			2.0f;
   options->Add<FloatOption>(kUncertaintyWeightingCoefficientId, 0.0f, 100.0f) = 1.0f;
-  options->Add<FloatOption>(kUncertaintyWeightingExponentId, -10.0f, 0.0f) = -0.4f;
+  options->Add<FloatOption>(kUncertaintyWeightingExponentId, -10.0f, 0.0f) = 0.0f;
   options->Add<BoolOption>(kSearchSpinBackoffId) = false;
 
   options->HideOption(kNoiseEpsilonId);
