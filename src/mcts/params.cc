@@ -461,7 +461,7 @@ const OptionId SearchParams::kUncertaintyWeightingCapId{
     "uncertainty-weighting-cap", "UncertaintyWeightingCap",
     "Cap for node weight from uncertainty weighting."};
 const OptionId SearchParams::kUncertaintyWeightingCoefficientId{
-    "uncertainty-weighting-coefficient", "UncertaintyWeightingAlpha",
+    "uncertainty-weighting-coefficient", "UncertaintyWeightingCoefficient",
     "Coefficient in the uncertainty weighting formula."};
 const OptionId SearchParams::kUncertaintyWeightingExponentId{
     "uncertainty-weighting-exponent", "UncertaintyWeightingExponent",
