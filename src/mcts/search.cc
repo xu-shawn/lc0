@@ -515,12 +515,16 @@ inline float ComputeCpuct(const SearchParams& params, float weight, float q,
   const float init = params.GetCpuct(is_root_node);
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
-  const float stdev_factor = ComputeStdevFactor(params, q, weight, vs);
+
+  const float stdev_factor = params.GetUseVarianceScaling()
+                                   ? ComputeStdevFactor(params, q, weight, vs)
+                                   : 1.0f;
   return stdev_factor *
          (init + (k ? k * FastLog((weight + base) / base) : 0.0f));
 }
 
 inline float ComputeWeight(const SearchParams& params, float uncertainty) {
+  if (!params.GetUseUncertaintyWeighting()) return 1.0f;
   const float cap = params.GetUncertaintyWeightingCap();
   const float coefficient = params.GetUncertaintyWeightingCoefficient();
   const float exponent = params.GetUncertaintyWeightingExponent();

@@ -159,6 +159,7 @@ class SearchParams {
   float GetCpuctUtilityStdevPriorWeight() const {
     return kCpuctUtilityStdevPriorWeight;
   }
+  bool GetUseVarianceScaling() const { return kUseVarianceScaling; }
   bool GetMoveRuleBucketing() const { return kMoveRuleBucketing; }
   std::string GetReportedNodes() const {
     return options_.Get<std::string>(kReportedNodesId);
@@ -172,6 +173,7 @@ class SearchParams {
   float GetUncertaintyWeightingExponent() const {
     return kUncertaintyWeightingExponent;
   }
+  bool GetUseUncertaintyWeighting() const { return kUseUncertaintyWeighting; }
   float GetEasyEvalWeightDecay() const {
     return kEasyEvalWeightDecay;
   }
@@ -248,11 +250,13 @@ class SearchParams {
   static const OptionId kCpuctUtilityStdevPriorId;
   static const OptionId kCpuctUtilityStdevScaleId;
   static const OptionId kCpuctUtilityStdevPriorWeightId;
+  static const OptionId kUseVarianceScalingId;
   static const OptionId kMoveRuleBucketingId;
   static const OptionId kReportedNodesId;
   static const OptionId kUncertaintyWeightingCapId;
   static const OptionId kUncertaintyWeightingCoefficientId;
   static const OptionId kUncertaintyWeightingExponentId;
+  static const OptionId kUseUncertaintyWeightingId;
   static const OptionId kEasyEvalWeightDecayId;
   static const OptionId kSearchSpinBackoffId;
 
@@ -313,10 +317,12 @@ class SearchParams {
   const float kCpuctUtilityStdevPrior;
   const float kCpuctUtilityStdevScale;
   const float kCpuctUtilityStdevPriorWeight;
+  const bool kUseVarianceScaling;
   const bool kMoveRuleBucketing;
   const float kUncertaintyWeightingCap;
   const float kUncertaintyWeightingCoefficient;
   const float kUncertaintyWeightingExponent;
+  const bool kUseUncertaintyWeighting;
   const float kEasyEvalWeightDecay;
   const bool kSearchSpinBackoff;
 

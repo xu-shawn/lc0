@@ -13,7 +13,7 @@ Many of these features are taken from the Katago engine. A detailed description 
 ### Node reporting
 
 The nps statistic used to represent the number of playouts per second, which may not be what the user wants. The new `--reported-nodes` option specifies what the node count and nps statistic represent. 
-The default is `"nodes"` for LowNodes. The other options are `"queries"` for neural network queries and `"playouts"` or `"legacy"` for playouts.
+The default is `nodes` for LowNodes. The other options are `queries` for neural network queries and `playouts` or `legacy` for playouts (what we used to use).
 
 
 ### 50 move rule caching
@@ -22,6 +22,39 @@ The first 64 plies out of 100 are partitioned into 8 equally sized buckets. Befo
 The speedup can be anywhere from 5% to 50% depending on how transposition-heavy the position is. The gain was measured at 20 elo on STC. The nodes per second statistic is now calculated by the number of true nodes (called LowNode in the code) rather than edges (technically playouts, called Node in the code) so the reported value may be lower than on previous dag versions.
 
 This feature is enabled by default and can be disabled by specifying `--move-rule-bucketing=false` in the config.
+
+### Multiple output heads
+
+The BT3 generation of nets now has multiple value and policy heads that you can choose among. You always want the `winner` head for value. There are two policy heads, `vanilla` and `optimistic`.
+The vanilla head is similar to what we used before, and the optimistic head upweights moves that the net believes may be exceptionally strong, an idea taken from the Katago engine. The optimistic head is recommended as it adds roughly 20 elo at LTC. The Katago team observed that this improvement is similar to increasing the net size by roughly 40%.
+
+The head you choose is specified in the backend options. For example, if you have a single GPU and want to use the optimistic policy head and winner value head, then you can use this can easily be specified as `--backend-opts=policy_head=vanilla,value_head=winner`.
+
+If you have are using more than one GPU then you have to set up the backend for each GPU. An example is
+`--backend-opts=(gpu0,policy_head=optimistic,value_head=winner),(gpu1,policy_head=optimistic,value_head=winner)`.
+
+### Uncertainty Weighting
+
+Identical to the [Katago implementation](https://github.com/lightvector/KataGo/blob/master/docs/KataGoMethods.md#uncertainty-weighted-mcts-playouts), but the error uses only the winrate. The new parameters are
+
+```
+--uncertainty-weighting-cap
+--uncertainty-weighting-coefficient
+--uncertainty-weighting-exponent
+--use-variance-scaling
+```
+
+
+You must set `--use-variance-scaling=true` to turn it on. With BT3, the gain was 20 elo at LTC with
+
+```
+--uncertainty-weighting-cap=1.03
+--uncertainty-weighting-coefficient=0.13
+--uncertainty-weighting-exponent=-0.88
+--use-variance-scaling=true
+```
+
+
 
 
 ### CPUCT Utility Variance Scaling
@@ -32,6 +65,7 @@ Identical to the [Katago implementation](https://github.com/lightvector/KataGo/b
 --cpuct-utility-stdev-prior 
 --cpuct-utility-stdev-scale
 --cpuct-utility-stdev-prior-weight
+--use-variance-scaling
 ```
 
 and the tuned values (excluding the prior weight) for masterkni's T1 are
@@ -43,9 +77,10 @@ and the tuned values (excluding the prior weight) for masterkni's T1 are
 --cpuct-utility-stdev-scale=0.3437
 --cpuct-utility-stdev-prior-weight=10.0
 --wdl-calibration-elo=3400
+--use-variance-scaling=true
 ```
 
-The gain  is around 10 elo on STC and LTC.
+You must set `--use-variance-scaling=true` to turn it on. The gain is around 10 elo on STC and 5 elo on LTC, but more testing is needed. For now the setting is NOT RECOMMENDED except for personal use.
 
 
 
