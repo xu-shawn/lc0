@@ -2338,7 +2338,12 @@ void SearchWorker::DoBackupUpdateSingleNode(
 		
   } else {
 		// game is over so uncertainty is highest possible
-    avg_weight = params_.GetUncertaintyWeightingCap();
+    if (params_.GetUseUncertaintyWeighting()) {
+      avg_weight = params_.GetUncertaintyWeightingCap();
+    }
+    else {
+      avg_weight = 1.0f;
+    }
     n->SetE(-1.0f);
   }
 
