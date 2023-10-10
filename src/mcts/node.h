@@ -285,10 +285,10 @@ class Node {
     return n_ + n_in_flight_.load(std::memory_order_acquire);
   }
 
-  float GetWeightStarted() const {
+  double GetWeightStarted() const {
     // we can't have a weight_in_flight so we have to estimate the weight in
     // flight
-    return GetWeight() + n_in_flight_.load(std::memory_order_acquire);
+    return weight_ + n_in_flight_.load(std::memory_order_acquire);
   }
 
   float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
@@ -748,7 +748,7 @@ class EdgeAndNode {
   float GetWeight() const { return node_ ? node_->GetWeight() : 0.0; }
   float GetTotalWeight() const { return node_ ? node_->GetWeight() : 0.0; }
 
-  float GetWeightStarted() const {
+  double GetWeightStarted() const {
     return node_ ? node_->GetWeightStarted() : 0.0;
   }
 
