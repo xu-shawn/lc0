@@ -41,17 +41,17 @@ Identical to the [Katago implementation](https://github.com/lightvector/KataGo/b
 --uncertainty-weighting-cap
 --uncertainty-weighting-coefficient
 --uncertainty-weighting-exponent
---use-variance-scaling
+--use-uncertainty-weighting
 ```
 
 
-You must set `--use-variance-scaling=true` to turn it on. With BT3, the gain was 20 elo at LTC with
+You must set `--use-uncertainty-weighting=true` to turn it on. With BT3, the gain was 20 elo at LTC with
 
 ```
 --uncertainty-weighting-cap=1.03
 --uncertainty-weighting-coefficient=0.13
 --uncertainty-weighting-exponent=-0.88
---use-variance-scaling=true
+--use-uncertainty-weighting=true
 ```
 
 
