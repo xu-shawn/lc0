@@ -159,6 +159,11 @@ class SearchParams {
   float GetCpuctUtilityStdevPriorWeight() const {
     return kCpuctUtilityStdevPriorWeight;
   }
+
+	float GetCpuctAdvantageSlope() const { return kCpuctAdvantageSlope; }
+  float GetCpuctAdvantageCap() const { return kCpuctAdvantageCap; }
+
+
   bool GetUseVarianceScaling() const { return kUseVarianceScaling; }
   bool GetMoveRuleBucketing() const { return kMoveRuleBucketing; }
   std::string GetReportedNodes() const {
@@ -250,6 +255,10 @@ class SearchParams {
   static const OptionId kCpuctUtilityStdevPriorId;
   static const OptionId kCpuctUtilityStdevScaleId;
   static const OptionId kCpuctUtilityStdevPriorWeightId;
+  static const OptionId kCpuctAdvantageSlopeId;
+  static const OptionId kCpuctAdvantageCapId;
+
+
   static const OptionId kUseVarianceScalingId;
   static const OptionId kMoveRuleBucketingId;
   static const OptionId kReportedNodesId;
@@ -317,6 +326,9 @@ class SearchParams {
   const float kCpuctUtilityStdevPrior;
   const float kCpuctUtilityStdevScale;
   const float kCpuctUtilityStdevPriorWeight;
+  const float kCpuctAdvantageSlope;
+  const float kCpuctAdvantageCap;
+
   const bool kUseVarianceScaling;
   const bool kMoveRuleBucketing;
   const float kUncertaintyWeightingCap;

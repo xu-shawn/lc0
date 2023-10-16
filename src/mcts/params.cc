@@ -449,6 +449,12 @@ const OptionId SearchParams::kCpuctUtilityStdevScaleId{
 const OptionId SearchParams::kCpuctUtilityStdevPriorWeightId{
     "cpuct-utility-stdev-prior-weight", "CpuctUtilityStdevPriorWeight",
     "How much to weigh the prior value in the calculation of stdev."};
+const OptionId SearchParams::kCpuctAdvantageSlopeId{
+    "cpuct-advantage-slope", "CpuctAdvantageSlope",
+    "Slope in calculation of CPUCT from advantage."};
+const OptionId SearchParams::kCpuctAdvantageCapId{
+    "cpuct-advantage-cap", "CpuctAdvantageCap",
+    "Cap value for the calculation of CPUCT from advantage."};
 const OptionId SearchParams::kUseVarianceScalingId{
     "use-variance-scaling", "UseVarianceScaling",
     "Whether to use variance scaling in CPUCT calculation."};
@@ -577,6 +583,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctUtilityStdevScaleId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctUtilityStdevPriorWeightId, 0.0f, 10000.0f) =
       10.0f;
+  options->Add<FloatOption>(kCpuctAdvantageSlopeId, -1.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kCpuctAdvantageCapId, 0.0f, 1.0f) = 1.0f;
   options->Add<BoolOption>(kUseVarianceScalingId) = false;
   options->Add<BoolOption>(kMoveRuleBucketingId) = true;
   std::vector<std::string> reported_nodes = {"nodes", "queries", "playouts",
@@ -702,6 +710,12 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctUtilityStdevScale(options.Get<float>(kCpuctUtilityStdevScaleId)),
       kCpuctUtilityStdevPriorWeight(
           options.Get<float>(kCpuctUtilityStdevPriorWeightId)),
+      kCpuctAdvantageSlope(
+				          options.Get<float>(kCpuctAdvantageSlopeId)),
+      kCpuctAdvantageCap(options.Get<float>(kCpuctAdvantageCapId)),
+
+	
+    
       kUseVarianceScaling(options.Get<bool>(kUseVarianceScalingId)),
       kMoveRuleBucketing(options.Get<bool>(kMoveRuleBucketingId)),
       kUncertaintyWeightingCap(options.Get<float>(kUncertaintyWeightingCapId)),

@@ -443,7 +443,18 @@ float Search::GetDrawScore(bool is_odd_depth) const {
               : -params_.GetDrawScore());
 }
 
+
 namespace {
+
+
+inline float ComputeAdvantageFactor(const SearchParams& params, float q) {
+  float cap = params.GetCpuctAdvantageCap();
+  float slope = params.GetCpuctAdvantageSlope();
+  q = std::max(q, -cap);
+	q = std::min(q, cap);
+  return 1.0f + q * slope;
+}	
+
 
 inline float ComputeStdev(const SearchParams& params, float q, float weight,
                           float vs) {
@@ -519,7 +530,11 @@ inline float ComputeCpuct(const SearchParams& params, float weight, float q,
   const float stdev_factor = params.GetUseVarianceScaling()
                                    ? ComputeStdevFactor(params, q, weight, vs)
                                    : 1.0f;
-  return stdev_factor *
+  const float advantage_factor = ComputeAdvantageFactor(params, q);
+	
+
+	
+  return advantage_factor * stdev_factor *
          (init + (k ? k * FastLog((weight + base) / base) : 0.0f));
 }
 
