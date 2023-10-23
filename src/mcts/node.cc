@@ -358,59 +358,62 @@ void Node::CancelScoreUpdate(uint32_t multivisit) {
 }
 
 void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
-                                  uint32_t multivisit) {
+                                  uint32_t multivisit, float multiweight) {
   assert(edges_);
   // Recompute Q.
-  wl_ += multivisit * (v - wl_) / (n_ + multivisit);
-  d_ += multivisit * (d - d_) / (n_ + multivisit);
-  m_ += multivisit * (m - m_) / (n_ + multivisit);
-  vs_ += multivisit * (vs - vs_) / (n_ + multivisit);
+  wl_ += multiweight * (v - wl_) / (weight_ + multiweight);
+  d_ += multiweight * (d - d_) / (weight_ + multiweight);
+  m_ += multiweight * (m - m_) / (weight_ + multiweight);
+  vs_ += multiweight * (vs - vs_) / (weight_ + multiweight);
 
   assert(WLDMInvariantsHold());
 
   // Increment N.
   n_ += multivisit;
+  weight_ += multiweight;
 }
 
 void LowNode::AdjustForTerminal(float v, float d, float m, float vs,
-                                uint32_t multivisit) {
+                                uint32_t multivisit, float multiweight) {
   assert(static_cast<uint32_t>(multivisit) <= n_);
 
   // Recompute Q.
-  wl_ += multivisit * v / n_;
-  d_ += multivisit * d / n_;
-  m_ += multivisit * m / n_;
-  vs_ += multivisit * vs / n_;
+  wl_ += multiweight * v / weight_;
+  d_ += multiweight * d / weight_;
+  m_ += multiweight * m / weight_;
+  vs_ += multiweight * vs / weight_;
 
   assert(WLDMInvariantsHold());
 }
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, float vs,
-                               uint32_t multivisit) {
+                               uint32_t multivisit, float multiweight) {
   // Recompute Q.
-  wl_ += multivisit * (v - wl_) / (n_ + multivisit);
-  d_ += multivisit * (d - d_) / (n_ + multivisit);
-  m_ += multivisit * (m - m_) / (n_ + multivisit);
-  vs_ += multivisit * (vs - vs_) / (n_ + multivisit);
+  wl_ += multiweight * (v - wl_) / (weight_ + multiweight);
+  d_ += multiweight * (d - d_) / (weight_ + multiweight);
+  m_ += multiweight * (m - m_) / (weight_ + multiweight);
+  vs_ += multiweight * (vs - vs_) / (weight_ + multiweight);
 
   assert(WLDMInvariantsHold());
 
   // Increment N.
   n_ += multivisit;
+  weight_ += multiweight;
+
   // Decrement virtual loss.
   assert(GetNInFlight() >= (uint32_t)multivisit);
   n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
 void Node::AdjustForTerminal(float v, float d, float m, float vs,
-                             uint32_t multivisit) {
+                             uint32_t multivisit, float multiweight) {
   assert(static_cast<uint32_t>(multivisit) <= n_);
 
   // Recompute Q.
-  wl_ += multivisit * v / n_;
-  d_ += multivisit * d / n_;
-  m_ += multivisit * m / n_;
-  vs_ += multivisit * vs / n_;
+  wl_ += multiweight * v / weight_;
+  d_ += multiweight * d / weight_;
+  m_ += multiweight * m / weight_;
+  vs_ += multiweight * vs / weight_;
 
   assert(WLDMInvariantsHold());
 }
@@ -418,6 +421,8 @@ void Node::AdjustForTerminal(float v, float d, float m, float vs,
 void Node::IncrementNInFlight(uint32_t multivisit) {
   n_in_flight_.fetch_add(multivisit, std::memory_order_acq_rel);
 }
+
+void Node::SetE(float e) { e_ = e; }
 
 void LowNode::ReleaseChildren(GCQueue* gc_queue) {
   for (auto child = GetChild()->get(); child != nullptr;

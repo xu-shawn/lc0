@@ -56,7 +56,7 @@ class Search {
          std::unique_ptr<UciResponder> uci_responder,
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
-         std::unique_ptr<SearchStopper> stopper, bool infinite,
+         std::unique_ptr<SearchStopper> stopper, bool infinite, bool ponder,
          const OptionsDict& options, NNCache* cache,
          SyzygyTablebase* syzygy_tb);
 
@@ -188,6 +188,7 @@ class Search {
   ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int64_t total_low_nodes_ GUARDED_BY(nodes_mutex_) = 0;
+  int64_t total_nn_queries_ GUARDED_BY(nodes_mutex_) = 0;
   int64_t total_batches_ GUARDED_BY(nodes_mutex_) = 0;
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
@@ -205,7 +206,7 @@ class Search {
       GUARDED_BY(nodes_mutex_);
 
   std::unique_ptr<UciResponder> uci_responder_;
-
+  ContemptMode contempt_mode_;
   friend class SearchWorker;
 };
 
@@ -298,7 +299,9 @@ class SearchWorker {
       return is_tt_hit || is_cache_hit || node->IsTerminal() ||
              node->GetLowNode();
     }
-    bool ShouldAddToInput() const { return nn_queried && !is_tt_hit && !is_comrade_hit; }
+    bool ShouldAddToInput() const {
+      return nn_queried && !is_tt_hit && !is_twin_hit;
+    }
     int GetRule50Ply() const { return history.Last().GetRule50Ply(); }
 
     // The path to the node to extend.
@@ -310,21 +313,22 @@ class SearchWorker {
     // limit, multivist could be increased to this value without additional
     // change in outcome of next selection.
     uint32_t maxvisit = 0;
+    float error = 0.0f;
     bool nn_queried = false;
     bool is_tt_hit = false;
-    bool is_comrade_hit = false;
+    bool is_twin_hit = false;
 
     bool is_cache_hit = false;
     bool is_collision = false;
 
     // values for improving r50 estimates, filled in as we go
-    float comrade_error;
+    float twin_error;
 
     // Details that are filled in as we go.
     uint64_t hash;
 
     LowNode* tt_low_node;
-    LowNode* comrade_low_node;
+    LowNode* twin_low_node;
 
     NNCacheLock lock;
     PositionHistory history;
@@ -441,16 +445,15 @@ class SearchWorker {
   // terminal or its child low node is a transposition. Also update bounds and
   // terminal status of node @n using information from its child low node.
   // Return true if adjustment happened.
-  bool MaybeAdjustForTerminalOrTransposition(Node* n, const LowNode* nl,
-                                             float& v, float& d, float& m,
-                                             float& vs, uint32_t& n_to_fix,
-                                             float& v_delta, float& d_delta,
-                                             float& m_delta, float& vs_delta,
-                                             bool& update_parent_bounds) const;
+  bool MaybeAdjustForTerminalOrTransposition(
+      Node* n, const LowNode* nl, float& v, float& d, float& m, float& vs,
+      uint32_t& n_to_fix, float& weight_to_fix, float& v_delta, float& d_delta,
+      float& m_delta, float& vs_delta, bool& update_parent_bounds) const;
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
-  bool MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix, float* v_delta,
-                      float* d_delta, float* m_delta, float* vs_delta) const;
+  bool MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
+                      float* weight_to_fix, float* v_delta, float* d_delta,
+                      float* m_delta, float* vs_delta) const;
   void PickNodesToExtend(int collision_limit);
   void PickNodesToExtendTask(const BackupPath& path, int collision_limit,
                              PositionHistory& history,

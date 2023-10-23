@@ -33,7 +33,7 @@
 
 namespace lczero {
 
-enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
+enum class ContemptMode { PLAY, WHITE, BLACK, NONE };
 
 class SearchParams {
  public:
@@ -113,13 +113,15 @@ class SearchParams {
   }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
-  ContemptPerspective GetContemptPerspective() const {
-    return kContemptPerspective;
+  float GetDrawScore() const { return kDrawScore; }
+  ContemptMode GetContemptMode() const {
+    std::string mode = options_.Get<std::string>(kContemptModeId);
+    if (mode == "play") return ContemptMode::PLAY;
+    if (mode == "white_side_analysis") return ContemptMode::WHITE;
+    if (mode == "black_side_analysis") return ContemptMode::BLACK;
+    assert(mode == "disable");
+    return ContemptMode::NONE;
   }
-  float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
-  float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
-  float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
-  float GetBlackDrawDelta() const { return kDrawScoreBlack; }
   float GetWDLRescaleRatio() const { return kWDLRescaleParams.ratio; }
   float GetWDLRescaleDiff() const { return kWDLRescaleParams.diff; }
   float GetWDLEvalObjectivity() const { return kWDLEvalObjectivity; }
@@ -157,6 +159,30 @@ class SearchParams {
   float GetCpuctUtilityStdevPriorWeight() const {
     return kCpuctUtilityStdevPriorWeight;
   }
+
+	float GetCpuctAdvantageSlope() const { return kCpuctAdvantageSlope; }
+  float GetCpuctAdvantageCap() const { return kCpuctAdvantageCap; }
+
+
+  bool GetUseVarianceScaling() const { return kUseVarianceScaling; }
+  bool GetMoveRuleBucketing() const { return kMoveRuleBucketing; }
+  std::string GetReportedNodes() const {
+    return options_.Get<std::string>(kReportedNodesId);
+  }
+  float GetUncertaintyWeightingCap() const {
+		return kUncertaintyWeightingCap;
+	}
+  float GetUncertaintyWeightingCoefficient() const {
+    return kUncertaintyWeightingCoefficient;
+  }
+  float GetUncertaintyWeightingExponent() const {
+    return kUncertaintyWeightingExponent;
+  }
+  bool GetUseUncertaintyWeighting() const { return kUseUncertaintyWeighting; }
+  float GetEasyEvalWeightDecay() const {
+    return kEasyEvalWeightDecay;
+  }
+  bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -202,11 +228,8 @@ class SearchParams {
   static const OptionId kMovesLeftSlopeId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
-  static const OptionId kContemptPerspectiveId;
-  static const OptionId kDrawScoreSidetomoveId;
-  static const OptionId kDrawScoreOpponentId;
-  static const OptionId kDrawScoreWhiteId;
-  static const OptionId kDrawScoreBlackId;
+  static const OptionId kDrawScoreId;
+  static const OptionId kContemptModeId;
   static const OptionId kContemptId;
   static const OptionId kContemptMaxValueId;
   static const OptionId kWDLCalibrationEloId;
@@ -232,6 +255,19 @@ class SearchParams {
   static const OptionId kCpuctUtilityStdevPriorId;
   static const OptionId kCpuctUtilityStdevScaleId;
   static const OptionId kCpuctUtilityStdevPriorWeightId;
+  static const OptionId kCpuctAdvantageSlopeId;
+  static const OptionId kCpuctAdvantageCapId;
+
+
+  static const OptionId kUseVarianceScalingId;
+  static const OptionId kMoveRuleBucketingId;
+  static const OptionId kReportedNodesId;
+  static const OptionId kUncertaintyWeightingCapId;
+  static const OptionId kUncertaintyWeightingCoefficientId;
+  static const OptionId kUncertaintyWeightingExponentId;
+  static const OptionId kUseUncertaintyWeightingId;
+  static const OptionId kEasyEvalWeightDecayId;
+  static const OptionId kSearchSpinBackoffId;
 
  private:
   const OptionsDict& options_;
@@ -271,11 +307,7 @@ class SearchParams {
   const float kMovesLeftQuadraticFactor;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
-  const float kDrawScoreSidetomove;
-  const float kDrawScoreOpponent;
-  const float kDrawScoreWhite;
-  const float kDrawScoreBlack;
-  const ContemptPerspective kContemptPerspective;
+  const float kDrawScore;
   const float kContempt;
   const WDLRescaleParams kWDLRescaleParams;
   const float kWDLEvalObjectivity;
@@ -294,6 +326,18 @@ class SearchParams {
   const float kCpuctUtilityStdevPrior;
   const float kCpuctUtilityStdevScale;
   const float kCpuctUtilityStdevPriorWeight;
+  const float kCpuctAdvantageSlope;
+  const float kCpuctAdvantageCap;
+
+  const bool kUseVarianceScaling;
+  const bool kMoveRuleBucketing;
+  const float kUncertaintyWeightingCap;
+  const float kUncertaintyWeightingCoefficient;
+  const float kUncertaintyWeightingExponent;
+  const bool kUseUncertaintyWeighting;
+  const float kEasyEvalWeightDecay;
+  const bool kSearchSpinBackoff;
+
 };
 
 }  // namespace lczero

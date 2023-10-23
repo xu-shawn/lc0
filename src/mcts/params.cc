@@ -55,17 +55,12 @@ FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
   return FillEmptyHistory::NO;
 }
 
-ContemptPerspective EncodeContemptPerspective(std::string perspective) {
-  if (perspective == "sidetomove") return ContemptPerspective::STM;
-  if (perspective == "white") return ContemptPerspective::WHITE;
-  if (perspective == "black") return ContemptPerspective::BLACK;
-  assert(perspective == "none");
-  return ContemptPerspective::NONE;
-}
-
-float GetContempt(std::string name, std::string contempt_str) {
-  float contempt = 0;
+float GetContempt(std::string name, std::string contempt_str,
+                  float uci_rating_adv) {
+  float contempt = uci_rating_adv;
   for (auto& entry : StrSplit(contempt_str, ",")) {
+    // The default contempt is an empty string, so skip empty entries.
+    if (entry.length() == 0) continue;
     auto parts = StrSplit(entry, "=");
     if (parts.size() == 1) {
       try {
@@ -121,7 +116,11 @@ SearchParams::WDLRescaleParams AccurateWDLRescaleParams(
 SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
     float contempt, float draw_rate_reference, float elo_active,
     float contempt_max, float contempt_attenuation) {
-  // Parameters for the Elo dependent draw rate and scaling:
+  // Scale parameter of the logistic WDL distribution is fitted as a sigmoid,
+  // predicting b/a for the WDL model fits for Stockfish levels at the Elo in
+  // https://github.com/official-stockfish/Stockfish/pull/4341
+  // Elo dependent mu is calculated from d(mu)/d(Elo) = c * s
+  // Sigmoid parameters for the Elo dependent scaling:
   const float scale_zero = 15.0f;
   const float elo_slope = 425.0f;
   const float offset = 6.75f;
@@ -134,9 +133,11 @@ SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
       1.0f / (1.0f / scale_zero + std::exp(elo_active / elo_slope - offset));
   float scale_opp =
       1.0f / (1.0f / scale_zero + std::exp(elo_opp / elo_slope - offset));
+  // Scale of target WDL distribution uses a sigmoid with Elo as input.
   float scale_target =
       std::sqrt((scale_active * scale_active + scale_opp * scale_opp) / 2.0f);
   float ratio = scale_target / scale_reference;
+  // Mu is calculated as the integral over scale(Elo) between the Elo values.
   float mu_active =
       -std::log(10) / 200 * scale_zero * elo_slope *
       std::log(1.0f + std::exp(-elo_active / elo_slope + offset) / scale_zero);
@@ -343,23 +344,15 @@ const OptionId SearchParams::kMaxConcurrentSearchersId{
     "max-concurrent-searchers", "MaxConcurrentSearchers",
     "If not 0, at most this many search workers can be gathering minibatches "
     "at once."};
-const OptionId SearchParams::kDrawScoreSidetomoveId{
-    "draw-score-sidetomove", "DrawScoreSideToMove",
-    "Score of a drawn game, as seen by a player making the move."};
-const OptionId SearchParams::kDrawScoreOpponentId{
-    "draw-score-opponent", "DrawScoreOpponent",
-    "Score of a drawn game, as seen by the opponent."};
-const OptionId SearchParams::kDrawScoreWhiteId{
-    "draw-score-white", "DrawScoreWhite",
-    "Adjustment, added to a draw score of a white player."};
-const OptionId SearchParams::kDrawScoreBlackId{
-    "draw-score-black", "DrawScoreBlack",
-    "Adjustment, added to a draw score of a black player."};
-const OptionId SearchParams::kContemptPerspectiveId{
-    "contempt-perspective", "ContemptPerspective",
-    "Affects the way asymmetric WDL parameters are applied. Default is "
-    "'sidetomove' for matches, use 'white' and 'black' for analysis. Use "
-    "'none' to deactivate contempt and the WDL conversion."};
+const OptionId SearchParams::kDrawScoreId{
+    "draw-score", "DrawScore",
+    "Adjustment of the draw score from white's perspective. Value 0 gives "
+    "standard scoring, value -1 gives Armageddon scoring."};
+const OptionId SearchParams::kContemptModeId{
+    "contempt-mode", "ContemptMode",
+    "Affects the way asymmetric WDL parameters are applied. Default is 'play' "
+    "for matches, use 'white_side_analysis' and 'black_side_analysis' for "
+    "analysis. Use 'disable' to deactivate contempt."};
 const OptionId SearchParams::kContemptId{
     "contempt", "Contempt",
     "The simulated Elo advantage for the WDL conversion. Comma separated "
@@ -385,7 +378,7 @@ const OptionId SearchParams::kWDLEvalObjectivityId{
 const OptionId SearchParams::kWDLDrawRateTargetId{
     "wdl-draw-rate-target", "WDLDrawRateTarget",
     "To define the accuracy of play, the target draw rate in equal "
-    "positions is used as a proxy."};
+    "positions is used as a proxy. Ignored if WDLCalibrationElo is set."};
 const OptionId SearchParams::kWDLDrawRateReferenceId{
     "wdl-draw-rate-reference", "WDLDrawRateReference",
     "Set this to the draw rate predicted by the used neural network at "
@@ -395,7 +388,7 @@ const OptionId SearchParams::kWDLBookExitBiasId{
     "wdl-book-exit-bias", "WDLBookExitBias",
     "The book exit bias used when measuring engine Elo. Value of startpos is "
     "around 0.2, value of 50% white win is 1. Only relevant if target draw "
-    "rate is above 80%."};
+    "rate is above 80%; ignored if WDLCalibrationElo is set."};
 const OptionId SearchParams::kNpsLimitId{
     "nps-limit", "NodesPerSecondLimit",
     "An option to specify an upper limit to the nodes per second searched. The "
@@ -456,6 +449,43 @@ const OptionId SearchParams::kCpuctUtilityStdevScaleId{
 const OptionId SearchParams::kCpuctUtilityStdevPriorWeightId{
     "cpuct-utility-stdev-prior-weight", "CpuctUtilityStdevPriorWeight",
     "How much to weigh the prior value in the calculation of stdev."};
+const OptionId SearchParams::kCpuctAdvantageSlopeId{
+    "cpuct-advantage-slope", "CpuctAdvantageSlope",
+    "Slope in calculation of CPUCT from advantage."};
+const OptionId SearchParams::kCpuctAdvantageCapId{
+    "cpuct-advantage-cap", "CpuctAdvantageCap",
+    "Cap value for the calculation of CPUCT from advantage."};
+const OptionId SearchParams::kUseVarianceScalingId{
+    "use-variance-scaling", "UseVarianceScaling",
+    "Whether to use variance scaling in CPUCT calculation."};
+const OptionId SearchParams::kMoveRuleBucketingId{
+    "move-rule-bucketing", "MoveRuleBucketing",
+    "Whether to use move rule bucketing."};
+const OptionId SearchParams::kReportedNodesId{
+    "reported-nodes", "ReportedNodes",
+    "What to report as nodes/nps count. Default is "
+    "'nodes' for LowNodes. The other options are 'queries' for neural network"
+    "queries and 'playouts' or 'legacy' for the old value."};
+const OptionId SearchParams::kUncertaintyWeightingCapId{
+    "uncertainty-weighting-cap", "UncertaintyWeightingCap",
+    "Cap for node weight from uncertainty weighting."};
+const OptionId SearchParams::kUncertaintyWeightingCoefficientId{
+    "uncertainty-weighting-coefficient", "UncertaintyWeightingCoefficient",
+    "Coefficient in the uncertainty weighting formula."};
+const OptionId SearchParams::kUncertaintyWeightingExponentId{
+    "uncertainty-weighting-exponent", "UncertaintyWeightingExponent",
+    "Exponent in the uncertainty weighting formula."};
+const OptionId SearchParams::kUseUncertaintyWeightingId{
+    "use-uncertainty-weighting", "UseUncertaintyWeighting",
+    "Whether to use uncertainty weighting."};
+const OptionId SearchParams::kEasyEvalWeightDecayId{
+    "easy-eval-weight-decay", "EasyEvalWeightDecay",
+    "How much to decay the weight of positions that were easy to evaluate"
+    "(i.e., the low node or a twin of the low node already existed). [0, 1] "
+    "recommended. The feature is turned off when the value is 1."};
+const OptionId SearchParams::kSearchSpinBackoffId{
+    "search-spin-backoff", "SearchSpinBackoff",
+    "Enable backoff for the spin lock that acquires available searcher."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -510,11 +540,11 @@ void SearchParams::Populate(OptionsParser* options) {
                                          "Q",
                                          "W-L",
                                          "WDL_mu"};
-  options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
+  options->Add<ChoiceOption>(kScoreTypeId, score_type) = "WDL_mu";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0345f;
-  options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.8f;
   options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.0027f;
   options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kMovesLeftScaledFactorId, -2.0f, 2.0f) = 1.6521f;
@@ -522,18 +552,14 @@ void SearchParams::Populate(OptionsParser* options) {
       -0.6521f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
-  options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
-  std::vector<std::string> perspective = {"sidetomove", "white", "black",
-                                          "none"};
-  options->Add<ChoiceOption>(kContemptPerspectiveId, perspective) =
-      "sidetomove";
+  options->Add<FloatOption>(kDrawScoreId, -1.0f, 1.0f) = 0.0f;
+  std::vector<std::string> mode = {"play", "white_side_analysis",
+                                   "black_side_analysis", "disable"};
+  options->Add<ChoiceOption>(kContemptModeId, mode) = "play";
   // The default kContemptId is empty, so the initial contempt value is taken
   // from kUCIRatingAdvId. Adding any value (without name) in the comma
   // separated kContemptId list will override this.
-  options->Add<StringOption>(kContemptId) = "0";
+  options->Add<StringOption>(kContemptId) = "";
   options->Add<FloatOption>(kContemptMaxValueId, 0, 10000.0f) = 420.0f;
   options->Add<FloatOption>(kWDLCalibrationEloId, 0, 10000.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
@@ -557,6 +583,21 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctUtilityStdevScaleId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctUtilityStdevPriorWeightId, 0.0f, 10000.0f) =
       10.0f;
+  options->Add<FloatOption>(kCpuctAdvantageSlopeId, -1.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kCpuctAdvantageCapId, 0.0f, 1.0f) = 1.0f;
+  options->Add<BoolOption>(kUseVarianceScalingId) = false;
+  options->Add<BoolOption>(kMoveRuleBucketingId) = true;
+  std::vector<std::string> reported_nodes = {"nodes", "queries", "playouts",
+                                             "legacy"};
+  options->Add<ChoiceOption>(kReportedNodesId, reported_nodes) = "nodes";
+  options->Add<FloatOption>(kUncertaintyWeightingCapId, 0.0f, 10000.0f) = 1.03f;
+  options->Add<FloatOption>(kUncertaintyWeightingCoefficientId, 0.0f, 100.0f) =
+      0.13f;
+  options->Add<FloatOption>(kUncertaintyWeightingExponentId, -10.0f, 0.0f) =
+      -0.88f;
+  options->Add<BoolOption>(kUseUncertaintyWeightingId) = false;
+  options->Add<FloatOption>(kEasyEvalWeightDecayId, 0.0f, 100.0f) = 1.0f;
+  options->Add<BoolOption>(kSearchSpinBackoffId) = false;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -625,16 +666,10 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMovesLeftQuadraticFactorId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
-      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId) / 100.0f},
-      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
-      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
-      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
-      kContemptPerspective(EncodeContemptPerspective(
-          options.Get<std::string>(kContemptPerspectiveId))),
-      kContempt(options.IsDefault<std::string>(kContemptId)
-                    ? options.Get<float>(kUCIRatingAdvId)
-                    : GetContempt(options.Get<std::string>(kUCIOpponentId),
-                                  options.Get<std::string>(kContemptId))),
+      kDrawScore(options.Get<float>(kDrawScoreId)),
+      kContempt(GetContempt(options.Get<std::string>(kUCIOpponentId),
+                            options.Get<std::string>(kContemptId),
+                            options.Get<float>(kUCIRatingAdvId))),
       kWDLRescaleParams(
           options.Get<float>(kWDLCalibrationEloId) == 0
               ? AccurateWDLRescaleParams(
@@ -674,14 +709,22 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctUtilityStdevPrior(options.Get<float>(kCpuctUtilityStdevPriorId)),
       kCpuctUtilityStdevScale(options.Get<float>(kCpuctUtilityStdevScaleId)),
       kCpuctUtilityStdevPriorWeight(
-          options.Get<float>(kCpuctUtilityStdevPriorWeightId)) {
-  if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
-          std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
-      1.0f) {
-    throw Exception(
-        "max{|sidetomove|+|opponent|} + max{|white|+|black|} draw score must "
-        "be <= 100");
-  }
-}
+          options.Get<float>(kCpuctUtilityStdevPriorWeightId)),
+      kCpuctAdvantageSlope(
+				          options.Get<float>(kCpuctAdvantageSlopeId)),
+      kCpuctAdvantageCap(options.Get<float>(kCpuctAdvantageCapId)),
+
+	
+    
+      kUseVarianceScaling(options.Get<bool>(kUseVarianceScalingId)),
+      kMoveRuleBucketing(options.Get<bool>(kMoveRuleBucketingId)),
+      kUncertaintyWeightingCap(options.Get<float>(kUncertaintyWeightingCapId)),
+      kUncertaintyWeightingCoefficient(
+          options.Get<float>(kUncertaintyWeightingCoefficientId)),
+      kUncertaintyWeightingExponent(
+          options.Get<float>(kUncertaintyWeightingExponentId)),
+      kUseUncertaintyWeighting(options.Get<bool>(kUseUncertaintyWeightingId)),
+      kEasyEvalWeightDecay(options.Get<float>(kEasyEvalWeightDecayId)),
+      kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}
 
 }  // namespace lczero
