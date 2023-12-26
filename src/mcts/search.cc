@@ -456,6 +456,16 @@ inline float ComputeAdvantageFactor(const SearchParams& params, float q) {
 }	
 
 
+inline float ComputeUncertaintyFactor(const SearchParams& params, float e) {
+  float min_factor = params.GetCpuctUncertaintyMinFactor();
+  float max_factor = params.GetCpuctUncertaintyMaxFactor();
+  float min_uncertainty = params.GetCpuctUncertaintyMinUncertainty();
+  float slope = params.GetCpuctUncertaintySlope();
+  float factor = min_factor + slope * fmax(e - min_uncertainty, 0);
+  factor = fmin(factor, max_factor);
+  return factor;
+}
+
 inline float ComputeStdev(const SearchParams& params, float q, float weight,
                           float vs) {
   float util_sq_avg = vs;
@@ -495,6 +505,19 @@ inline float ComputeStdevFactor(const SearchParams& params, Node* node) {
                             node->GetVS());
 }
 
+inline float ComputeCpuctFactor(const SearchParams& params, float weight,
+                                float q, float vs, float e, bool is_root_node) {
+  const float stdev_factor = params.GetUseVarianceScaling()
+                                 ? ComputeStdevFactor(params, q, weight, vs)
+                                 : 1.0f;
+  const float advantage_factor = ComputeAdvantageFactor(params, q);
+
+  const float uncertainty_factor = ComputeUncertaintyFactor(params, e);
+
+  return uncertainty_factor * advantage_factor * stdev_factor;
+}
+
+
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
@@ -513,30 +536,26 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
              : -node->GetQ(-draw_score) - value * std::sqrt(visited_pol);
 }
 
-inline float ComputeCpuct(const SearchParams& params, float weight,
-                          bool is_root_node) {
+inline float ComputeCpuct(const SearchParams& params, float weight, bool is_root_node) {
   const float init = params.GetCpuct(is_root_node);
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
-  return init + (k ? k * FastLog((weight + base) / base) : 0.0f);
+
+  return (init + (k ? k * FastLog((weight + base) / base) : 0.0f));
 }
 
 inline float ComputeCpuct(const SearchParams& params, float weight, float q,
-                          float vs, bool is_root_node) {
+                          float vs, float e, bool is_root_node) {
   const float init = params.GetCpuct(is_root_node);
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
 
-  const float stdev_factor = params.GetUseVarianceScaling()
-                                   ? ComputeStdevFactor(params, q, weight, vs)
-                                   : 1.0f;
-  const float advantage_factor = ComputeAdvantageFactor(params, q);
-	
+  const float factor = ComputeCpuctFactor(params, weight, q, vs, e,
+																					is_root_node);
 
-	
-  return advantage_factor * stdev_factor *
-         (init + (k ? k * FastLog((weight + base) / base) : 0.0f));
+  return factor * (init + (k ? k * FastLog((weight + base) / base) : 0.0f));
 }
+
 
 inline float ComputeWeight(const SearchParams& params, float uncertainty) {
   if (!params.GetUseUncertaintyWeighting()) return 1.0f;
@@ -555,7 +574,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float draw_score = GetDrawScore(is_odd_depth);
   const float fpu = GetFpu(params_, node, is_root, draw_score);
   const float cpuct = ComputeCpuct(params_, node->GetWeight(),
-                                   node->GetWL(), node->GetVS(), is_root);
+                                   node->GetWL(), node->GetVS(), node->GetE(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   std::vector<EdgeAndNode> edges;
@@ -1815,8 +1834,11 @@ void SearchWorker::PickNodesToExtendTask(
         float q = child->GetQ(draw_score);
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
+      const float cpuct_factor =
+          ComputeCpuctFactor(params_, node->GetWeight(), node->GetWL(),
+                             node->GetVS(), node->GetE(), is_root_node);
       const float fpu =
-          GetFpu(params_, node, is_root_node, draw_score, visited_pol);
+          GetFpu(params_, node, is_root_node, draw_score, visited_pol) * cpuct_factor;
       for (int i = 0; i < max_needed; i++) {
         if (current_util[i] == std::numeric_limits<float>::lowest()) {
           current_util[i] = fpu + m_evaluator.GetDefaultMUtility();
@@ -1824,8 +1846,7 @@ void SearchWorker::PickNodesToExtendTask(
       }
 
       const float cpuct =
-          ComputeCpuct(params_, node->GetWeight(), node->GetWL(),
-                       node->GetVS(), is_root_node);
+          ComputeCpuct(params_, node->GetWeight(), is_root_node) * cpuct_factor;
       const float puct_mult =
           cpuct * std::sqrt(std::max(node->GetWeight(), 1e-5f));
       int cache_filled_idx = -1;

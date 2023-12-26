@@ -483,6 +483,21 @@ const OptionId SearchParams::kEasyEvalWeightDecayId{
     "How much to decay the weight of positions that were easy to evaluate"
     "(i.e., the low node or a twin of the low node already existed). [0, 1] "
     "recommended. The feature is turned off when the value is 1."};
+const OptionId SearchParams::kCpuctUncertaintyMinFactorId{
+    "cpuct-uncertainty-min-factor", "CpuctUncertaintyMinFactor",
+    "Minimum factor the CPUCT multiplier takes."};
+const OptionId SearchParams::kCpuctUncertaintyMaxFactorId{
+    "cpuct-uncertainty-max-factor", "CpuctUncertaintyMaxFactor",
+    "Maximum factor the CPUCT multiplier takes."};
+const OptionId SearchParams::kCpuctUncertaintyMinUncertaintyId{
+    "cpuct-uncertainty-min-uncertainty", "CpuctUncertaintyMinUncertainty",
+    "..."};
+const OptionId SearchParams::kCpuctUncertaintySlopeId{
+    "cpuct-uncertainty-slope", "CpuctUncertaintySlope",
+    "..."};
+
+
+
 const OptionId SearchParams::kSearchSpinBackoffId{
     "search-spin-backoff", "SearchSpinBackoff",
     "Enable backoff for the spin lock that acquires available searcher."};
@@ -597,6 +612,15 @@ void SearchParams::Populate(OptionsParser* options) {
       -0.88f;
   options->Add<BoolOption>(kUseUncertaintyWeightingId) = false;
   options->Add<FloatOption>(kEasyEvalWeightDecayId, 0.0f, 100.0f) = 1.0f;
+
+
+  options->Add<FloatOption>(kCpuctUncertaintyMinFactorId, 0.0f, 100.0f) = 1.0f;
+  options->Add<FloatOption>(kCpuctUncertaintyMaxFactorId, 0.0f, 100.0f) = 1.0f;
+  options->Add<FloatOption>(kCpuctUncertaintyMinUncertaintyId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kCpuctUncertaintySlopeId, 0.0f, 10000.0f) = 10.0f;
+
+
+
   options->Add<BoolOption>(kSearchSpinBackoffId) = false;
 
   options->HideOption(kNoiseEpsilonId);
@@ -724,6 +748,13 @@ SearchParams::SearchParams(const OptionsDict& options)
       kUncertaintyWeightingExponent(
           options.Get<float>(kUncertaintyWeightingExponentId)),
       kUseUncertaintyWeighting(options.Get<bool>(kUseUncertaintyWeightingId)),
+
+
+      kCpuctUncertaintyMinFactor(options.Get<float>(kCpuctUncertaintyMinFactorId)), 
+      kCpuctUncertaintyMaxFactor(options.Get<float>(kCpuctUncertaintyMaxFactorId)),
+      kCpuctUncertaintyMinUncertainty(options.Get<float>(kCpuctUncertaintyMinUncertaintyId)),
+      kCpuctUncertaintySlope(options.Get<float>(kCpuctUncertaintySlopeId)),
+
       kEasyEvalWeightDecay(options.Get<float>(kEasyEvalWeightDecayId)),
       kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}
 

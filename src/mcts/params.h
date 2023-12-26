@@ -164,6 +164,15 @@ class SearchParams {
   float GetCpuctAdvantageCap() const { return kCpuctAdvantageCap; }
 
 
+  float GetCpuctUncertaintyMinFactor() const { return kCpuctUncertaintyMinFactor; }
+
+  float GetCpuctUncertaintyMaxFactor() const { return kCpuctUncertaintyMaxFactor; }
+
+  float GetCpuctUncertaintyMinUncertainty() const { return kCpuctUncertaintyMinUncertainty; }
+
+	float GetCpuctUncertaintySlope() const { return kCpuctUncertaintySlope; }
+
+
   bool GetUseVarianceScaling() const { return kUseVarianceScaling; }
   bool GetMoveRuleBucketing() const { return kMoveRuleBucketing; }
   std::string GetReportedNodes() const {
@@ -269,6 +278,14 @@ class SearchParams {
   static const OptionId kEasyEvalWeightDecayId;
   static const OptionId kSearchSpinBackoffId;
 
+
+  static const OptionId kCpuctUncertaintyMinFactorId;
+  static const OptionId kCpuctUncertaintyMaxFactorId;
+  static const OptionId kCpuctUncertaintyMinUncertaintyId;
+  static const OptionId kCpuctUncertaintySlopeId;
+
+
+
  private:
   const OptionsDict& options_;
   // Cached parameter values. Values have to be cached if either:
@@ -337,6 +354,12 @@ class SearchParams {
   const bool kUseUncertaintyWeighting;
   const float kEasyEvalWeightDecay;
   const bool kSearchSpinBackoff;
+
+
+  const float kCpuctUncertaintyMinFactor;
+  const float kCpuctUncertaintyMaxFactor;
+  const float kCpuctUncertaintyMinUncertainty;
+  const float kCpuctUncertaintySlope;
 
 };
 
