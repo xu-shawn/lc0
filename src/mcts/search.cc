@@ -460,9 +460,10 @@ inline float ComputeUncertaintyFactor(const SearchParams& params, float e) {
   float min_factor = params.GetCpuctUncertaintyMinFactor();
   float max_factor = params.GetCpuctUncertaintyMaxFactor();
   float min_uncertainty = params.GetCpuctUncertaintyMinUncertainty();
-  float slope = params.GetCpuctUncertaintySlope();
-  float factor = min_factor + slope * fmax(e - min_uncertainty, 0);
-  factor = fmin(factor, max_factor);
+  float max_uncertainty = params.GetCpuctUncertaintyMaxUncertainty();
+  e = std::clamp(e, min_uncertainty, max_uncertainty);
+  float factor = min_factor + (max_factor - min_factor) * (e - min_uncertainty) /
+                                  (max_uncertainty - min_uncertainty + 1e-5);
   return factor;
 }
 
@@ -613,6 +614,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
             6, 5);
       print(oss, "(STDF: ",
             ComputeStdevFactor(params_, n->GetWL(), n->GetWeight(), n->GetVS()),
+            ") ", 6, 5);
+      print(oss, "(UNCF: ",
+            ComputeUncertaintyFactor(params_, n->GetE()),
             ") ", 6, 5);
       print(oss, "(VS: ", n->GetVS(), ") ", 6, 5);
       print(oss, "(E: ", n->GetE(), ") ", 6, 5);

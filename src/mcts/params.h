@@ -170,7 +170,9 @@ class SearchParams {
 
   float GetCpuctUncertaintyMinUncertainty() const { return kCpuctUncertaintyMinUncertainty; }
 
-	float GetCpuctUncertaintySlope() const { return kCpuctUncertaintySlope; }
+	float GetCpuctUncertaintyMaxUncertainty() const {
+    return kCpuctUncertaintyMaxUncertainty;
+  }
 
 
   bool GetUseVarianceScaling() const { return kUseVarianceScaling; }
@@ -282,7 +284,7 @@ class SearchParams {
   static const OptionId kCpuctUncertaintyMinFactorId;
   static const OptionId kCpuctUncertaintyMaxFactorId;
   static const OptionId kCpuctUncertaintyMinUncertaintyId;
-  static const OptionId kCpuctUncertaintySlopeId;
+  static const OptionId kCpuctUncertaintyMaxUncertaintyId;
 
 
 
@@ -359,7 +361,7 @@ class SearchParams {
   const float kCpuctUncertaintyMinFactor;
   const float kCpuctUncertaintyMaxFactor;
   const float kCpuctUncertaintyMinUncertainty;
-  const float kCpuctUncertaintySlope;
+  const float kCpuctUncertaintyMaxUncertainty;
 
 };
 

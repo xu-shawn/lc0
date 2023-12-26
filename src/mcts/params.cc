@@ -491,10 +491,10 @@ const OptionId SearchParams::kCpuctUncertaintyMaxFactorId{
     "Maximum factor the CPUCT multiplier takes."};
 const OptionId SearchParams::kCpuctUncertaintyMinUncertaintyId{
     "cpuct-uncertainty-min-uncertainty", "CpuctUncertaintyMinUncertainty",
-    "..."};
-const OptionId SearchParams::kCpuctUncertaintySlopeId{
-    "cpuct-uncertainty-slope", "CpuctUncertaintySlope",
-    "..."};
+    "Uncertainty at which the CPUCT uncertainty factor achieves its minimum."};
+const OptionId SearchParams::kCpuctUncertaintyMaxUncertaintyId{
+    "cpuct-uncertainty-max-uncertainty", "CpuctUncertaintyMaxUncertainty",
+    "Uncertainty at which the CPUCT uncertainty factor achieves its maximum."};
 
 
 
@@ -617,7 +617,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctUncertaintyMinFactorId, 0.0f, 100.0f) = 1.0f;
   options->Add<FloatOption>(kCpuctUncertaintyMaxFactorId, 0.0f, 100.0f) = 1.0f;
   options->Add<FloatOption>(kCpuctUncertaintyMinUncertaintyId, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kCpuctUncertaintySlopeId, 0.0f, 10000.0f) = 10.0f;
+  options->Add<FloatOption>(kCpuctUncertaintyMaxUncertaintyId, 0.0f, 1.0f) = 0.1f;
 
 
 
@@ -753,7 +753,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctUncertaintyMinFactor(options.Get<float>(kCpuctUncertaintyMinFactorId)), 
       kCpuctUncertaintyMaxFactor(options.Get<float>(kCpuctUncertaintyMaxFactorId)),
       kCpuctUncertaintyMinUncertainty(options.Get<float>(kCpuctUncertaintyMinUncertaintyId)),
-      kCpuctUncertaintySlope(options.Get<float>(kCpuctUncertaintySlopeId)),
+      kCpuctUncertaintyMaxUncertainty(options.Get<float>(kCpuctUncertaintyMaxUncertaintyId)),
 
       kEasyEvalWeightDecay(options.Get<float>(kEasyEvalWeightDecayId)),
       kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}
