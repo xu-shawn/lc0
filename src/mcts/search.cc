@@ -501,6 +501,19 @@ inline float ComputeStdevFactor(const SearchParams& params, float q,
   return stdev_factor;
 }
 
+inline float ComputeDesperationFactor(const SearchParams& params, float q,
+  float weight) {
+
+  const float prior_weight = params.GetDesperationPriorWeight();
+  const float low = params.GetDesperationLow(); const float high = params.GetDesperationHigh();
+
+  q = abs(q);
+  float factor = (q <= low || q >= high) ? params.GetDesperationMultiplier() : 1.0f;
+  return 1.0f + (factor - 1.0f) * weight / (prior_weight + weight);
+
+
+}
+
 inline float ComputeStdevFactor(const SearchParams& params, Node* node) {
   return ComputeStdevFactor(params, node->GetWL(), node->GetWeight(),
                             node->GetVS());
@@ -515,7 +528,9 @@ inline float ComputeCpuctFactor(const SearchParams& params, float weight,
 
   const float uncertainty_factor = ComputeUncertaintyFactor(params, e);
 
-  return uncertainty_factor * advantage_factor * stdev_factor;
+  const float desperation_factor = ComputeDesperationFactor(params, q, weight);
+
+  return uncertainty_factor * advantage_factor * stdev_factor * desperation_factor;
 }
 
 
@@ -1842,7 +1857,7 @@ void SearchWorker::PickNodesToExtendTask(
           ComputeCpuctFactor(params_, node->GetWeight(), node->GetWL(),
                              node->GetVS(), node->GetE(), is_root_node);
       const float fpu =
-          GetFpu(params_, node, is_root_node, draw_score, visited_pol) * cpuct_factor;
+          GetFpu(params_, node, is_root_node, draw_score, visited_pol);
       for (int i = 0; i < max_needed; i++) {
         if (current_util[i] == std::numeric_limits<float>::lowest()) {
           current_util[i] = fpu + m_evaluator.GetDefaultMUtility();

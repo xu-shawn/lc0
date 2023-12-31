@@ -496,6 +496,19 @@ const OptionId SearchParams::kCpuctUncertaintyMaxUncertaintyId{
     "cpuct-uncertainty-max-uncertainty", "CpuctUncertaintyMaxUncertainty",
     "Uncertainty at which the CPUCT uncertainty factor achieves its maximum."};
 
+const OptionId SearchParams::kDesperationMultiplierId{
+    "desperation-multiplier", "DesperationMultiplier",
+    "How much to multiply the CPUCT by in desperate positions."};
+const OptionId SearchParams::kDesperationLowId{
+    "desperation-low", "DesperationLow",
+    "Where drawish desperation starts."};
+const OptionId SearchParams::kDesperationHighId{
+    "desperation-high", "DesperationHigh",
+    "Where decisive desperation starts."};
+const OptionId SearchParams::kDesperationPriorWeightId{
+    "desperation-prior-weight", "DesperationPriorWeight",
+    "Roughly how much weight a node needs for desperation to take effect."};
+
 
 
 const OptionId SearchParams::kSearchSpinBackoffId{
@@ -618,6 +631,11 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctUncertaintyMaxFactorId, 0.0f, 100.0f) = 1.0f;
   options->Add<FloatOption>(kCpuctUncertaintyMinUncertaintyId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctUncertaintyMaxUncertaintyId, 0.0f, 1.0f) = 0.1f;
+
+  options->Add<FloatOption>(kDesperationMultiplierId, 0.0f, 100.0f) = 1.0f;
+  options->Add<FloatOption>(kDesperationLowId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kDesperationHighId, 0.0f, 1.0f) = 1.0f;
+  options->Add<FloatOption>(kDesperationPriorWeightId, 0.0f, 10000.0f) = 50.0f;
 
 
 
@@ -754,6 +772,11 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctUncertaintyMaxFactor(options.Get<float>(kCpuctUncertaintyMaxFactorId)),
       kCpuctUncertaintyMinUncertainty(options.Get<float>(kCpuctUncertaintyMinUncertaintyId)),
       kCpuctUncertaintyMaxUncertainty(options.Get<float>(kCpuctUncertaintyMaxUncertaintyId)),
+
+      kDesperationMultiplier(options.Get<float>(kDesperationMultiplierId)),
+      kDesperationLow(options.Get<float>(kDesperationLowId)),
+      kDesperationHigh(options.Get<float>(kDesperationHighId)),
+      kDesperationPriorWeight(options.Get<float>(kDesperationPriorWeightId)),
 
       kEasyEvalWeightDecay(options.Get<float>(kEasyEvalWeightDecayId)),
       kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}

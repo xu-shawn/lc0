@@ -193,6 +193,18 @@ class SearchParams {
   float GetEasyEvalWeightDecay() const {
     return kEasyEvalWeightDecay;
   }
+
+  //  const float kDesperationMultiplier;
+  //const float kDesperationLow;
+  //const float kDesperationHigh;
+  //const float kDesperationPriorWeight;
+
+  float GetDesperationMultiplier() const { return kDesperationMultiplier; }
+  float GetDesperationLow() const { return kDesperationLow; }
+  float GetDesperationHigh() const { return kDesperationHigh; }
+  float GetDesperationPriorWeight() const { return kDesperationPriorWeight; }
+
+
   bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
 
   // Search parameter IDs.
@@ -286,6 +298,12 @@ class SearchParams {
   static const OptionId kCpuctUncertaintyMinUncertaintyId;
   static const OptionId kCpuctUncertaintyMaxUncertaintyId;
 
+  static const OptionId kDesperationMultiplierId;
+  static const OptionId kDesperationLowId;
+  static const OptionId kDesperationHighId;
+  static const OptionId kDesperationPriorWeightId;
+  
+
 
 
  private:
@@ -362,6 +380,13 @@ class SearchParams {
   const float kCpuctUncertaintyMaxFactor;
   const float kCpuctUncertaintyMinUncertainty;
   const float kCpuctUncertaintyMaxUncertainty;
+
+
+  const float kDesperationMultiplier;
+  const float kDesperationLow;
+  const float kDesperationHigh;
+  const float kDesperationPriorWeight;
+
 
 };
 
