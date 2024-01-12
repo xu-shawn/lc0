@@ -537,10 +537,11 @@ inline float ComputeCpuctFactor(const SearchParams& params, float weight,
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
+	// we shouldn't push the value below -1
   return params.GetFpuAbsolute(is_root_node)
              ? value
-             : -node->GetQ(-draw_score) -
-                   value * std::sqrt(node->GetVisitedPolicy());
+             : fmax(-node->GetQ(-draw_score) -
+                        value * std::sqrt(node->GetVisitedPolicy()), -1.0f);
 }
 
 // Faster version for if visited_policy is readily available already.
@@ -549,7 +550,8 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
              ? value
-             : -node->GetQ(-draw_score) - value * std::sqrt(visited_pol);
+             : fmax(-node->GetQ(-draw_score) -
+                        value * std::sqrt(visited_pol), -1.0f);
 }
 
 inline float ComputeCpuct(const SearchParams& params, float weight, bool is_root_node) {
