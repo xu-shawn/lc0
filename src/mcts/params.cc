@@ -449,12 +449,6 @@ const OptionId SearchParams::kCpuctUtilityStdevScaleId{
 const OptionId SearchParams::kCpuctUtilityStdevPriorWeightId{
     "cpuct-utility-stdev-prior-weight", "CpuctUtilityStdevPriorWeight",
     "How much to weigh the prior value in the calculation of stdev."};
-const OptionId SearchParams::kCpuctAdvantageSlopeId{
-    "cpuct-advantage-slope", "CpuctAdvantageSlope",
-    "Slope in calculation of CPUCT from advantage."};
-const OptionId SearchParams::kCpuctAdvantageCapId{
-    "cpuct-advantage-cap", "CpuctAdvantageCap",
-    "Cap value for the calculation of CPUCT from advantage."};
 const OptionId SearchParams::kUseVarianceScalingId{
     "use-variance-scaling", "UseVarianceScaling",
     "Whether to use variance scaling in CPUCT calculation."};
@@ -495,6 +489,9 @@ const OptionId SearchParams::kCpuctUncertaintyMinUncertaintyId{
 const OptionId SearchParams::kCpuctUncertaintyMaxUncertaintyId{
     "cpuct-uncertainty-max-uncertainty", "CpuctUncertaintyMaxUncertainty",
     "Uncertainty at which the CPUCT uncertainty factor achieves its maximum."};
+const OptionId SearchParams::kUseCpuctUncertaintyId{
+    "use-cpuct-uncertainty", "UseCpuctUncertainty",
+    "Whether to use Cpuct uncertainty."};
 
 const OptionId SearchParams::kDesperationMultiplierId{
     "desperation-multiplier", "DesperationMultiplier",
@@ -508,6 +505,9 @@ const OptionId SearchParams::kDesperationHighId{
 const OptionId SearchParams::kDesperationPriorWeightId{
     "desperation-prior-weight", "DesperationPriorWeight",
     "Roughly how much weight a node needs for desperation to take effect."};
+const OptionId SearchParams::kUseDesperationId{
+    "use-desperation", "UseDesperation",
+    "Whether to use desperation."};
 
 
 
@@ -611,8 +611,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctUtilityStdevScaleId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctUtilityStdevPriorWeightId, 0.0f, 10000.0f) =
       10.0f;
-  options->Add<FloatOption>(kCpuctAdvantageSlopeId, -1.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kCpuctAdvantageCapId, 0.0f, 1.0f) = 1.0f;
   options->Add<BoolOption>(kUseVarianceScalingId) = false;
   options->Add<BoolOption>(kMoveRuleBucketingId) = true;
   std::vector<std::string> reported_nodes = {"nodes", "queries", "playouts",
@@ -627,15 +625,18 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kEasyEvalWeightDecayId, 0.0f, 100.0f) = 1.0f;
 
 
-  options->Add<FloatOption>(kCpuctUncertaintyMinFactorId, 0.0f, 100.0f) = 1.0f;
-  options->Add<FloatOption>(kCpuctUncertaintyMaxFactorId, 0.0f, 100.0f) = 1.0f;
+  options->Add<FloatOption>(kCpuctUncertaintyMinFactorId, 0.0f, 100.0f) = 0.8241387f;
+  options->Add<FloatOption>(kCpuctUncertaintyMaxFactorId, 0.0f, 100.0f) = 1.8517282f;
   options->Add<FloatOption>(kCpuctUncertaintyMinUncertaintyId, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kCpuctUncertaintyMaxUncertaintyId, 0.0f, 1.0f) = 0.1f;
+  options->Add<FloatOption>(kCpuctUncertaintyMaxUncertaintyId, 0.0f, 1.0f) = 0.11683f;
+  options->Add<BoolOption>(kUseCpuctUncertaintyId) = false;
 
-  options->Add<FloatOption>(kDesperationMultiplierId, 0.0f, 100.0f) = 1.0f;
-  options->Add<FloatOption>(kDesperationLowId, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kDesperationHighId, 0.0f, 1.0f) = 1.0f;
-  options->Add<FloatOption>(kDesperationPriorWeightId, 0.0f, 10000.0f) = 50.0f;
+  options->Add<FloatOption>(kDesperationMultiplierId, 0.0f, 100.0f) = 1.5f;
+  options->Add<FloatOption>(kDesperationLowId, 0.0f, 1.0f) = 0.25f;
+  options->Add<FloatOption>(kDesperationHighId, 0.0f, 1.0f) = 0.75f;
+  options->Add<FloatOption>(kDesperationPriorWeightId, 0.0f, 10000.0f) = 500.0f;
+  options->Add<BoolOption>(kUseDesperationId) = false;
+
 
 
 
@@ -752,9 +753,6 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctUtilityStdevScale(options.Get<float>(kCpuctUtilityStdevScaleId)),
       kCpuctUtilityStdevPriorWeight(
           options.Get<float>(kCpuctUtilityStdevPriorWeightId)),
-      kCpuctAdvantageSlope(
-				          options.Get<float>(kCpuctAdvantageSlopeId)),
-      kCpuctAdvantageCap(options.Get<float>(kCpuctAdvantageCapId)),
 
 	
     
@@ -772,11 +770,15 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctUncertaintyMaxFactor(options.Get<float>(kCpuctUncertaintyMaxFactorId)),
       kCpuctUncertaintyMinUncertainty(options.Get<float>(kCpuctUncertaintyMinUncertaintyId)),
       kCpuctUncertaintyMaxUncertainty(options.Get<float>(kCpuctUncertaintyMaxUncertaintyId)),
+      kUseCpuctUncertainty(options.Get<bool>(kUseCpuctUncertaintyId)),
+
 
       kDesperationMultiplier(options.Get<float>(kDesperationMultiplierId)),
       kDesperationLow(options.Get<float>(kDesperationLowId)),
       kDesperationHigh(options.Get<float>(kDesperationHighId)),
       kDesperationPriorWeight(options.Get<float>(kDesperationPriorWeightId)),
+      kUseDesperation(options.Get<bool>(kUseDesperationId)),
+
 
       kEasyEvalWeightDecay(options.Get<float>(kEasyEvalWeightDecayId)),
       kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}

@@ -160,8 +160,6 @@ class SearchParams {
     return kCpuctUtilityStdevPriorWeight;
   }
 
-	float GetCpuctAdvantageSlope() const { return kCpuctAdvantageSlope; }
-  float GetCpuctAdvantageCap() const { return kCpuctAdvantageCap; }
 
 
   float GetCpuctUncertaintyMinFactor() const { return kCpuctUncertaintyMinFactor; }
@@ -173,6 +171,9 @@ class SearchParams {
 	float GetCpuctUncertaintyMaxUncertainty() const {
     return kCpuctUncertaintyMaxUncertainty;
   }
+
+  bool GetUseCpuctUncertainty() const { return kUseCpuctUncertainty; }
+
 
 
   bool GetUseVarianceScaling() const { return kUseVarianceScaling; }
@@ -194,15 +195,11 @@ class SearchParams {
     return kEasyEvalWeightDecay;
   }
 
-  //  const float kDesperationMultiplier;
-  //const float kDesperationLow;
-  //const float kDesperationHigh;
-  //const float kDesperationPriorWeight;
-
   float GetDesperationMultiplier() const { return kDesperationMultiplier; }
   float GetDesperationLow() const { return kDesperationLow; }
   float GetDesperationHigh() const { return kDesperationHigh; }
   float GetDesperationPriorWeight() const { return kDesperationPriorWeight; }
+  bool GetUseDesperation() const { return kUseDesperation;  }
 
 
   bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
@@ -278,8 +275,6 @@ class SearchParams {
   static const OptionId kCpuctUtilityStdevPriorId;
   static const OptionId kCpuctUtilityStdevScaleId;
   static const OptionId kCpuctUtilityStdevPriorWeightId;
-  static const OptionId kCpuctAdvantageSlopeId;
-  static const OptionId kCpuctAdvantageCapId;
 
 
   static const OptionId kUseVarianceScalingId;
@@ -297,11 +292,14 @@ class SearchParams {
   static const OptionId kCpuctUncertaintyMaxFactorId;
   static const OptionId kCpuctUncertaintyMinUncertaintyId;
   static const OptionId kCpuctUncertaintyMaxUncertaintyId;
+  static const OptionId kUseCpuctUncertaintyId;
 
   static const OptionId kDesperationMultiplierId;
   static const OptionId kDesperationLowId;
   static const OptionId kDesperationHighId;
   static const OptionId kDesperationPriorWeightId;
+  static const OptionId kUseDesperationId;
+
   
 
 
@@ -363,8 +361,6 @@ class SearchParams {
   const float kCpuctUtilityStdevPrior;
   const float kCpuctUtilityStdevScale;
   const float kCpuctUtilityStdevPriorWeight;
-  const float kCpuctAdvantageSlope;
-  const float kCpuctAdvantageCap;
 
   const bool kUseVarianceScaling;
   const bool kMoveRuleBucketing;
@@ -380,12 +376,14 @@ class SearchParams {
   const float kCpuctUncertaintyMaxFactor;
   const float kCpuctUncertaintyMinUncertainty;
   const float kCpuctUncertaintyMaxUncertainty;
+	const bool kUseCpuctUncertainty;
 
 
   const float kDesperationMultiplier;
   const float kDesperationLow;
   const float kDesperationHigh;
   const float kDesperationPriorWeight;
+  const bool kUseDesperation;
 
 
 };

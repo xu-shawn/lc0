@@ -447,15 +447,6 @@ float Search::GetDrawScore(bool is_odd_depth) const {
 namespace {
 
 
-inline float ComputeAdvantageFactor(const SearchParams& params, float q) {
-  float cap = params.GetCpuctAdvantageCap();
-  float slope = params.GetCpuctAdvantageSlope();
-  q = std::max(q, -cap);
-	q = std::min(q, cap);
-  return 1.0f + q * slope;
-}	
-
-
 inline float ComputeUncertaintyFactor(const SearchParams& params, float e) {
   float min_factor = params.GetCpuctUncertaintyMinFactor();
   float max_factor = params.GetCpuctUncertaintyMaxFactor();
@@ -524,13 +515,15 @@ inline float ComputeCpuctFactor(const SearchParams& params, float weight,
   const float stdev_factor = params.GetUseVarianceScaling()
                                  ? ComputeStdevFactor(params, q, weight, vs)
                                  : 1.0f;
-  const float advantage_factor = ComputeAdvantageFactor(params, q);
 
-  const float uncertainty_factor = ComputeUncertaintyFactor(params, e);
+  const float uncertainty_factor = params.GetUseCpuctUncertainty()
+                                      ? ComputeUncertaintyFactor(params, e) : 1.0f;
 
-  const float desperation_factor = ComputeDesperationFactor(params, q, weight);
+  const float desperation_factor =
+      params.GetUseDesperation() ?
+          ComputeDesperationFactor(params, q, weight) : 1.0f;
 
-  return uncertainty_factor * advantage_factor * stdev_factor * desperation_factor;
+  return uncertainty_factor * stdev_factor * desperation_factor;
 }
 
 
