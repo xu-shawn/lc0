@@ -625,10 +625,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kEasyEvalWeightDecayId, 0.0f, 100.0f) = 1.0f;
 
 
-  options->Add<FloatOption>(kCpuctUncertaintyMinFactorId, 0.0f, 100.0f) = 0.8241387f;
-  options->Add<FloatOption>(kCpuctUncertaintyMaxFactorId, 0.0f, 100.0f) = 1.8517282f;
+  options->Add<FloatOption>(kCpuctUncertaintyMinFactorId, 0.0f, 100.0f) = 0.8776107244713488f;
+  options->Add<FloatOption>(kCpuctUncertaintyMaxFactorId, 0.0f, 100.0f) = 1.7175437306867911f;
   options->Add<FloatOption>(kCpuctUncertaintyMinUncertaintyId, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kCpuctUncertaintyMaxUncertaintyId, 0.0f, 1.0f) = 0.11683f;
+  options->Add<FloatOption>(kCpuctUncertaintyMaxUncertaintyId, 0.0f, 1.0f) = 0.12087181807951577f;
   options->Add<BoolOption>(kUseCpuctUncertaintyId) = false;
 
   options->Add<FloatOption>(kDesperationMultiplierId, 0.0f, 100.0f) = 1.5f;
