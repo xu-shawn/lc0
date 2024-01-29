@@ -162,6 +162,12 @@ const OptionId SearchParams::kCpuctId{
 const OptionId SearchParams::kCpuctAtRootId{
     "cpuct-at-root", "CPuctAtRoot",
     "cpuct_init constant from \"UCT search\" algorithm, for root node."};
+const OptionId SearchParams::kCpuctExponentId{
+    "cpuct-exponent", "CPuctExponent",
+    "cpuct_exponent constant from \"UCT search\" algorithm."};
+const OptionId SearchParams::kCpuctExponentAtRootId{
+    "cpuct-exponent-at-root", "CPuctExponentAtRoot",
+    "cpuct_exponent constant from \"UCT search\" algorithm, for root node."};
 const OptionId SearchParams::kCpuctBaseId{
     "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
@@ -521,6 +527,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.745f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 1.745f;
+	options->Add<FloatOption>(kCpuctExponentId, 0.0f, 1.0f) = 0.5f;
+	options->Add<FloatOption>(kCpuctExponentAtRootId, 0.0f, 1.0f) = 0.5f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 38739.0f;
   options->Add<FloatOption>(kCpuctBaseAtRootId, 1.0f, 1000000000.0f) = 38739.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 3.894f;
@@ -671,6 +679,10 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
                                                       : kCpuctId)),
+		  kCpuctExponent(options.Get<float>(kCpuctExponentId)),
+			kCpuctExponentAtRoot(options.Get<float>(
+					options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctExponentAtRootId
+																											: kCpuctExponentId)),
       kCpuctBase(options.Get<float>(kCpuctBaseId)),
       kCpuctBaseAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctBaseAtRootId

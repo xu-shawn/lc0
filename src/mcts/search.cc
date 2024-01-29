@@ -1858,11 +1858,11 @@ void SearchWorker::PickNodesToExtendTask(
           current_util[i] = fpu + m_evaluator.GetDefaultMUtility();
         }
       }
-
+      const float puct_exponent = params_.GetCpuctExponent(is_root_node);
       const float cpuct =
           ComputeCpuct(params_, node->GetWeight(), is_root_node) * cpuct_factor;
       const float puct_mult =
-          cpuct * std::sqrt(std::max(node->GetWeight(), 1e-5f));
+          cpuct * std::pow(std::max(node->GetWeight(), 1e-5f), puct_exponent);
       int cache_filled_idx = -1;
       while (cur_limit > 0) {
         // Perform UCT for current node.

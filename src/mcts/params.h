@@ -59,6 +59,9 @@ class SearchParams {
   float GetCpuctBase(bool at_root) const {
     return at_root ? kCpuctBaseAtRoot : kCpuctBase;
   }
+  float GetCpuctExponent(bool at_root) const {
+    return at_root ? kCpuctExponentAtRoot : kCpuctExponent;
+  }
   float GetCpuctFactor(bool at_root) const {
     return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
   }
@@ -208,6 +211,8 @@ class SearchParams {
   static const OptionId kMiniBatchSizeId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
+  static const OptionId kCpuctExponentId;
+  static const OptionId kCpuctExponentAtRootId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctBaseAtRootId;
   static const OptionId kCpuctFactorId;
@@ -314,6 +319,8 @@ class SearchParams {
   //            trivial search optimizations.
   const float kCpuct;
   const float kCpuctAtRoot;
+  const float kCpuctExponent;
+  const float kCpuctExponentAtRoot;
   const float kCpuctBase;
   const float kCpuctBaseAtRoot;
   const float kCpuctFactor;
