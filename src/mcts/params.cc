@@ -498,7 +498,9 @@ const OptionId SearchParams::kCpuctUncertaintyMaxUncertaintyId{
 const OptionId SearchParams::kUseCpuctUncertaintyId{
     "use-cpuct-uncertainty", "UseCpuctUncertainty",
     "Whether to use Cpuct uncertainty."};
-
+const OptionId SearchParams::kJustFpuUncertaintyId{
+    "use-just-fpu-uncertainty", "UseJustFpuUncertainty",
+    "Whether to use Cpuct uncertainty only at unvisited nodes."};
 const OptionId SearchParams::kDesperationMultiplierId{
     "desperation-multiplier", "DesperationMultiplier",
     "How much to multiply the CPUCT by in desperate positions."};
@@ -514,6 +516,12 @@ const OptionId SearchParams::kDesperationPriorWeightId{
 const OptionId SearchParams::kUseDesperationId{
     "use-desperation", "UseDesperation",
     "Whether to use desperation."};
+
+const OptionId SearchParams::kTopPolicyBoostId{
+    "top-policy-boost", "TopPolicyBoost", "Minimum policy for top x policies. 0 disables."};
+const OptionId SearchParams::kTopPolicyNumBoostId{
+    "top-policy-num-boost", "TopPolicyNumBoost",
+    "Number of top moves to boost."};
 
 
 
@@ -637,6 +645,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctUncertaintyMaxFactorId, 0.0f, 100.0f) = 1.7175437306867911f;
   options->Add<FloatOption>(kCpuctUncertaintyMinUncertaintyId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctUncertaintyMaxUncertaintyId, 0.0f, 1.0f) = 0.12087181807951577f;
+  options->Add<BoolOption>(kJustFpuUncertaintyId) = false;
   options->Add<BoolOption>(kUseCpuctUncertaintyId) = false;
 
   options->Add<FloatOption>(kDesperationMultiplierId, 0.0f, 100.0f) = 1.5f;
@@ -644,6 +653,14 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kDesperationHighId, 0.0f, 1.0f) = 0.75f;
   options->Add<FloatOption>(kDesperationPriorWeightId, 0.0f, 10000.0f) = 500.0f;
   options->Add<BoolOption>(kUseDesperationId) = false;
+
+
+
+
+  options->Add<FloatOption>(kTopPolicyBoostId, 0.0f, 1.0f) = 0.05f;
+  options->Add<IntOption>(kTopPolicyNumBoostId, 0, 3) = 0;
+
+	
 
 
 
@@ -783,6 +800,10 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctUncertaintyMinUncertainty(options.Get<float>(kCpuctUncertaintyMinUncertaintyId)),
       kCpuctUncertaintyMaxUncertainty(options.Get<float>(kCpuctUncertaintyMaxUncertaintyId)),
       kUseCpuctUncertainty(options.Get<bool>(kUseCpuctUncertaintyId)),
+      kJustFpuUncertainty(options.Get<bool>(kJustFpuUncertaintyId)),
+
+				
+
 
 
       kDesperationMultiplier(options.Get<float>(kDesperationMultiplierId)),
@@ -790,6 +811,11 @@ SearchParams::SearchParams(const OptionsDict& options)
       kDesperationHigh(options.Get<float>(kDesperationHighId)),
       kDesperationPriorWeight(options.Get<float>(kDesperationPriorWeightId)),
       kUseDesperation(options.Get<bool>(kUseDesperationId)),
+
+			kTopPolicyBoost(options.Get<float>(kTopPolicyBoostId)),
+      kTopPolicyNumBoost(options.Get<int>(kTopPolicyNumBoostId)),
+
+			
 
 
       kEasyEvalWeightDecay(options.Get<float>(kEasyEvalWeightDecayId)),

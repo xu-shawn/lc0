@@ -177,6 +177,8 @@ class SearchParams {
 
   bool GetUseCpuctUncertainty() const { return kUseCpuctUncertainty; }
 
+	bool GetJustFpuUncertainty() const { return kJustFpuUncertainty; }
+
 
 
   bool GetUseVarianceScaling() const { return kUseVarianceScaling; }
@@ -203,6 +205,13 @@ class SearchParams {
   float GetDesperationHigh() const { return kDesperationHigh; }
   float GetDesperationPriorWeight() const { return kDesperationPriorWeight; }
   bool GetUseDesperation() const { return kUseDesperation;  }
+
+	
+
+	float GetTopPolicyBoost() const { return kTopPolicyBoost; }
+
+  int GetTopPolicyNumBoost() const { return kTopPolicyNumBoost; }
+
 
 
   bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
@@ -298,12 +307,19 @@ class SearchParams {
   static const OptionId kCpuctUncertaintyMinUncertaintyId;
   static const OptionId kCpuctUncertaintyMaxUncertaintyId;
   static const OptionId kUseCpuctUncertaintyId;
+  static const OptionId kJustFpuUncertaintyId;
+
 
   static const OptionId kDesperationMultiplierId;
   static const OptionId kDesperationLowId;
   static const OptionId kDesperationHighId;
   static const OptionId kDesperationPriorWeightId;
   static const OptionId kUseDesperationId;
+
+
+
+  static const OptionId kTopPolicyBoostId;
+  static const OptionId kTopPolicyNumBoostId;
 
   
 
@@ -383,7 +399,21 @@ class SearchParams {
   const float kCpuctUncertaintyMaxFactor;
   const float kCpuctUncertaintyMinUncertainty;
   const float kCpuctUncertaintyMaxUncertainty;
-	const bool kUseCpuctUncertainty;
+  const bool kUseCpuctUncertainty;
+  const bool kJustFpuUncertainty;
+
+      // const OptionId SearchParams::kJustFpuUncertaintyId{
+        //     "use-just-fpu-uncertainty", "UseJustFpuUncertainty",
+        //     "Whether to use Cpuct uncertainty only at unvisited nodes."};
+        //  const OptionId SearchParams::kTopPolicyBoostId{
+        //      "top-policy-boost", "TopPolicyBoost",
+        //      "Minimum policy for top x policies. 0 disables."};
+        //  const OptionId SearchParams::kTopPolicyNumBoostId{
+        //      "top-policy-num-boost", "TopPolicyNumBoost",
+        //      "Number of top moves to boost."};
+
+	const float kTopPolicyBoost;
+  const int kTopPolicyNumBoost;
 
 
   const float kDesperationMultiplier;

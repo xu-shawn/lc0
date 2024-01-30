@@ -10,6 +10,49 @@ Many of these features are taken from the Katago engine. A detailed description 
 
 ## New features in this fork
 
+### Desperation
+
+When a position seems to be very drawish/winnish, search can be widened by increasing CPUCT. 
+If the absolute value of the position's q value is at most `desperation-low` or at least
+`desperation-high` the CPUCT valued is increased by a factor of `desperation-multiplier`. 
+The prior weight is the weight at which the effect is a half of its max value. Recommended settings below.
+Disabled by default.
+
+```
+--desperation-multiplier=1.5
+--desperation-low=0.3
+--desperation-high=0.7
+--desperation-prior-weight=500
+--use-desperation=true 
+```
+
+### Policy boosting
+
+Some positions like
+
+```
+r3kb1N/pp2n1p1/2q1b3/5pPp/3pp2N/P2n3B/1P3P1P/1RBQ2KR w - - 5 11
+r3kb1r/1b3ppp/p2p1n2/3Pn3/Pq1N4/1B6/1P3PPP/R1BQR1K1 w kq - 1 3
+```
+
+with resp. best moves `Bg2` and `h3` have a strong move practically ignored because it has low policy.
+This feature sets a lowest baseline policy for the top few moves so that this doesn't happen.
+The top `top-policy-num-boost` are treated as if they had policy at least `top-policy-boost`. Recommended settings below.
+Disabled by default.
+
+```
+--top-policy-num-boost=3
+--top-policy-boost=0.05
+```
+
+
+### CPUCT exponent
+
+The exponent in the CPUCT formula can now be configured. Default is
+```
+--cpuct-exponent=0.5
+```
+
 ### Node reporting
 
 The nps statistic used to represent the number of playouts per second, which may not be what the user wants. The new `--reported-nodes` option specifies what the node count and nps statistic represent. 
@@ -22,6 +65,9 @@ The first 64 plies out of 100 are partitioned into 8 equally sized buckets. Befo
 The speedup can be anywhere from 5% to 50% depending on how transposition-heavy the position is. The gain was measured at 20 elo on STC. The nodes per second statistic is now calculated by the number of true nodes (called LowNode in the code) rather than edges (technically playouts, called Node in the code) so the reported value may be lower than on previous dag versions.
 
 This feature is enabled by default and can be disabled by specifying `--move-rule-bucketing=false` in the config.
+
+
+
 
 ### Multiple output heads
 

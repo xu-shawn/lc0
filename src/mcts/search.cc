@@ -1836,6 +1836,37 @@ void SearchWorker::PickNodesToExtendTask(
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
       }
+
+
+      			float max_util = -999;
+      float second_max_util = -999;
+      float third_max_util = -999;
+      // we can't boost unvisited nodes
+
+      for (Node* child : node->VisitedNodes()) {
+        int index = child->Index();
+        float q = child->GetWL();
+        float util = q + m_evaluator.GetMUtility(child, q);
+        current_util[index] = util;
+
+        if (util > max_util) {
+          third_max_util = second_max_util;
+          second_max_util = max_util;
+          max_util = util;
+        } else if (util > second_max_util) {
+          third_max_util = second_max_util;
+          second_max_util = util;
+        } else if (util > third_max_util) {
+          third_max_util = util;
+        }
+      }
+
+      float utils[] = {std::numeric_limits<float>::max(), max_util,
+                       second_max_util, third_max_util};
+      const float min_policy_boost_util = utils[params_.GetTopPolicyNumBoost()];
+
+      const float policy_boost = params_.GetTopPolicyBoost();
+			
       // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
       // the weirdness.
       const float draw_score =
@@ -1885,8 +1916,14 @@ void SearchWorker::PickNodesToExtendTask(
           float weightstarted = current_weightstarted[idx];
           const float util = current_util[idx];
           if (idx > cache_filled_idx) {
+            float p = cur_iters[idx].GetP();
+
+            if (util >= min_policy_boost_util) {
+              p = std::max(p, policy_boost);
+            }
+            
             current_score[idx] =
-                cur_iters[idx].GetP() * puct_mult / (1 + weightstarted) + util;
+              p * puct_mult / (1 + weightstarted) + util;
             cache_filled_idx++;
           }
           if (is_root_node) {
