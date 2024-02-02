@@ -340,7 +340,7 @@ class EncoderBlock {
                int heads, int size, float alpha,
                DataType* smolgen_global_scratch, int smolgen_global_size,
                int max_batch_size, ActivationFunction smolgen_act,
-               ActivationFunction ffn_act);
+               ActivationFunction ffn_act, bool fused_mha);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
@@ -361,12 +361,12 @@ class EncoderBlock {
 
   DataType *ln2_gammas, *ln2_betas;
 
-  DataType* smol_compress;
+  DataType *smol_compress;
   DataType *smol_dense1_w, *smol_dense1_b;
   DataType *smol_dense2_w, *smol_dense2_b;
   DataType *smol_ln1_gammas, *smol_ln1_betas;
   DataType *smol_ln2_gammas, *smol_ln2_betas;
-  DataType* smol_global;
+  DataType *smol_global;
 
   int mha_q_size_;
   int mha_k_size_;
@@ -382,6 +382,7 @@ class EncoderBlock {
   float alpha_;  // scale to apply to skip connection add
 
   const bool has_smolgen_;
+  const bool use_fused_mha_;
   const ActivationFunction smolgen_activation_;
   const ActivationFunction ffn_activation_;
 
@@ -409,8 +410,7 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
  public:
   AttentionPolicyHead(BaseLayer<DataType>* ip, const LegacyWeights& weights,
                       void* scratch, bool attention_body,
-                      ActivationFunction act, std::string policy_head,
-                      int max_batch_size);
+                      ActivationFunction act, std::string policy_head, int max_batch_size);
   ~AttentionPolicyHead();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -422,7 +422,7 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   DataType *ip_pol_w_, *ip_pol_b_;    // "embedding" in policy attention
   DataType *ip2_pol_w_, *ip2_pol_b_;  // "wq" in policy attention
   DataType *ip3_pol_w_, *ip3_pol_b_;  // "wk" in policy attention
-  DataType* ip4_pol_w_;               // "ppo" in policy attention
+  DataType *ip4_pol_w_;               // "ppo" in policy attention
 
   DataType *wqk_w_, *wqk_b_;  // allocation containing both "wq" and "wq"
 
@@ -475,7 +475,7 @@ class AttentionBody : public BaseLayer<DataType> {
  public:
   AttentionBody(const LegacyWeights& weights, void* scratch,
                 Activations activations, int num_res_blocks, int input_c,
-                int max_batch_size, bool new_encoding);
+                int max_batch_size, bool new_encoding, bool fused_mha);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -484,21 +484,16 @@ class AttentionBody : public BaseLayer<DataType> {
 
  private:
   // GPU allocations to hold various weights used by the attention net body.
-  DataType *ip_emb_pre_w_,
-      *ip_emb_pre_b_;               // input position preprocessing weights.
-  DataType *ip_emb_w_, *ip_emb_b_;  // "embedding" layer in net body
-  DataType *ip_emb_ln_g_,
-      *ip_emb_ln_b_;  // input embedding layernorm gamma and beta
-  DataType *ip_mult_gate_, *ip_add_gate_;  // input gating
-  DataType *ip_emb_ffn_d1_w_,
-      *ip_emb_ffn_d1_b_;  // input embedding FFN dense1 weights
-  DataType *ip_emb_ffn_d2_w_,
-      *ip_emb_ffn_d2_b_;  // input embedding FFN dense2 weights
-  DataType *ip_emb_ffn_ln_g_,
-      *ip_emb_ffn_ln_b_;      // input embedding FFN layernorm gamma and beta
-  DataType* smolgen_global_;  // global smolgen weights for all encoder layers
-  bool new_encoding_;         // flag for new position encoding
-  DataType* pos_encoding_;
+  DataType *ip_emb_pre_w_, *ip_emb_pre_b_;  // input position preprocessing weights.
+  DataType *ip_emb_w_, *ip_emb_b_;          // "embedding" layer in net body
+  DataType *ip_emb_ln_g_, *ip_emb_ln_b_;  // input embedding layernorm gamma and beta
+  DataType *ip_mult_gate_, *ip_add_gate_;   // input gating
+  DataType *ip_emb_ffn_d1_w_, *ip_emb_ffn_d1_b_;  // input embedding FFN dense1 weights
+  DataType *ip_emb_ffn_d2_w_, *ip_emb_ffn_d2_b_;  // input embedding FFN dense2 weights
+  DataType *ip_emb_ffn_ln_g_, *ip_emb_ffn_ln_b_;  // input embedding FFN layernorm gamma and beta
+  DataType *smolgen_global_;  // global smolgen weights for all encoder layers
+  bool new_encoding_;   // flag for new position encoding
+  DataType *pos_encoding_;
   int embedding_dense_size_;
   int embedding_op_size_;
   int embedding_ffn_size_;
@@ -511,6 +506,7 @@ class AttentionBody : public BaseLayer<DataType> {
   int smolgen_global_size_;
   const bool has_gating_;
   const bool has_smolgen_;
+  const bool use_fused_mha_;
 };
 
 // The value head implementation
@@ -527,8 +523,8 @@ class ValueHead : public BaseLayer<DataType> {
 
  public:
   ValueHead(BaseLayer<DataType>* ip, const LegacyWeights::ValueHead& weights,
-            void* scratch, bool attention_body, bool wdl, bool wdl_err,
-            ActivationFunction act, int max_batch_size, bool use_gemm_ex);
+                      void* scratch, bool attention_body, bool wdl, bool wdl_err,
+                      ActivationFunction act, int max_batch_size, bool use_gemm_ex);
   ~ValueHead();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -552,6 +548,7 @@ class ValueHead : public BaseLayer<DataType> {
   bool attention_body_;
   ActivationFunction act_;
 };
+
 
 }  // namespace cudnn_backend
 }  // namespace lczero
