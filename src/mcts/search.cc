@@ -547,24 +547,24 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                         value * std::sqrt(visited_pol), -1.0f);
 }
 
-inline float ComputeCpuct(const SearchParams& params, float weight, bool is_root_node) {
+inline float ComputeExploreFactor(const SearchParams& params, float weight, bool is_root_node) {
   const float init = params.GetCpuct(is_root_node);
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
 
-  return (init + (k ? k * FastLog((weight + base) / base) : 0.0f));
+  return (init + (k ? k * FastLog((weight + base) / base) : 0.0f)) *
+         std::pow(fmax(weight, 1e-5), params.GetCpuctExponent(is_root_node));
 }
 
-inline float ComputeCpuct(const SearchParams& params, float weight, float q,
+inline float ComputeExploreFactor(const SearchParams& params, float weight, float q,
                           float vs, float e, bool is_root_node) {
-  const float init = params.GetCpuct(is_root_node);
-  const float k = params.GetCpuctFactor(is_root_node);
-  const float base = params.GetCpuctBase(is_root_node);
+	
+  const float base_factor = ComputeExploreFactor(params, weight, is_root_node);
 
-  const float factor = ComputeCpuctFactor(params, weight, q, vs, e,
-																					is_root_node);
+  const float extra_factor = ComputeCpuctFactor(params, weight, q, vs, e,
+																					  is_root_node);
 
-  return factor * (init + (k ? k * FastLog((weight + base) / base) : 0.0f));
+  return base_factor * extra_factor ;
 }
 
 
@@ -584,10 +584,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
   const float fpu = GetFpu(params_, node, is_root, draw_score);
-  const float cpuct = ComputeCpuct(params_, node->GetWeight(),
-                                   node->GetWL(), node->GetVS(), node->GetE(), is_root);
-  const float U_coeff =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  const float U_coeff = ComputeExploreFactor(params_, node->GetWeight(), node->GetWL(),
+                           node->GetVS(), node->GetE(), is_root);
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
@@ -701,7 +699,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
 
   oss << std::endl << "Low nodes: " << total_low_nodes_
        << " NN queries: " << total_nn_queries_
-       << " Playouts: " << total_playouts_ + initial_visits_;
+       << " Playouts: " << total_playouts_ + initial_visits_ << std::endl;
+
+	print(&oss, "(U coeff: ", U_coeff, ") ", 15, 2);
+
 
 
   infos.emplace_back(oss.str());
@@ -1883,9 +1884,7 @@ void SearchWorker::PickNodesToExtendTask(
 
       const float policy_boost = params_.GetTopPolicyBoost();
 
-      const float cpuct_factor =
-          ComputeCpuctFactor(params_, node->GetWeight(), node->GetWL(),
-                             node->GetVS(), node->GetE(), is_root_node);
+
       const float fpu =
           GetFpu(params_, node, is_root_node, draw_score, visited_pol);
       for (int i = 0; i < max_needed; i++) {
@@ -1893,11 +1892,11 @@ void SearchWorker::PickNodesToExtendTask(
           current_util[i] = fpu + m_evaluator.GetDefaultMUtility();
         }
       }
-      const float puct_exponent = params_.GetCpuctExponent(is_root_node);
-      const float cpuct =
-          ComputeCpuct(params_, node->GetWeight(), is_root_node) * cpuct_factor;
-      const float puct_mult =
-          cpuct * std::pow(std::max(node->GetWeight(), 1e-5f), puct_exponent);
+
+
+			const float puct_mult =
+          ComputeExploreFactor(params_, node->GetWeight(), node->GetWL(),
+                               node->GetVS(), node->GetE(), is_root_node);
       int cache_filled_idx = -1;
       while (cur_limit > 0) {
         // Perform UCT for current node.
