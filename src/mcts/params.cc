@@ -636,7 +636,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kUncertaintyWeightingCoefficientId, 0.0f, 100.0f) =
       0.13f;
   options->Add<FloatOption>(kUncertaintyWeightingExponentId, -10.0f, 0.0f) =
-      -0.88f;
+      -1.76f;
   options->Add<BoolOption>(kUseUncertaintyWeightingId) = false;
   options->Add<FloatOption>(kEasyEvalWeightDecayId, 0.0f, 100.0f) = 1.0f;
 

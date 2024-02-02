@@ -96,7 +96,7 @@ You must set `--use-uncertainty-weighting=true` to turn it on. With BT3, the gai
 ```
 --uncertainty-weighting-cap=1.03
 --uncertainty-weighting-coefficient=0.13
---uncertainty-weighting-exponent=-0.88
+--uncertainty-weighting-exponent=-1.76
 --use-uncertainty-weighting=true
 ```
 
