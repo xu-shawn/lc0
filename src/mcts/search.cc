@@ -1745,6 +1745,7 @@ void SearchWorker::PickNodesToExtendTask(
 
   // This 1 is 'filled pre-emptively'.
   std::array<float, 256> current_util;
+  std::array<bool, 256> visited;
 
   // These 3 are 'filled on demand'.
   std::array<float, 256> current_score;
@@ -1835,10 +1836,11 @@ void SearchWorker::PickNodesToExtendTask(
       int max_needed = node->GetNumEdges();
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
+        visited[i] = false;
       }
 
 
-      			float max_util = -999;
+      float max_util = -999;
       float second_max_util = -999;
       float third_max_util = -999;
       // we can't boost unvisited nodes
@@ -1848,6 +1850,7 @@ void SearchWorker::PickNodesToExtendTask(
         float q = child->GetWL();
         float util = q + m_evaluator.GetMUtility(child, q);
         current_util[index] = util;
+        visited[index] = true;
 
         if (util > max_util) {
           third_max_util = second_max_util;
@@ -1918,7 +1921,7 @@ void SearchWorker::PickNodesToExtendTask(
           if (idx > cache_filled_idx) {
             float p = cur_iters[idx].GetP();
 
-            if (util >= min_policy_boost_util) {
+            if (util >= min_policy_boost_util && visited[idx]) {
               p = std::max(p, policy_boost);
             }
             
