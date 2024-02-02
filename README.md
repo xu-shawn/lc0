@@ -7,8 +7,50 @@ Lc0 is a UCI-compliant chess engine designed to play chess via neural network, s
 This is an experimental repository for testing new features to the Lc0 chess engine. Updates are made frequently so there may be bugs. Please report any issues you find to the Lc0 Discord. All elo measurements were calculated on A100 with unbalanced human openings.
 Many of these features are taken from the Katago engine. A detailed description of these methods can be found [here](https://github.com/lightvector/KataGo/blob/master/docs/KataGoMethods.md). A list of the improvements follows.
 
+## Quickstart
+
+Create a folder for the engine and download one of the binaries [here](https://ci.appveyor.com/project/Ergodice/lc0/builds/49100387).
+Create a subfolder called "nets" and add a network (either BT3, T3, or BT4) from [here](https://storage.lczero.org/files/networks-contrib/).
+Add a file titled lc0.config with the following parameters:
+
+```
+--weights=...
+
+--uncertainty-weighting-cap=1.03
+--uncertainty-weighting-coefficient=0.13
+--uncertainty-weighting-exponent=-1.76
+--use-uncertainty-weighting=true
+
+--reported-nodes=legacy
+--backend-opts=policy_head=vanilla,value_head=winner
+
+--top-policy-num-boost=3
+--top-policy-boost=0.05
+
+--policy-softmax-temp=1.4
+--fpu-value=0.984160
+--cpuct-exponent=0.6
+--cpuct=2.897
+--cpuct-factor=0
+```
+
+The weights argument should be the path to your network of choice.
+
+
+
 
 ## New features in this fork
+
+
+### Fused multihead attention
+Almaudoh and Ankan have optimized the attention calculation using cutlass, giving a 10% speedup to larger models.
+
+To build with Cutlass, you'll have to download the Cutlass 2.11 branch. This isn't the latest, and newer versions may break things!
+
+`git clone -b 2.11 https://github.com/NVIDIA/cutlass.git`
+
+and set the `CUTLASS_INCLUDE_PATH` in `build.cmd` to the include directory. Also set `CUTLASS` to true.
+
 
 ### Desperation
 
@@ -53,6 +95,7 @@ The exponent in the CPUCT formula can now be configured. Default is
 --cpuct-exponent=0.5
 ```
 
+
 ### Node reporting
 
 The nps statistic used to represent the number of playouts per second, which may not be what the user wants. The new `--reported-nodes` option specifies what the node count and nps statistic represent. 
@@ -65,9 +108,6 @@ The first 64 plies out of 100 are partitioned into 8 equally sized buckets. Befo
 The speedup can be anywhere from 5% to 50% depending on how transposition-heavy the position is. The gain was measured at 20 elo on STC. The nodes per second statistic is now calculated by the number of true nodes (called LowNode in the code) rather than edges (technically playouts, called Node in the code) so the reported value may be lower than on previous dag versions.
 
 This feature is enabled by default and can be disabled by specifying `--move-rule-bucketing=false` in the config.
-
-
-
 
 ### Multiple output heads
 
@@ -215,6 +255,7 @@ and will only be used if you wish to receive a new password or wish to receive c
 by e-mail.). Further they ask for a name, date of birth (not visible later on), country, organisation ("LeelaZero"
 if you have none), primary industry segment ("Other"/none) and which development areas you are interested
 in ("Deep Learning").
+
 
 #### Ubuntu 18.04
 

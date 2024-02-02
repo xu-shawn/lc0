@@ -11,12 +11,11 @@ set DNNL=false
 set OPENBLAS=false
 set EIGEN=false
 set TEST=false
-set CUTLASS=true
+set CUTLASS=false
 
 rem 2. Edit the paths for the build dependencies.
 set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2
 set CUDNN_PATH=%CUDA_PATH%
-set CUTLASS_INCLUDE_PATH=C:\dev\cutlass-2.11.0\include
 set OPENBLAS_PATH=C:\OpenBLAS
 set MKL_PATH=C:\Program Files (x86)\IntelSWTools\compilers_and_libraries\windows\mkl
 set DNNL_PATH=C:\dnnl_win_1.1.1_cpu_vcomp
