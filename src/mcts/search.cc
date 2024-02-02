@@ -1839,8 +1839,21 @@ void SearchWorker::PickNodesToExtendTask(
         visited[i] = false;
       }
 
+			
+      // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
+      // the weirdness.
+      const float draw_score =
+          (full_path.size() % 2 == 0) ? odd_draw_score : even_draw_score;
+      m_evaluator.SetParent(node);
+      float visited_pol = 0.0f;
+      for (Node* child : node->VisitedNodes()) {
+        int index = child->Index();
+        visited_pol += child->GetP();
+        float q = child->GetQ(draw_score);
+        current_util[index] = q + m_evaluator.GetMUtility(child, q);
+      }
 
-      float max_util = -999;
+			float max_util = -999;
       float second_max_util = -999;
       float third_max_util = -999;
       // we can't boost unvisited nodes
@@ -1869,19 +1882,7 @@ void SearchWorker::PickNodesToExtendTask(
       const float min_policy_boost_util = utils[params_.GetTopPolicyNumBoost()];
 
       const float policy_boost = params_.GetTopPolicyBoost();
-			
-      // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
-      // the weirdness.
-      const float draw_score =
-          (full_path.size() % 2 == 0) ? odd_draw_score : even_draw_score;
-      m_evaluator.SetParent(node);
-      float visited_pol = 0.0f;
-      for (Node* child : node->VisitedNodes()) {
-        int index = child->Index();
-        visited_pol += child->GetP();
-        float q = child->GetQ(draw_score);
-        current_util[index] = q + m_evaluator.GetMUtility(child, q);
-      }
+
       const float cpuct_factor =
           ComputeCpuctFactor(params_, node->GetWeight(), node->GetWL(),
                              node->GetVS(), node->GetE(), is_root_node);
