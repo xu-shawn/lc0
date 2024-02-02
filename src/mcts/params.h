@@ -59,6 +59,9 @@ class SearchParams {
   float GetCpuctBase(bool at_root) const {
     return at_root ? kCpuctBaseAtRoot : kCpuctBase;
   }
+  float GetCpuctExponent(bool at_root) const {
+    return at_root ? kCpuctExponentAtRoot : kCpuctExponent;
+  }
   float GetCpuctFactor(bool at_root) const {
     return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
   }
@@ -160,8 +163,22 @@ class SearchParams {
     return kCpuctUtilityStdevPriorWeight;
   }
 
-	float GetCpuctAdvantageSlope() const { return kCpuctAdvantageSlope; }
-  float GetCpuctAdvantageCap() const { return kCpuctAdvantageCap; }
+
+
+  float GetCpuctUncertaintyMinFactor() const { return kCpuctUncertaintyMinFactor; }
+
+  float GetCpuctUncertaintyMaxFactor() const { return kCpuctUncertaintyMaxFactor; }
+
+  float GetCpuctUncertaintyMinUncertainty() const { return kCpuctUncertaintyMinUncertainty; }
+
+	float GetCpuctUncertaintyMaxUncertainty() const {
+    return kCpuctUncertaintyMaxUncertainty;
+  }
+
+  bool GetUseCpuctUncertainty() const { return kUseCpuctUncertainty; }
+
+	bool GetJustFpuUncertainty() const { return kJustFpuUncertainty; }
+
 
 
   bool GetUseVarianceScaling() const { return kUseVarianceScaling; }
@@ -182,12 +199,29 @@ class SearchParams {
   float GetEasyEvalWeightDecay() const {
     return kEasyEvalWeightDecay;
   }
+
+  float GetDesperationMultiplier() const { return kDesperationMultiplier; }
+  float GetDesperationLow() const { return kDesperationLow; }
+  float GetDesperationHigh() const { return kDesperationHigh; }
+  float GetDesperationPriorWeight() const { return kDesperationPriorWeight; }
+  bool GetUseDesperation() const { return kUseDesperation;  }
+
+	
+
+	float GetTopPolicyBoost() const { return kTopPolicyBoost; }
+
+  int GetTopPolicyNumBoost() const { return kTopPolicyNumBoost; }
+
+
+
   bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
+  static const OptionId kCpuctExponentId;
+  static const OptionId kCpuctExponentAtRootId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctBaseAtRootId;
   static const OptionId kCpuctFactorId;
@@ -255,8 +289,6 @@ class SearchParams {
   static const OptionId kCpuctUtilityStdevPriorId;
   static const OptionId kCpuctUtilityStdevScaleId;
   static const OptionId kCpuctUtilityStdevPriorWeightId;
-  static const OptionId kCpuctAdvantageSlopeId;
-  static const OptionId kCpuctAdvantageCapId;
 
 
   static const OptionId kUseVarianceScalingId;
@@ -269,6 +301,30 @@ class SearchParams {
   static const OptionId kEasyEvalWeightDecayId;
   static const OptionId kSearchSpinBackoffId;
 
+
+  static const OptionId kCpuctUncertaintyMinFactorId;
+  static const OptionId kCpuctUncertaintyMaxFactorId;
+  static const OptionId kCpuctUncertaintyMinUncertaintyId;
+  static const OptionId kCpuctUncertaintyMaxUncertaintyId;
+  static const OptionId kUseCpuctUncertaintyId;
+  static const OptionId kJustFpuUncertaintyId;
+
+
+  static const OptionId kDesperationMultiplierId;
+  static const OptionId kDesperationLowId;
+  static const OptionId kDesperationHighId;
+  static const OptionId kDesperationPriorWeightId;
+  static const OptionId kUseDesperationId;
+
+
+
+  static const OptionId kTopPolicyBoostId;
+  static const OptionId kTopPolicyNumBoostId;
+
+  
+
+
+
  private:
   const OptionsDict& options_;
   // Cached parameter values. Values have to be cached if either:
@@ -279,6 +335,8 @@ class SearchParams {
   //            trivial search optimizations.
   const float kCpuct;
   const float kCpuctAtRoot;
+  const float kCpuctExponent;
+  const float kCpuctExponentAtRoot;
   const float kCpuctBase;
   const float kCpuctBaseAtRoot;
   const float kCpuctFactor;
@@ -326,8 +384,6 @@ class SearchParams {
   const float kCpuctUtilityStdevPrior;
   const float kCpuctUtilityStdevScale;
   const float kCpuctUtilityStdevPriorWeight;
-  const float kCpuctAdvantageSlope;
-  const float kCpuctAdvantageCap;
 
   const bool kUseVarianceScaling;
   const bool kMoveRuleBucketing;
@@ -337,6 +393,35 @@ class SearchParams {
   const bool kUseUncertaintyWeighting;
   const float kEasyEvalWeightDecay;
   const bool kSearchSpinBackoff;
+
+
+  const float kCpuctUncertaintyMinFactor;
+  const float kCpuctUncertaintyMaxFactor;
+  const float kCpuctUncertaintyMinUncertainty;
+  const float kCpuctUncertaintyMaxUncertainty;
+  const bool kUseCpuctUncertainty;
+  const bool kJustFpuUncertainty;
+
+      // const OptionId SearchParams::kJustFpuUncertaintyId{
+        //     "use-just-fpu-uncertainty", "UseJustFpuUncertainty",
+        //     "Whether to use Cpuct uncertainty only at unvisited nodes."};
+        //  const OptionId SearchParams::kTopPolicyBoostId{
+        //      "top-policy-boost", "TopPolicyBoost",
+        //      "Minimum policy for top x policies. 0 disables."};
+        //  const OptionId SearchParams::kTopPolicyNumBoostId{
+        //      "top-policy-num-boost", "TopPolicyNumBoost",
+        //      "Number of top moves to boost."};
+
+	const float kTopPolicyBoost;
+  const int kTopPolicyNumBoost;
+
+
+  const float kDesperationMultiplier;
+  const float kDesperationLow;
+  const float kDesperationHigh;
+  const float kDesperationPriorWeight;
+  const bool kUseDesperation;
+
 
 };
 

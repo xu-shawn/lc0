@@ -539,7 +539,7 @@ class LowNode {
     v_ = eval->q;
     d_ = eval->d;
     m_ = eval->m;
-    e_ = eval->e;
+    e_ = std::sqrt(eval->e);
     vs_ = wl_ * wl_;
 
     assert(WLDMInvariantsHold());

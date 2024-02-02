@@ -447,14 +447,16 @@ float Search::GetDrawScore(bool is_odd_depth) const {
 namespace {
 
 
-inline float ComputeAdvantageFactor(const SearchParams& params, float q) {
-  float cap = params.GetCpuctAdvantageCap();
-  float slope = params.GetCpuctAdvantageSlope();
-  q = std::max(q, -cap);
-	q = std::min(q, cap);
-  return 1.0f + q * slope;
-}	
-
+inline float ComputeUncertaintyFactor(const SearchParams& params, float e) {
+  float min_factor = params.GetCpuctUncertaintyMinFactor();
+  float max_factor = params.GetCpuctUncertaintyMaxFactor();
+  float min_uncertainty = params.GetCpuctUncertaintyMinUncertainty();
+  float max_uncertainty = params.GetCpuctUncertaintyMaxUncertainty();
+  e = std::clamp(e * e, min_uncertainty, max_uncertainty);
+  float factor = min_factor + (max_factor - min_factor) * (e - min_uncertainty) /
+                                  (max_uncertainty - min_uncertainty + 1e-5);
+  return factor;
+}
 
 inline float ComputeStdev(const SearchParams& params, float q, float weight,
                           float vs) {
@@ -490,18 +492,49 @@ inline float ComputeStdevFactor(const SearchParams& params, float q,
   return stdev_factor;
 }
 
+inline float ComputeDesperationFactor(const SearchParams& params, float q,
+  float weight) {
+
+  const float prior_weight = params.GetDesperationPriorWeight();
+  const float low = params.GetDesperationLow(); const float high = params.GetDesperationHigh();
+
+  q = abs(q);
+  float factor = (q <= low || q >= high) ? params.GetDesperationMultiplier() : 1.0f;
+  return 1.0f + (factor - 1.0f) * weight / (prior_weight + weight);
+
+
+}
+
 inline float ComputeStdevFactor(const SearchParams& params, Node* node) {
   return ComputeStdevFactor(params, node->GetWL(), node->GetWeight(),
                             node->GetVS());
 }
 
+inline float ComputeCpuctFactor(const SearchParams& params, float weight,
+                                float q, float vs, float e, bool is_root_node) {
+  const float stdev_factor = params.GetUseVarianceScaling()
+                                 ? ComputeStdevFactor(params, q, weight, vs)
+                                 : 1.0f;
+
+  const float uncertainty_factor = params.GetUseCpuctUncertainty()
+                                      ? ComputeUncertaintyFactor(params, e) : 1.0f;
+
+  const float desperation_factor =
+      params.GetUseDesperation() ?
+          ComputeDesperationFactor(params, q, weight) : 1.0f;
+
+  return uncertainty_factor * stdev_factor * desperation_factor;
+}
+
+
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
+	// we shouldn't push the value below -1
   return params.GetFpuAbsolute(is_root_node)
              ? value
-             : -node->GetQ(-draw_score) -
-                   value * std::sqrt(node->GetVisitedPolicy());
+             : fmax(-node->GetQ(-draw_score) -
+                        value * std::sqrt(node->GetVisitedPolicy()), -1.0f);
 }
 
 // Faster version for if visited_policy is readily available already.
@@ -510,33 +543,30 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
              ? value
-             : -node->GetQ(-draw_score) - value * std::sqrt(visited_pol);
+             : fmax(-node->GetQ(-draw_score) -
+                        value * std::sqrt(visited_pol), -1.0f);
 }
 
-inline float ComputeCpuct(const SearchParams& params, float weight,
-                          bool is_root_node) {
-  const float init = params.GetCpuct(is_root_node);
-  const float k = params.GetCpuctFactor(is_root_node);
-  const float base = params.GetCpuctBase(is_root_node);
-  return init + (k ? k * FastLog((weight + base) / base) : 0.0f);
-}
-
-inline float ComputeCpuct(const SearchParams& params, float weight, float q,
-                          float vs, bool is_root_node) {
+inline float ComputeExploreFactor(const SearchParams& params, float weight, bool is_root_node) {
   const float init = params.GetCpuct(is_root_node);
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
 
-  const float stdev_factor = params.GetUseVarianceScaling()
-                                   ? ComputeStdevFactor(params, q, weight, vs)
-                                   : 1.0f;
-  const float advantage_factor = ComputeAdvantageFactor(params, q);
-	
-
-	
-  return advantage_factor * stdev_factor *
-         (init + (k ? k * FastLog((weight + base) / base) : 0.0f));
+  return (init + (k ? k * FastLog((weight + base) / base) : 0.0f)) *
+         std::pow(fmax(weight, 1e-5), params.GetCpuctExponent(is_root_node));
 }
+
+inline float ComputeExploreFactor(const SearchParams& params, float weight, float q,
+                          float vs, float e, bool is_root_node) {
+	
+  const float base_factor = ComputeExploreFactor(params, weight, is_root_node);
+
+  const float extra_factor = ComputeCpuctFactor(params, weight, q, vs, e,
+																					  is_root_node);
+
+  return base_factor * extra_factor ;
+}
+
 
 inline float ComputeWeight(const SearchParams& params, float uncertainty) {
   if (!params.GetUseUncertaintyWeighting()) return 1.0f;
@@ -554,10 +584,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
   const float fpu = GetFpu(params_, node, is_root, draw_score);
-  const float cpuct = ComputeCpuct(params_, node->GetWeight(),
-                                   node->GetWL(), node->GetVS(), is_root);
-  const float U_coeff =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  const float U_coeff = ComputeExploreFactor(params_, node->GetWeight(), node->GetWL(),
+                           node->GetVS(), node->GetE(), is_root);
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
@@ -594,6 +622,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
             6, 5);
       print(oss, "(STDF: ",
             ComputeStdevFactor(params_, n->GetWL(), n->GetWeight(), n->GetVS()),
+            ") ", 6, 5);
+      print(oss, "(UNCF: ",
+            ComputeUncertaintyFactor(params_, n->GetE()),
             ") ", 6, 5);
       print(oss, "(VS: ", n->GetVS(), ") ", 6, 5);
       print(oss, "(E: ", n->GetE(), ") ", 6, 5);
@@ -668,7 +699,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
 
   oss << std::endl << "Low nodes: " << total_low_nodes_
        << " NN queries: " << total_nn_queries_
-       << " Playouts: " << total_playouts_ + initial_visits_;
+       << " Playouts: " << total_playouts_ + initial_visits_ << std::endl;
+
+	print(&oss, "(U coeff: ", U_coeff, ") ", 15, 2);
+
 
 
   infos.emplace_back(oss.str());
@@ -1712,6 +1746,7 @@ void SearchWorker::PickNodesToExtendTask(
 
   // This 1 is 'filled pre-emptively'.
   std::array<float, 256> current_util;
+  std::array<bool, 256> visited;
 
   // These 3 are 'filled on demand'.
   std::array<float, 256> current_score;
@@ -1802,7 +1837,10 @@ void SearchWorker::PickNodesToExtendTask(
       int max_needed = node->GetNumEdges();
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
+        visited[i] = false;
       }
+
+			
       // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
       // the weirdness.
       const float draw_score =
@@ -1815,6 +1853,38 @@ void SearchWorker::PickNodesToExtendTask(
         float q = child->GetQ(draw_score);
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
+
+			float max_util = -999;
+      float second_max_util = -999;
+      float third_max_util = -999;
+      // we can't boost unvisited nodes
+
+      for (Node* child : node->VisitedNodes()) {
+        int index = child->Index();
+        float q = child->GetWL();
+        float util = q + m_evaluator.GetMUtility(child, q);
+        current_util[index] = util;
+        visited[index] = true;
+
+        if (util > max_util) {
+          third_max_util = second_max_util;
+          second_max_util = max_util;
+          max_util = util;
+        } else if (util > second_max_util) {
+          third_max_util = second_max_util;
+          second_max_util = util;
+        } else if (util > third_max_util) {
+          third_max_util = util;
+        }
+      }
+
+      float utils[] = {std::numeric_limits<float>::max(), max_util,
+                       second_max_util, third_max_util};
+      const float min_policy_boost_util = utils[params_.GetTopPolicyNumBoost()];
+
+      const float policy_boost = params_.GetTopPolicyBoost();
+
+
       const float fpu =
           GetFpu(params_, node, is_root_node, draw_score, visited_pol);
       for (int i = 0; i < max_needed; i++) {
@@ -1823,11 +1893,10 @@ void SearchWorker::PickNodesToExtendTask(
         }
       }
 
-      const float cpuct =
-          ComputeCpuct(params_, node->GetWeight(), node->GetWL(),
-                       node->GetVS(), is_root_node);
-      const float puct_mult =
-          cpuct * std::sqrt(std::max(node->GetWeight(), 1e-5f));
+
+			const float puct_mult =
+          ComputeExploreFactor(params_, node->GetWeight(), node->GetWL(),
+                               node->GetVS(), node->GetE(), is_root_node);
       int cache_filled_idx = -1;
       while (cur_limit > 0) {
         // Perform UCT for current node.
@@ -1850,8 +1919,14 @@ void SearchWorker::PickNodesToExtendTask(
           float weightstarted = current_weightstarted[idx];
           const float util = current_util[idx];
           if (idx > cache_filled_idx) {
+            float p = cur_iters[idx].GetP();
+
+            if (util >= min_policy_boost_util && visited[idx]) {
+              p = std::max(p, policy_boost);
+            }
+            
             current_score[idx] =
-                cur_iters[idx].GetP() * puct_mult / (1 + weightstarted) + util;
+              p * puct_mult / (1 + weightstarted) + util;
             cache_filled_idx++;
           }
           if (is_root_node) {

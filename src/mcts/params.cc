@@ -162,6 +162,12 @@ const OptionId SearchParams::kCpuctId{
 const OptionId SearchParams::kCpuctAtRootId{
     "cpuct-at-root", "CPuctAtRoot",
     "cpuct_init constant from \"UCT search\" algorithm, for root node."};
+const OptionId SearchParams::kCpuctExponentId{
+    "cpuct-exponent", "CPuctExponent",
+    "cpuct_exponent constant from \"UCT search\" algorithm."};
+const OptionId SearchParams::kCpuctExponentAtRootId{
+    "cpuct-exponent-at-root", "CPuctExponentAtRoot",
+    "cpuct_exponent constant from \"UCT search\" algorithm, for root node."};
 const OptionId SearchParams::kCpuctBaseId{
     "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
@@ -449,12 +455,6 @@ const OptionId SearchParams::kCpuctUtilityStdevScaleId{
 const OptionId SearchParams::kCpuctUtilityStdevPriorWeightId{
     "cpuct-utility-stdev-prior-weight", "CpuctUtilityStdevPriorWeight",
     "How much to weigh the prior value in the calculation of stdev."};
-const OptionId SearchParams::kCpuctAdvantageSlopeId{
-    "cpuct-advantage-slope", "CpuctAdvantageSlope",
-    "Slope in calculation of CPUCT from advantage."};
-const OptionId SearchParams::kCpuctAdvantageCapId{
-    "cpuct-advantage-cap", "CpuctAdvantageCap",
-    "Cap value for the calculation of CPUCT from advantage."};
 const OptionId SearchParams::kUseVarianceScalingId{
     "use-variance-scaling", "UseVarianceScaling",
     "Whether to use variance scaling in CPUCT calculation."};
@@ -483,6 +483,48 @@ const OptionId SearchParams::kEasyEvalWeightDecayId{
     "How much to decay the weight of positions that were easy to evaluate"
     "(i.e., the low node or a twin of the low node already existed). [0, 1] "
     "recommended. The feature is turned off when the value is 1."};
+const OptionId SearchParams::kCpuctUncertaintyMinFactorId{
+    "cpuct-uncertainty-min-factor", "CpuctUncertaintyMinFactor",
+    "Minimum factor the CPUCT multiplier takes."};
+const OptionId SearchParams::kCpuctUncertaintyMaxFactorId{
+    "cpuct-uncertainty-max-factor", "CpuctUncertaintyMaxFactor",
+    "Maximum factor the CPUCT multiplier takes."};
+const OptionId SearchParams::kCpuctUncertaintyMinUncertaintyId{
+    "cpuct-uncertainty-min-uncertainty", "CpuctUncertaintyMinUncertainty",
+    "Uncertainty at which the CPUCT uncertainty factor achieves its minimum."};
+const OptionId SearchParams::kCpuctUncertaintyMaxUncertaintyId{
+    "cpuct-uncertainty-max-uncertainty", "CpuctUncertaintyMaxUncertainty",
+    "Uncertainty at which the CPUCT uncertainty factor achieves its maximum."};
+const OptionId SearchParams::kUseCpuctUncertaintyId{
+    "use-cpuct-uncertainty", "UseCpuctUncertainty",
+    "Whether to use Cpuct uncertainty."};
+const OptionId SearchParams::kJustFpuUncertaintyId{
+    "use-just-fpu-uncertainty", "UseJustFpuUncertainty",
+    "Whether to use Cpuct uncertainty only at unvisited nodes."};
+const OptionId SearchParams::kDesperationMultiplierId{
+    "desperation-multiplier", "DesperationMultiplier",
+    "How much to multiply the CPUCT by in desperate positions."};
+const OptionId SearchParams::kDesperationLowId{
+    "desperation-low", "DesperationLow",
+    "Where drawish desperation starts."};
+const OptionId SearchParams::kDesperationHighId{
+    "desperation-high", "DesperationHigh",
+    "Where decisive desperation starts."};
+const OptionId SearchParams::kDesperationPriorWeightId{
+    "desperation-prior-weight", "DesperationPriorWeight",
+    "Roughly how much weight a node needs for desperation to take effect."};
+const OptionId SearchParams::kUseDesperationId{
+    "use-desperation", "UseDesperation",
+    "Whether to use desperation."};
+
+const OptionId SearchParams::kTopPolicyBoostId{
+    "top-policy-boost", "TopPolicyBoost", "Minimum policy for top x policies. 0 disables."};
+const OptionId SearchParams::kTopPolicyNumBoostId{
+    "top-policy-num-boost", "TopPolicyNumBoost",
+    "Number of top moves to boost."};
+
+
+
 const OptionId SearchParams::kSearchSpinBackoffId{
     "search-spin-backoff", "SearchSpinBackoff",
     "Enable backoff for the spin lock that acquires available searcher."};
@@ -493,6 +535,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.745f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 1.745f;
+	options->Add<FloatOption>(kCpuctExponentId, 0.0f, 1.0f) = 0.5f;
+	options->Add<FloatOption>(kCpuctExponentAtRootId, 0.0f, 1.0f) = 0.5f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 38739.0f;
   options->Add<FloatOption>(kCpuctBaseAtRootId, 1.0f, 1000000000.0f) = 38739.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 3.894f;
@@ -583,8 +627,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctUtilityStdevScaleId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctUtilityStdevPriorWeightId, 0.0f, 10000.0f) =
       10.0f;
-  options->Add<FloatOption>(kCpuctAdvantageSlopeId, -1.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kCpuctAdvantageCapId, 0.0f, 1.0f) = 1.0f;
   options->Add<BoolOption>(kUseVarianceScalingId) = false;
   options->Add<BoolOption>(kMoveRuleBucketingId) = true;
   std::vector<std::string> reported_nodes = {"nodes", "queries", "playouts",
@@ -594,9 +636,35 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kUncertaintyWeightingCoefficientId, 0.0f, 100.0f) =
       0.13f;
   options->Add<FloatOption>(kUncertaintyWeightingExponentId, -10.0f, 0.0f) =
-      -0.88f;
+      -1.76f;
   options->Add<BoolOption>(kUseUncertaintyWeightingId) = false;
   options->Add<FloatOption>(kEasyEvalWeightDecayId, 0.0f, 100.0f) = 1.0f;
+
+
+  options->Add<FloatOption>(kCpuctUncertaintyMinFactorId, 0.0f, 100.0f) = 0.8776107244713488f;
+  options->Add<FloatOption>(kCpuctUncertaintyMaxFactorId, 0.0f, 100.0f) = 1.7175437306867911f;
+  options->Add<FloatOption>(kCpuctUncertaintyMinUncertaintyId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kCpuctUncertaintyMaxUncertaintyId, 0.0f, 1.0f) = 0.12087181807951577f;
+  options->Add<BoolOption>(kJustFpuUncertaintyId) = false;
+  options->Add<BoolOption>(kUseCpuctUncertaintyId) = false;
+
+  options->Add<FloatOption>(kDesperationMultiplierId, 0.0f, 100.0f) = 1.5f;
+  options->Add<FloatOption>(kDesperationLowId, 0.0f, 1.0f) = 0.25f;
+  options->Add<FloatOption>(kDesperationHighId, 0.0f, 1.0f) = 0.75f;
+  options->Add<FloatOption>(kDesperationPriorWeightId, 0.0f, 10000.0f) = 500.0f;
+  options->Add<BoolOption>(kUseDesperationId) = false;
+
+
+
+
+  options->Add<FloatOption>(kTopPolicyBoostId, 0.0f, 1.0f) = 0.05f;
+  options->Add<IntOption>(kTopPolicyNumBoostId, 0, 3) = 0;
+
+	
+
+
+
+
   options->Add<BoolOption>(kSearchSpinBackoffId) = false;
 
   options->HideOption(kNoiseEpsilonId);
@@ -628,6 +696,10 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
                                                       : kCpuctId)),
+		  kCpuctExponent(options.Get<float>(kCpuctExponentId)),
+			kCpuctExponentAtRoot(options.Get<float>(
+					options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctExponentAtRootId
+																											: kCpuctExponentId)),
       kCpuctBase(options.Get<float>(kCpuctBaseId)),
       kCpuctBaseAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctBaseAtRootId
@@ -710,9 +782,6 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctUtilityStdevScale(options.Get<float>(kCpuctUtilityStdevScaleId)),
       kCpuctUtilityStdevPriorWeight(
           options.Get<float>(kCpuctUtilityStdevPriorWeightId)),
-      kCpuctAdvantageSlope(
-				          options.Get<float>(kCpuctAdvantageSlopeId)),
-      kCpuctAdvantageCap(options.Get<float>(kCpuctAdvantageCapId)),
 
 	
     
@@ -724,6 +793,31 @@ SearchParams::SearchParams(const OptionsDict& options)
       kUncertaintyWeightingExponent(
           options.Get<float>(kUncertaintyWeightingExponentId)),
       kUseUncertaintyWeighting(options.Get<bool>(kUseUncertaintyWeightingId)),
+
+
+      kCpuctUncertaintyMinFactor(options.Get<float>(kCpuctUncertaintyMinFactorId)), 
+      kCpuctUncertaintyMaxFactor(options.Get<float>(kCpuctUncertaintyMaxFactorId)),
+      kCpuctUncertaintyMinUncertainty(options.Get<float>(kCpuctUncertaintyMinUncertaintyId)),
+      kCpuctUncertaintyMaxUncertainty(options.Get<float>(kCpuctUncertaintyMaxUncertaintyId)),
+      kUseCpuctUncertainty(options.Get<bool>(kUseCpuctUncertaintyId)),
+      kJustFpuUncertainty(options.Get<bool>(kJustFpuUncertaintyId)),
+
+				
+
+
+
+      kDesperationMultiplier(options.Get<float>(kDesperationMultiplierId)),
+      kDesperationLow(options.Get<float>(kDesperationLowId)),
+      kDesperationHigh(options.Get<float>(kDesperationHighId)),
+      kDesperationPriorWeight(options.Get<float>(kDesperationPriorWeightId)),
+      kUseDesperation(options.Get<bool>(kUseDesperationId)),
+
+			kTopPolicyBoost(options.Get<float>(kTopPolicyBoostId)),
+      kTopPolicyNumBoost(options.Get<int>(kTopPolicyNumBoostId)),
+
+			
+
+
       kEasyEvalWeightDecay(options.Get<float>(kEasyEvalWeightDecayId)),
       kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}
 
