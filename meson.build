@@ -461,7 +461,7 @@ if get_option('build_backends')
     includes += include_directories('src/neural/cuda/')
 
     cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
-                      '-I', meson.source_root() + '/subprojects/abseil-cpp-20220623.0',
+                      '-I', meson.source_root() + '/subprojects/abseil-cpp-20230125.1',
                       '-I', meson.current_source_dir() + '/src']
     nvcc_help = run_command(nvcc, '-h').stdout()
     if host_machine.system() == 'windows'
