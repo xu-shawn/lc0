@@ -79,12 +79,18 @@ r3kb1r/1b3ppp/p2p1n2/3Pn3/Pq1N4/1B6/1P3PPP/R1BQR1K1 w kq - 1 3
 
 with resp. best moves `Bg2` and `h3` have a strong move practically ignored because it has low policy.
 This feature sets a lowest baseline policy for the top few moves so that this doesn't happen.
-The top `top-policy-num-boost` are treated as if they had policy at least `top-policy-boost`. Recommended settings below.
+The top `top-policy-num-boost` are treated as if they had policy at least `top-policy-boost`. 
+There is also a "tier two" for moves that are still ranked highly but not in the top few.
+
+Recommended settings below.
 Disabled by default.
 
 ```
 --top-policy-num-boost=3
 --top-policy-boost=0.05
+--top-policy-tier-two-num-boost=6
+--top-policy-tier-two-boost=0.025
+--use-policy-boosting=true
 ```
 
 

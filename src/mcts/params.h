@@ -212,6 +212,12 @@ class SearchParams {
 
   int GetTopPolicyNumBoost() const { return kTopPolicyNumBoost; }
 
+  float GetTopPolicyTierTwoBoost() const { return kTopPolicyTierTwoBoost; }
+
+  int GetTopPolicyTierTwoNumBoost() const { return kTopPolicyTierTwoNumBoost; }
+
+  bool GetUsePolicyBoosting() const { return kUsePolicyBoosting; }
+
 
 
   bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
@@ -320,6 +326,10 @@ class SearchParams {
 
   static const OptionId kTopPolicyBoostId;
   static const OptionId kTopPolicyNumBoostId;
+  static const OptionId kTopPolicyTierTwoBoostId;
+  static const OptionId kTopPolicyTierTwoNumBoostId;
+  static const OptionId kUsePolicyBoostingId;
+
 
   
 
@@ -402,18 +412,12 @@ class SearchParams {
   const bool kUseCpuctUncertainty;
   const bool kJustFpuUncertainty;
 
-      // const OptionId SearchParams::kJustFpuUncertaintyId{
-        //     "use-just-fpu-uncertainty", "UseJustFpuUncertainty",
-        //     "Whether to use Cpuct uncertainty only at unvisited nodes."};
-        //  const OptionId SearchParams::kTopPolicyBoostId{
-        //      "top-policy-boost", "TopPolicyBoost",
-        //      "Minimum policy for top x policies. 0 disables."};
-        //  const OptionId SearchParams::kTopPolicyNumBoostId{
-        //      "top-policy-num-boost", "TopPolicyNumBoost",
-        //      "Number of top moves to boost."};
 
 	const float kTopPolicyBoost;
   const int kTopPolicyNumBoost;
+  const float kTopPolicyTierTwoBoost;
+  const int kTopPolicyTierTwoNumBoost;
+  const bool kUsePolicyBoosting;
 
 
   const float kDesperationMultiplier;
