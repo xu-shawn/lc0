@@ -32,6 +32,21 @@
 #include <shared_mutex>
 #include <thread>
 
+#if defined(__clang__) && (!defined(SWIG))
+#define THREAD_ANNOTATION_ATTRIBUTE__(x)   __attribute__((x))
+#else
+#define THREAD_ANNOTATION_ATTRIBUTE__(x)   // no-op
+#endif
+
+#define GUARDED_BY(x) \
+  THREAD_ANNOTATION_ATTRIBUTE__(guarded_by(x))
+
+#define ACQUIRED_AFTER(...) \
+  THREAD_ANNOTATION_ATTRIBUTE__(acquired_after(__VA_ARGS__))
+
+#define NO_THREAD_SAFETY_ANALYSIS \
+  THREAD_ANNOTATION_ATTRIBUTE__(no_thread_safety_analysis)
+
 #if !defined(__arm__) && !defined(__aarch64__) && !defined(_M_ARM) && \
     !defined(_M_ARM64)
 #include <emmintrin.h>
