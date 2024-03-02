@@ -1751,6 +1751,12 @@ void SearchWorker::PickNodesToExtendTask(
   // These 3 are 'filled on demand'.
   std::array<float, 256> current_score;
   std::array<float, 256> current_weightstarted;
+
+
+  
+  constexpr int num_top = 8;
+  std::array<float, num_top> top_utils;
+
   auto& cur_iters = workspace->cur_iters;
 
   Node::Iterator best_edge;
@@ -1839,6 +1845,9 @@ void SearchWorker::PickNodesToExtendTask(
         current_util[i] = std::numeric_limits<float>::lowest();
         visited[i] = false;
       }
+      for (int i = 0; i < num_top; i++) {
+        top_utils[i] = -999;
+      } 
 
 			
       // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
@@ -1854,10 +1863,6 @@ void SearchWorker::PickNodesToExtendTask(
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
 
-			float max_util = -999;
-      float second_max_util = -999;
-      float third_max_util = -999;
-      // we can't boost unvisited nodes
 
       for (Node* child : node->VisitedNodes()) {
         int index = child->Index();
@@ -1866,23 +1871,36 @@ void SearchWorker::PickNodesToExtendTask(
         current_util[index] = util;
         visited[index] = true;
 
-        if (util > max_util) {
-          third_max_util = second_max_util;
-          second_max_util = max_util;
-          max_util = util;
-        } else if (util > second_max_util) {
-          third_max_util = second_max_util;
-          second_max_util = util;
-        } else if (util > third_max_util) {
-          third_max_util = util;
+				// we're only counting visited nodes toward top utils
+				// since we only boost visited nodes
+
+				for (int i = 0; i < num_top; i++) {
+          if (util > top_utils[i]) {
+            for (int j = num_top - 1; j > i; j--) {
+              top_utils[j] = top_utils[j - 1];
+            }
+            top_utils[i] = util;
+            break;
+          }
         }
       }
+      
+			const int num_boost_t1 = params_.GetTopPolicyNumBoost();
+      const int num_boost_t2 = params_.GetTopPolicyTierTwoNumBoost();
 
-      float utils[] = {std::numeric_limits<float>::max(), max_util,
-                       second_max_util, third_max_util};
-      const float min_policy_boost_util = utils[params_.GetTopPolicyNumBoost()];
+      const float min_policy_boost_util_t1 =
+          (num_boost_t1 == 0 || !params_.GetUsePolicyBoosting())
+              ? 999
+              : top_utils[num_boost_t1 - 1];
+		  
+			const float min_policy_boost_util_t2 =
+					(num_boost_t2 == 0 || !params_.GetUsePolicyBoosting())
+							? 999
+							: top_utils[num_boost_t2 - 1];
 
-      const float policy_boost = params_.GetTopPolicyBoost();
+
+      const float policy_boost_t1 = params_.GetTopPolicyBoost();
+      const float policy_boost_t2 = params_.GetTopPolicyTierTwoBoost();
 
 
       const float fpu =
@@ -1921,9 +1939,16 @@ void SearchWorker::PickNodesToExtendTask(
           if (idx > cache_filled_idx) {
             float p = cur_iters[idx].GetP();
 
-            if (util >= min_policy_boost_util && visited[idx]) {
-              p = std::max(p, policy_boost);
+            // only boost visited nodes
+						if (visited[idx]) {
+              if (util >= min_policy_boost_util_t1) {
+                p = std::max(p, policy_boost_t1);
+              }
+              if (util >= min_policy_boost_util_t2) {
+                p = std::max(p, policy_boost_t2);
+              }
             }
+
             
             current_score[idx] =
               p * puct_mult / (1 + weightstarted) + util;

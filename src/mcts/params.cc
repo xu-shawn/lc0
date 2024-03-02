@@ -519,9 +519,20 @@ const OptionId SearchParams::kUseDesperationId{
 
 const OptionId SearchParams::kTopPolicyBoostId{
     "top-policy-boost", "TopPolicyBoost", "Minimum policy for top x policies. 0 disables."};
+
 const OptionId SearchParams::kTopPolicyNumBoostId{
     "top-policy-num-boost", "TopPolicyNumBoost",
     "Number of top moves to boost."};
+const OptionId SearchParams::kTopPolicyTierTwoBoostId{
+    "top-policy-tier-two-boost", "TopPolicyTierTwoBoost",
+    "Minimum policy for top x policies, second tier. 0 disables."};
+const OptionId SearchParams::kTopPolicyTierTwoNumBoostId{
+    "top-policy-tier-two-num-boost", "TopPolicyTierTwoNumBoost",
+    "Number of top moves to boost, second tier."};
+
+const OptionId SearchParams::kUsePolicyBoostingId{
+    "use-policy-boosting", "UsePolicyBoosting",
+    "Whether to use policy boosting."};
 
 
 
@@ -658,7 +669,10 @@ void SearchParams::Populate(OptionsParser* options) {
 
 
   options->Add<FloatOption>(kTopPolicyBoostId, 0.0f, 1.0f) = 0.05f;
-  options->Add<IntOption>(kTopPolicyNumBoostId, 0, 3) = 0;
+  options->Add<IntOption>(kTopPolicyNumBoostId, 0, 8) = 3;
+  options->Add<FloatOption>(kTopPolicyTierTwoBoostId, 0.0f, 1.0f) = 0.02f;
+  options->Add<IntOption>(kTopPolicyTierTwoNumBoostId, 0, 8) = 0;
+  options->Add<BoolOption>(kUsePolicyBoostingId) = false;
 
 	
 
@@ -814,6 +828,9 @@ SearchParams::SearchParams(const OptionsDict& options)
 
 			kTopPolicyBoost(options.Get<float>(kTopPolicyBoostId)),
       kTopPolicyNumBoost(options.Get<int>(kTopPolicyNumBoostId)),
+      kTopPolicyTierTwoBoost(options.Get<float>(kTopPolicyTierTwoBoostId)),
+      kTopPolicyTierTwoNumBoost(options.Get<int>(kTopPolicyTierTwoNumBoostId)),
+			kUsePolicyBoosting(options.Get<bool>(kUsePolicyBoostingId)),
 
 			
 
