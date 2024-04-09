@@ -1861,29 +1861,24 @@ void SearchWorker::PickNodesToExtendTask(
         visited_pol += child->GetP();
         float q = child->GetQ(draw_score);
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
-      }
-
-
-      for (Node* child : node->VisitedNodes()) {
-        int index = child->Index();
-        float q = child->GetWL();
-        float util = q + m_evaluator.GetMUtility(child, q);
-        current_util[index] = util;
+				
         visited[index] = true;
 
-				// we're only counting visited nodes toward top utils
-				// since we only boost visited nodes
+        // we're only counting visited nodes toward top utils
+        // since we only boost visited nodes
 
-				for (int i = 0; i < num_top; i++) {
-          if (util > top_utils[i]) {
+        for (int i = 0; i < num_top; i++) {
+          if (q > top_utils[i]) {
             for (int j = num_top - 1; j > i; j--) {
               top_utils[j] = top_utils[j - 1];
             }
-            top_utils[i] = util;
+            top_utils[i] = q;
             break;
           }
         }
       }
+
+
       
 			const int num_boost_t1 = params_.GetTopPolicyNumBoost();
       const int num_boost_t2 = params_.GetTopPolicyTierTwoNumBoost();
