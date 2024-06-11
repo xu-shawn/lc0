@@ -219,8 +219,14 @@ class SearchParams {
   bool GetUsePolicyBoosting() const { return kUsePolicyBoosting; }
 
 
-
   bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
+
+ 
+
+  bool GetUseCorrectionHistory() const { return kUseCorrectionHistory; }
+  float GetCorrectionHistoryAlpha() const { return kCorrectionHistoryAlpha; }
+  float GetCorrectionHistoryLambda() const { return kCorrectionHistoryLambda; }
+
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -331,7 +337,10 @@ class SearchParams {
   static const OptionId kUsePolicyBoostingId;
 
 
-  
+
+  static const OptionId kUseCorrectionHistoryId;
+  static const OptionId kCorrectionHistoryAlphaId;
+  static const OptionId kCorrectionHistoryLambdaId;
 
 
 
@@ -425,6 +434,12 @@ class SearchParams {
   const float kDesperationHigh;
   const float kDesperationPriorWeight;
   const bool kUseDesperation;
+
+  
+
+  const bool kUseCorrectionHistory;
+  const float kCorrectionHistoryAlpha;
+  const float kCorrectionHistoryLambda;
 
 
 };

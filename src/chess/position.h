@@ -42,6 +42,9 @@ class Position {
   Position(const ChessBoard& board, int rule50_ply, int game_ply);
 
   uint64_t Hash() const;
+  uint64_t CHHash() const;
+
+
   bool IsBlackToMove() const { return us_board_.flipped(); }
 
   // Number of half-moves since beginning of the game.
@@ -155,6 +158,8 @@ class PositionHistory {
 
   // Builds a hash from last X positions.
   uint64_t HashLast(int positions, int r50_ply = -1) const;
+
+  uint64_t CHHash() const;
 
   // Checks for any repetitions since the last time 50 move rule was reset.
   bool DidRepeatSinceLastZeroingMove() const;

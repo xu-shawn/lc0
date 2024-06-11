@@ -114,6 +114,15 @@ class ChessBoard {
                         static_cast<uint32_t>(flipped_)});
   }
 
+  // A hash for correction history, uses pawn structure (both our and opponents' pawns).
+  uint64_t CHHash() const {
+    return HashCat({
+        our_pieces_.as_int() & pawns_.as_int(),
+        their_pieces_.as_int() & pawns_.as_int(),
+    });
+
+  }
+
   class Castlings {
    public:
     Castlings()

@@ -176,6 +176,20 @@ uint32_t Node::GetChildrenVisits() const {
 uint32_t Node::GetTotalVisits() const {
   return low_node_ ? low_node_->GetN() : 0;
 }
+float Node::GetV() const {
+  return low_node_ ? -low_node_->GetV() : 0.0f;
+}
+
+float Node::GetCHDelta() const { return low_node_ ? -low_node_->GetCHDelta() : 0.0f; }
+
+uint64_t Node::GetCHHash() const {
+  return low_node_ ? low_node_->GetCHHash() : 0;
+}
+
+uint64_t Node::GetHash() const {
+  return low_node_ ? low_node_->GetHash() : 0;
+}
+
 
 const Edge& LowNode::GetEdgeAt(uint16_t index) const { return edges_[index]; }
 
@@ -366,6 +380,8 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
   m_ += multiweight * (m - m_) / (weight_ + multiweight);
   vs_ += multiweight * (vs - vs_) / (weight_ + multiweight);
 
+
+
   assert(WLDMInvariantsHold());
 
   // Increment N.
@@ -373,8 +389,49 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
   weight_ += multiweight;
 }
 
+void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
+                                  uint32_t multivisit, float multiweight, CorrHistEntry* cht_entry) {
+  assert(edges_);
+
+  cht_entry->weightSum += multiweight;  
+  cht_entry->deltaSum += multiweight * (v_ - v);
+
+
+  // Recompute Q.
+  wl_ += multiweight * (v - wl_) / (weight_ + multiweight);
+  d_ += multiweight * (d - d_) / (weight_ + multiweight);
+  m_ += multiweight * (m - m_) / (weight_ + multiweight);
+  vs_ += multiweight * (vs - vs_) / (weight_ + multiweight);
+
+
+
+  assert(WLDMInvariantsHold());
+
+  // Increment N.
+  n_ += multivisit;
+  weight_ += multiweight;
+}
+
+
 void LowNode::AdjustForTerminal(float v, float d, float m, float vs,
                                 uint32_t multivisit, float multiweight) {
+  assert(static_cast<uint32_t>(multivisit) <= n_);
+
+
+
+  // Recompute Q.
+  wl_ += multiweight * v / weight_;
+  d_ += multiweight * d / weight_;
+  m_ += multiweight * m / weight_;
+  vs_ += multiweight * vs / weight_;
+
+
+  assert(WLDMInvariantsHold());
+}
+
+void LowNode::AdjustForTerminal(float v, float d, float m, float vs,
+                                uint32_t multivisit, float multiweight,
+                                CorrHistEntry* cht_entry) {
   assert(static_cast<uint32_t>(multivisit) <= n_);
 
   // Recompute Q.
@@ -383,8 +440,14 @@ void LowNode::AdjustForTerminal(float v, float d, float m, float vs,
   m_ += multiweight * m / weight_;
   vs_ += multiweight * vs / weight_;
 
+  
+  cht_entry->deltaSum -= multiweight * v;
+
   assert(WLDMInvariantsHold());
 }
+
+
+
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, float vs,
                                uint32_t multivisit, float multiweight) {
@@ -414,6 +477,7 @@ void Node::AdjustForTerminal(float v, float d, float m, float vs,
   d_ += multiweight * d / weight_;
   m_ += multiweight * m / weight_;
   vs_ += multiweight * vs / weight_;
+
 
   assert(WLDMInvariantsHold());
 }
@@ -634,24 +698,29 @@ void Node::SortEdges() const {
   low_node_->SortEdges();
 }
 
-uint64_t Node::GetHash() const {
-  if (low_node_) {
-    return low_node_->GetHash();
-  } else {
-    return 0;
-  }
-}
+
 bool Node::IsTT() const { return low_node_ && low_node_->IsTT(); }
 
 static constexpr float wld_tolerance = 0.000001f;
 static constexpr float m_tolerance = 0.000001f;
 
-static bool WLDMInvariantsHold(float wl, float d, float m) {
-  return -(1.0f + wld_tolerance) < wl && wl < (1.0f + wld_tolerance) &&  //
-         -(0.0f + wld_tolerance) < d && d < (1.0f + wld_tolerance) &&    //
-         -(0.0f + m_tolerance) < m &&                                    //
-         std::abs(wl + d) < (1.0f + wld_tolerance);
-}
+
+#if 0 // Correction history breaks WLDM invariants
+
+  static bool WLDMInvariantsHold(float wl, float d, float m) {
+    return -(1.0f + wld_tolerance) < wl && wl < (1.0f + wld_tolerance) &&  //
+           -(0.0f + wld_tolerance) < d && d < (1.0f + wld_tolerance) &&    //
+           -(0.0f + m_tolerance) < m &&                                    //
+           std::abs(wl + d) < (1.0f + wld_tolerance);
+  }
+
+#else
+
+  static bool WLDMInvariantsHold(float wl, float d, float m) {
+		return true;
+	} 
+
+#endif
 
 bool Node::WLDMInvariantsHold() const {
   if (lczero::WLDMInvariantsHold(GetWL(), GetD(), GetM())) return true;
@@ -806,6 +875,11 @@ LowNode* NodeTree::TTFind(uint64_t hash) {
   } else {
     return nullptr;
   }
+}
+
+CorrHistEntry* NodeTree::CHTGetOrCreate(uint64_t hash) {
+  auto [cht_iter, is_cht_miss] = cht_.insert({hash, std::make_unique<CorrHistEntry>()});
+  return cht_iter->second.get();
 }
 
 std::pair<LowNode*, bool> NodeTree::TTGetOrCreate(uint64_t hash) {

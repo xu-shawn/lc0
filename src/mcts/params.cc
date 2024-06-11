@@ -534,11 +534,20 @@ const OptionId SearchParams::kUsePolicyBoostingId{
     "use-policy-boosting", "UsePolicyBoosting",
     "Whether to use policy boosting."};
 
-
-
 const OptionId SearchParams::kSearchSpinBackoffId{
     "search-spin-backoff", "SearchSpinBackoff",
     "Enable backoff for the spin lock that acquires available searcher."};
+
+const OptionId SearchParams::kUseCorrectionHistoryId{
+    "use-correction-history", "UseCorrectionHistory",
+    "Whether to use correction history."};
+const OptionId SearchParams::kCorrectionHistoryAlphaId{
+    "correction-history-alpha", "CorrectionHistoryAlpha",
+    "Exponent in averaging bias. [0,1]. Currently Ignored"};
+const OptionId SearchParams::kCorrectionHistoryLambdaId{
+    "correction-history-lambda", "CorrectionHistoryLambda",
+    "Strength of correction history adjustment. [0,1]"};
+	
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -673,6 +682,11 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kTopPolicyTierTwoBoostId, 0.0f, 1.0f) = 0.02f;
   options->Add<IntOption>(kTopPolicyTierTwoNumBoostId, 0, 8) = 0;
   options->Add<BoolOption>(kUsePolicyBoostingId) = false;
+
+  options->Add<BoolOption>(kUseCorrectionHistoryId) = false;
+  options->Add<FloatOption>(kCorrectionHistoryAlphaId, 0, 1) = 1;
+  options->Add<FloatOption>(kCorrectionHistoryLambdaId, 0, 1) = 0.3;
+
 
 	
 
@@ -832,7 +846,11 @@ SearchParams::SearchParams(const OptionsDict& options)
       kTopPolicyTierTwoNumBoost(options.Get<int>(kTopPolicyTierTwoNumBoostId)),
 			kUsePolicyBoosting(options.Get<bool>(kUsePolicyBoostingId)),
 
-			
+		
+
+      kUseCorrectionHistory(options.Get<bool>(kUseCorrectionHistoryId)),
+      kCorrectionHistoryAlpha(options.Get<float>(kCorrectionHistoryAlphaId)),
+      kCorrectionHistoryLambda(options.Get<float>(kCorrectionHistoryLambdaId)),
 
 
       kEasyEvalWeightDecay(options.Get<float>(kEasyEvalWeightDecayId)),

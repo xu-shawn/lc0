@@ -78,6 +78,7 @@ Position::Position(const ChessBoard& board, int rule50_ply, int game_ply)
 }
 
 uint64_t Position::Hash() const { return us_board_.Hash(); }
+uint64_t Position::CHHash() const { return us_board_.CHHash(); }
 
 std::string Position::DebugString() const { return us_board_.DebugString(); }
 
@@ -160,6 +161,12 @@ uint64_t PositionHistory::HashLast(int positions, int r50_ply) const {
   }
   return HashCat(hash, r50_ply);
 }
+
+
+uint64_t PositionHistory::CHHash() const {
+  return Last().CHHash();
+}
+
 
 std::string GetFen(const Position& pos) {
   std::string result;
