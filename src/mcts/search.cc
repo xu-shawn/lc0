@@ -2435,7 +2435,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float m_delta = 0.0f;
   float vs_delta = 0.0f;
 
-  CorrHistEntry* ntp_cht_entry = search_->dag_->CHTGetOrCreate(nl->GetCHHash());
+  CorrHistEntry* ntp_cht_entry =
+      search_->dag_->CHTGetOrCreate(node_to_process.ch_hash);
 
 
   float ch_delta = ntp_cht_entry->weightSum == 0
