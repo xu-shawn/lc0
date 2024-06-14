@@ -2470,10 +2470,13 @@ void SearchWorker::DoBackupUpdateSingleNode(
     avg_weight *= params_.GetEasyEvalWeightDecay();
   }
 
-  float wl_corrected = nl->GetWL() - (nl->IsTwin() ? 0 : ch_lambda * ch_delta);
-  wl_corrected = std::clamp(wl_corrected, -1.0f, 1.0f);
 	
   if (nl && nl->GetN() == 0) {
+
+    
+    float wl_corrected =
+        nl->GetWL() - (nl->IsTwin() ? 0 : ch_lambda * ch_delta);
+    wl_corrected = std::clamp(wl_corrected, -1.0f, 1.0f);
     nl->FinalizeScoreUpdate(
        wl_corrected, nl->GetD(), nl->GetM(), nl->GetVS(),
         node_to_process.multivisit,
