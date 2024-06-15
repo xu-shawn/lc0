@@ -396,6 +396,10 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
   cht_entry->weightSum += multiweight;  
   cht_entry->deltaSum += multiweight * (v_ - v);
 
+  ch_delta_ = (cht_entry->weightSum > 0)
+                  ? cht_entry->deltaSum / cht_entry->weightSum
+                  : 0.0f;
+
 
   // Recompute Q.
   wl_ += multiweight * (v - wl_) / (weight_ + multiweight);

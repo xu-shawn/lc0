@@ -115,10 +115,21 @@ class ChessBoard {
   }
 
   // A hash for correction history, uses pawn structure (both our and opponents' pawns).
+  // and then uses piece count of rooks, knights, bishops, and queen for both sides
   uint64_t CHHash() const {
     return HashCat({
-        our_pieces_.as_int() & pawns_.as_int(),
+      our_pieces_.as_int() & pawns_.as_int(),
         their_pieces_.as_int() & pawns_.as_int(),
+        std::popcount(rooks().as_int() & our_pieces_.as_int()),
+        std::popcount(rooks().as_int() & their_pieces_.as_int()),
+        std::popcount(bishops().as_int() & our_pieces_.as_int()),
+        std::popcount(bishops().as_int()  & their_pieces_.as_int()),
+        std::popcount(knights().as_int() & our_pieces_.as_int()),
+        std::popcount(knights().as_int() & their_pieces_.as_int()),
+        std::popcount(queens().as_int() & our_pieces_.as_int()),
+        std::popcount(queens().as_int() & their_pieces_.as_int()),
+
+
     });
 
   }
