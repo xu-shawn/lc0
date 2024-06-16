@@ -227,6 +227,7 @@ struct NNEval {
 struct CorrHistEntry {
   double deltaSum = 0.0;
   double weightSum = 0.0;
+  int numMembers = 0;
 };
 
 typedef std::pair<GameResult, GameResult> Bounds;

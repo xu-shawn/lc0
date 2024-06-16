@@ -33,7 +33,18 @@
 #include "chess/bitboard.h"
 #include "utils/hashcat.h"
 
+//using count_bits = __builtin_popcountll;
+
 namespace lczero {
+
+inline uint64_t count_bits(uint64_t x) {
+  int count;
+  for (count = 0; x != 0; ++count) {
+    // Clear the rightmost set bit.
+    x &= x - 1;
+  }
+  return count;
+}
 
 // Initializes internal magic bitboard structures.
 void InitializeMagicBitboards();
@@ -120,14 +131,18 @@ class ChessBoard {
     return HashCat({
       our_pieces_.as_int() & pawns_.as_int(),
         their_pieces_.as_int() & pawns_.as_int(),
-        std::popcount(rooks().as_int() & our_pieces_.as_int()),
-        std::popcount(rooks().as_int() & their_pieces_.as_int()),
-        std::popcount(bishops().as_int() & our_pieces_.as_int()),
-        std::popcount(bishops().as_int()  & their_pieces_.as_int()),
-        std::popcount(knights().as_int() & our_pieces_.as_int()),
-        std::popcount(knights().as_int() & their_pieces_.as_int()),
-        std::popcount(queens().as_int() & our_pieces_.as_int()),
-        std::popcount(queens().as_int() & their_pieces_.as_int()),
+
+        // below would count the number of each piece type on both sides
+
+        count_bits(rooks().as_int() & our_pieces_.as_int()),
+        count_bits(rooks().as_int() & their_pieces_.as_int()),
+        count_bits(bishops().as_int() & our_pieces_.as_int()),  
+        count_bits(bishops().as_int() & their_pieces_.as_int()),
+        count_bits(knights().as_int() & our_pieces_.as_int()),
+        count_bits(knights().as_int() & their_pieces_.as_int()),
+        count_bits(queens().as_int() & our_pieces_.as_int()),
+        count_bits(  queens().as_int() & their_pieces_.as_int()),
+
 
 
     });

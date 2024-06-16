@@ -628,8 +628,19 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
             ") ", 6, 5);
       print(oss, "(VS: ", n->GetVS(), ") ", 6, 5);
       print(oss, "(E: ", n->GetE(), ") ", 6, 5);
-      if 
-      print(oss, "(CHD: ", sign * n->GetCHDelta(), ") ", 6, 5);
+      LowNode* low_node = n->GetLowNode();
+      if (low_node != nullptr) {
+        CorrHistEntry* cht_entry = dag_->CHTGetOrCreate(low_node->GetCHHash());
+
+        print(oss, "(CHW: ", cht_entry->weightSum, ") ", 6, 5);
+        print(oss,
+              "(CHD: ", -sign * cht_entry->deltaSum / (cht_entry->weightSum + 0.0001f),
+              ") ", 6, 5);
+        print(oss, "(CHN: ", cht_entry->numMembers, ") ", 6);
+
+
+
+      }
       print(oss, "(V: ", sign * n->GetV(), ") ", 6, 5);
 
 
@@ -2497,6 +2508,11 @@ void SearchWorker::DoBackupUpdateSingleNode(
        wl_corrected, nl->GetD(), nl->GetM(), nl->GetVS(),
         node_to_process.multivisit,
         node_to_process.multivisit * avg_weight);
+
+    CorrHistEntry* ntp_cht_entry =
+        search_->dag_->CHTGetOrCreate(node_to_process.ch_hash);
+
+    ntp_cht_entry->numMembers++;
   }
 
   if (nr >= 2) {
