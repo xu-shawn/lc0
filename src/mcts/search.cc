@@ -2450,9 +2450,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
   bool use_correction_history = params_.GetUseCorrectionHistory();
 
   float ch_delta;
+  CorrHistEntry* ntp_cht_entry;
 
   if (use_correction_history) {
-    CorrHistEntry* ntp_cht_entry =
+    ntp_cht_entry =
         search_->dag_->CHTGetOrCreate(node_to_process.ch_hash);
     ch_delta = ntp_cht_entry->weightSum == 0
                    ? 0
@@ -2460,12 +2461,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
   }
   else {
     ch_delta = 0;
+    ntp_cht_entry = nullptr;
   }
-
-
-
-
-
   float ch_lambda = params_.GetCorrectionHistoryLambda();
   float ch_alpha = params_.GetCorrectionHistoryAlpha();
 
@@ -2501,7 +2498,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (use_correction_history && !nl->IsTwin()) {
       wl_corrected -= ch_lambda * ch_delta;
       wl_corrected = std::clamp(wl_corrected, -1.0f, 1.0f);
-
     }
 
     nl->FinalizeScoreUpdate(
@@ -2509,10 +2505,12 @@ void SearchWorker::DoBackupUpdateSingleNode(
         node_to_process.multivisit,
         node_to_process.multivisit * avg_weight);
 
-    CorrHistEntry* ntp_cht_entry =
-        search_->dag_->CHTGetOrCreate(node_to_process.ch_hash);
+        // for testing cht is per node
+    if (ntp_cht_entry != nullptr && !nl->IsTwin()) {
+      nl->SetCHTEntry(ntp_cht_entry);
+      ntp_cht_entry->numMembers++;
+    }
 
-    ntp_cht_entry->numMembers++;
   }
 
   if (nr >= 2) {
@@ -2572,12 +2570,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // values and stop terminal adjustment.
 
 
-    // for testing cht is per node
-    CorrHistEntry* cht_entry = pl->GetCHTEntry();
-    if (cht_entry == nullptr) {
-      cht_entry = search_->dag_->CHTGetOrCreate(pl->GetCHHash());
-      pl->SetCHTEntry(cht_entry);
-    }
+
 
     if (pl->IsTerminal()) {
       v = pl->GetWL();
