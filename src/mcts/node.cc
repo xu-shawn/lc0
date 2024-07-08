@@ -374,32 +374,17 @@ void Node::CancelScoreUpdate(uint32_t multivisit) {
 void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
                                   uint32_t multivisit, float multiweight) {
   assert(edges_);
-  // Recompute Q.
-  wl_ += multiweight * (v - wl_) / (weight_ + multiweight);
-  d_ += multiweight * (d - d_) / (weight_ + multiweight);
-  m_ += multiweight * (m - m_) / (weight_ + multiweight);
-  vs_ += multiweight * (vs - vs_) / (weight_ + multiweight);
 
 
+    
+  if (cht_entry_ != nullptr) {
+    cht_entry_->weightSum += multiweight;
+    cht_entry_->deltaSum += multiweight * (v_ - v);
 
-  assert(WLDMInvariantsHold());
-
-  // Increment N.
-  n_ += multivisit;
-  weight_ += multiweight;
-}
-
-void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
-                                  uint32_t multivisit, float multiweight, CorrHistEntry* cht_entry) {
-  assert(edges_);
-
-  cht_entry->weightSum += multiweight;  
-  cht_entry->deltaSum += multiweight * (v_ - v);
-
-  ch_delta_ = (cht_entry->weightSum > 0)
-                  ? cht_entry->deltaSum / cht_entry->weightSum
-                  : 0.0f;
-
+    ch_delta_ = (cht_entry_->weightSum > 0)
+                    ? cht_entry_->deltaSum / cht_entry_->weightSum
+                    : 0.0f;
+  }
 
   // Recompute Q.
   wl_ += multiweight * (v - wl_) / (weight_ + multiweight);
@@ -429,32 +414,22 @@ void LowNode::AdjustForTerminal(float v, float d, float m, float vs,
   m_ += multiweight * m / weight_;
   vs_ += multiweight * vs / weight_;
 
+  if (cht_entry_ != nullptr ) {cht_entry_->deltaSum -= multiweight * v;
+  }
+
+
 
   assert(WLDMInvariantsHold());
 }
-
-void LowNode::AdjustForTerminal(float v, float d, float m, float vs,
-                                uint32_t multivisit, float multiweight,
-                                CorrHistEntry* cht_entry) {
-  assert(static_cast<uint32_t>(multivisit) <= n_);
-
-  // Recompute Q.
-  wl_ += multiweight * v / weight_;
-  d_ += multiweight * d / weight_;
-  m_ += multiweight * m / weight_;
-  vs_ += multiweight * vs / weight_;
-
-  
-  cht_entry->deltaSum -= multiweight * v;
-
-  assert(WLDMInvariantsHold());
-}
-
 
 
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, float vs,
                                uint32_t multivisit, float multiweight) {
+
+
+
+
   // Recompute Q.
   wl_ += multiweight * (v - wl_) / (weight_ + multiweight);
   d_ += multiweight * (d - d_) / (weight_ + multiweight);

@@ -2573,7 +2573,11 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
 
     // for testing cht is per node
-    CorrHistEntry* cht_entry = search_->dag_->CHTGetOrCreate(pl->GetCHHash());
+    CorrHistEntry* cht_entry = pl->GetCHTEntry();
+    if (cht_entry == nullptr) {
+      cht_entry = search_->dag_->CHTGetOrCreate(pl->GetCHHash());
+      pl->SetCHTEntry(cht_entry);
+    }
 
     if (pl->IsTerminal()) {
       v = pl->GetWL();
@@ -2585,10 +2589,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
     pl->FinalizeScoreUpdate(
         v, d, m, vs, node_to_process.multivisit,
-        node_to_process.multivisit * avg_weight, cht_entry);
+        node_to_process.multivisit * avg_weight);
     if (n_to_fix > 0) {
       pl->AdjustForTerminal(v_delta, d_delta, m_delta, vs_delta, n_to_fix,
-                            weight_to_fix, cht_entry);
+                            weight_to_fix);
     }
 
     

@@ -314,7 +314,6 @@ class Node {
   uint64_t GetHash() const;
   uint64_t GetCHHash() const;
 
-
   void SetE(float e);
 
 
@@ -590,8 +589,13 @@ class LowNode {
   float GetE() const { return e_; }
   float GetCHDelta() const { return ch_delta_; }
 
+
   uint64_t GetHash() const { return hash_; }
   uint64_t GetCHHash() const { return ch_hash_; }
+  CorrHistEntry* GetCHTEntry() const { return cht_entry_; }
+
+  void SetCHTEntry(CorrHistEntry* cht_entry) { cht_entry_ = cht_entry; }
+
 
 
   // Returns whether the node is known to be draw/loss/win.
@@ -621,17 +625,9 @@ class LowNode {
   void FinalizeScoreUpdate(float v, float d, float m, float vs,
                            uint32_t multivisit, float multiweight);
 
-  void FinalizeScoreUpdate(float v, float d, float m, float vs,
-                           uint32_t multivisit, float multiweight,
-                           CorrHistEntry* cht_entry);
-
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, float vs,
                          uint32_t multivisit, float multiweight);
-
-  void AdjustForTerminal(float v, float d, float m, float vs,
-                         uint32_t multivisit, float multiweight,
-                         CorrHistEntry* cht_entry);
 
   // Deletes all children.
   void ReleaseChildren(GCQueue* gc_queue);
@@ -703,6 +699,8 @@ class LowNode {
   uint64_t hash_ = 0;
 
   uint64_t ch_hash_ = 0;
+
+  CorrHistEntry* cht_entry_ = nullptr;
 
 
 
