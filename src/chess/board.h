@@ -131,6 +131,7 @@ class ChessBoard {
     return HashCat({
       our_pieces_.as_int() & pawns_.as_int(),
         their_pieces_.as_int() & pawns_.as_int(),
+        our_king_.as_int(), their_king_.as_int(),
 
         // below would count the number of each piece type on both sides
 

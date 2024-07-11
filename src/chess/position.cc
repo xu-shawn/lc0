@@ -176,6 +176,16 @@ uint64_t PositionHistory::CHHash() const {
     char moved_piece = GetPieceAt(last.GetBoard(), last_move->to().row(),
                                               last_move->to().col());
     position_hash = HashCat(position_hash, moved_piece);
+
+    // we add whether it was a capture and what it captured if so
+    // if a piece was not capture then GetPieceAt returns "\0"
+    // if a piece was not captured then GetPieceAt returns "\0"
+    if (positions_.size() > 1) {
+      char captured_piece =
+          GetPieceAt(positions_[positions_.size() - 2].GetBoard(),
+                     last_move->to().row(), last_move->to().col());
+      position_hash = HashCat(position_hash, captured_piece);
+		}
 	}
 
   return position_hash;
