@@ -107,8 +107,7 @@ class PositionHistory {
     positions_.reserve(
         std::max(other.positions_.size() + 1, other.positions_.capacity()));
     positions_ = other.positions_;
-    moves_.reserve(std::max(other.moves_.size() + 1, other.moves_.capacity()));
-    moves_ = other.moves_;
+    last_move_ = other.last_move_;
 
   }
   PositionHistory(PositionHistory&& other) = default;
@@ -120,9 +119,7 @@ class PositionHistory {
         std::max(other.positions_.size() + 1, other.positions_.capacity()));
     positions_ = other.positions_;
 
-    moves_.clear();
-    moves_.reserve(std::max(other.moves_.size() + 1, other.moves_.capacity()));
-    moves_ = other.moves_;
+    last_move_ = other.last_move_;
 
     return *this;
   }
@@ -135,9 +132,7 @@ class PositionHistory {
   const Position& Last() const { return positions_.back(); }
 
   // Returns the last made move, but return nullptr if no moves were made yet.
-  const Move* LastMove() const {
-    return moves_.empty() ? nullptr : &moves_.back();
-  }
+  const Move LastMove() const { return last_move_; }
 
   // N-th position of the game, 0-based.
   const Position& GetPositionAt(int idx) const { return positions_[idx]; }
@@ -181,7 +176,7 @@ class PositionHistory {
   int ComputeLastMoveRepetitions(int* cycle_length) const;
 
   std::vector<Position> positions_;
-  std::vector<Move> moves_;
+  Move last_move_ = Move(0, 0);
 };
 
 }  // namespace lczero

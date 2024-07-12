@@ -112,7 +112,7 @@ void PositionHistory::Reset(const ChessBoard& board, int rule50_ply,
   positions_.clear();
   positions_.emplace_back(board, rule50_ply, game_ply);
 
-  moves_.clear();
+  last_move_ = Move(0, 0);
 }
 
 void PositionHistory::Append(Move m) {
@@ -124,7 +124,7 @@ void PositionHistory::Append(Move m) {
   int repetitions = ComputeLastMoveRepetitions(&cycle_length);
   positions_.back().SetRepetitions(repetitions, cycle_length);
 
-  moves_.push_back(m);
+  last_move_ = m;
 }
 
 int PositionHistory::ComputeLastMoveRepetitions(int* cycle_length) const {
@@ -169,12 +169,12 @@ uint64_t PositionHistory::HashLast(int positions, int r50_ply) const {
 
 uint64_t PositionHistory::CHHash() const { 
   Position last = Last();
-  const Move* last_move = LastMove();
+  const Move last_move = LastMove();
   uint64_t position_hash = last.CHHash();
   if (last_move) {
-		position_hash = HashCat(position_hash, last_move->Hash());
-    char moved_piece = GetPieceAt(last.GetBoard(), last_move->to().row(),
-                                              last_move->to().col());
+		position_hash = HashCat(position_hash, last_move.Hash());
+    char moved_piece = GetPieceAt(last.GetBoard(), last_move.to().row(),
+                                              last_move.to().col());
     position_hash = HashCat(position_hash, moved_piece);
 
     // we add whether it was a capture and what it captured if so
@@ -183,7 +183,7 @@ uint64_t PositionHistory::CHHash() const {
     if (positions_.size() > 1) {
       char captured_piece =
           GetPieceAt(positions_[positions_.size() - 2].GetBoard(),
-                     last_move->to().row(), last_move->to().col());
+                     last_move.to().row(), last_move.to().col());
       position_hash = HashCat(position_hash, captured_piece);
 		}
 	}
