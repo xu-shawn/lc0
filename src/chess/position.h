@@ -176,7 +176,7 @@ class PositionHistory {
   int ComputeLastMoveRepetitions(int* cycle_length) const;
 
   std::vector<Position> positions_;
-  Move last_move_ = Move(0, 0);
+  Move last_move_ = Move();
 };
 
 }  // namespace lczero

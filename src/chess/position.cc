@@ -112,7 +112,7 @@ void PositionHistory::Reset(const ChessBoard& board, int rule50_ply,
   positions_.clear();
   positions_.emplace_back(board, rule50_ply, game_ply);
 
-  last_move_ = Move(0, 0);
+  last_move_ = Move();
 }
 
 void PositionHistory::Append(Move m) {
