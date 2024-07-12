@@ -2215,9 +2215,11 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
       int bs;
 
       if (my_ply <= 64) {
-        bs = 8;
+        bs = 32;
 
       } else if (my_ply <= 80) {
+        bs = 16;
+      } else if (my_ply <= 92) {
         bs = 4;
       } else {
         bs = 1;
