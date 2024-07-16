@@ -1935,6 +1935,9 @@ void SearchWorker::PickNodesToExtendTask(
           if (idx > cache_filled_idx) {
             float p = cur_iters[idx].GetP();
 
+            // a small hack to reduce policy on bad moves
+            if (p < 0.01f) p /= 3;
+
             // only boost visited nodes
 						if (visited[idx]) {
               if (util >= min_policy_boost_util_t1) {
