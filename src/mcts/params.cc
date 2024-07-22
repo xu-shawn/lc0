@@ -657,16 +657,17 @@ void SearchParams::Populate(OptionsParser* options) {
       0.13f;
   options->Add<FloatOption>(kUncertaintyWeightingExponentId, -10.0f, 0.0f) =
       -1.76f;
-  options->Add<BoolOption>(kUseUncertaintyWeightingId) = false;
+  options->Add<BoolOption>(kUseUncertaintyWeightingId) = true;
   options->Add<FloatOption>(kEasyEvalWeightDecayId, 0.0f, 100.0f) = 1.0f;
 
 
   options->Add<FloatOption>(kCpuctUncertaintyMinFactorId, 0.0f, 100.0f) = 0.8776107244713488f;
   options->Add<FloatOption>(kCpuctUncertaintyMaxFactorId, 0.0f, 100.0f) = 1.7175437306867911f;
   options->Add<FloatOption>(kCpuctUncertaintyMinUncertaintyId, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kCpuctUncertaintyMaxUncertaintyId, 0.0f, 1.0f) = 0.12087181807951577f;
+  options->Add<FloatOption>(kCpuctUncertaintyMaxUncertaintyId, 0.0f, 1.0f) =
+      0.347f;
   options->Add<BoolOption>(kJustFpuUncertaintyId) = false;
-  options->Add<BoolOption>(kUseCpuctUncertaintyId) = false;
+  options->Add<BoolOption>(kUseCpuctUncertaintyId) = true;
 
   options->Add<FloatOption>(kDesperationMultiplierId, 0.0f, 100.0f) = 1.5f;
   options->Add<FloatOption>(kDesperationLowId, 0.0f, 1.0f) = 0.25f;
@@ -681,9 +682,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kTopPolicyNumBoostId, 0, 8) = 3;
   options->Add<FloatOption>(kTopPolicyTierTwoBoostId, 0.0f, 1.0f) = 0.02f;
   options->Add<IntOption>(kTopPolicyTierTwoNumBoostId, 0, 8) = 0;
-  options->Add<BoolOption>(kUsePolicyBoostingId) = false;
+  options->Add<BoolOption>(kUsePolicyBoostingId) = true;
 
-  options->Add<BoolOption>(kUseCorrectionHistoryId) = false;
+  options->Add<BoolOption>(kUseCorrectionHistoryId) = true;
   options->Add<FloatOption>(kCorrectionHistoryAlphaId, 0, 1) = 1;
   options->Add<FloatOption>(kCorrectionHistoryLambdaId, 0, 1) = 0.3;
 

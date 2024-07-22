@@ -15,23 +15,7 @@ Add a file titled lc0.config with the following parameters:
 
 ```
 --weights=...
-
---uncertainty-weighting-cap=1.03
---uncertainty-weighting-coefficient=0.13
---uncertainty-weighting-exponent=-1.76
---use-uncertainty-weighting=true
-
---reported-nodes=legacy
 --backend-opts=policy_head=vanilla,value_head=winner
-
---top-policy-num-boost=3
---top-policy-boost=0.05
-
---policy-softmax-temp=1.4
---fpu-value=0.984160
---cpuct-exponent=0.6
---cpuct=2.897
---cpuct-factor=0
 ```
 
 The weights argument should be the path to your network of choice.
@@ -83,13 +67,11 @@ The top `top-policy-num-boost` are treated as if they had policy at least `top-p
 There is also a "tier two" for moves that are still ranked highly but not in the top few.
 
 Recommended settings below.
-Disabled by default.
+Enabled by default.
 
 ```
 --top-policy-num-boost=3
 --top-policy-boost=0.05
---top-policy-tier-two-num-boost=6
---top-policy-tier-two-boost=0.025
 --use-policy-boosting=true
 ```
 
@@ -137,7 +119,7 @@ Identical to the [Katago implementation](https://github.com/lightvector/KataGo/b
 ```
 
 
-You must set `--use-uncertainty-weighting=true` to turn it on. With BT3, the gain was 20 elo at LTC with
+Enabled by default. With BT3, the gain was 20 elo at LTC with
 
 ```
 --uncertainty-weighting-cap=1.03
@@ -150,6 +132,8 @@ You must set `--use-uncertainty-weighting=true` to turn it on. With BT3, the gai
 
 
 ### CPUCT Utility Variance Scaling
+
+THIS HAS BEEN REPLACED BY A CPUCT UNCERTAINTY FEATURE, DO NOT USE.
 
 Identical to the [Katago implementation](https://github.com/lightvector/KataGo/blob/master/docs/KataGoMethods.md#dynamic-variance-scaled-cpuct). The new parameters are
 
