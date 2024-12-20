@@ -1,4 +1,4 @@
-/*
+  /*
   This file is part of Leela Chess Zero.
   Copyright (C) 2018 The LCZero Authors
 
@@ -378,8 +378,10 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
 
     
   if (cht_entry_ != nullptr) {
-    cht_entry_->weightSum += multiweight;
-    cht_entry_->deltaSum += multiweight * (v_ - v);
+    float cht_weight_adj = multiweight / pow(weight_ + 1, 0.3);
+    cht_entry_->weightSum +=
+        cht_weight_adj;
+    cht_entry_->deltaSum += cht_weight_adj * (v_ - v);
 
     ch_delta_ = (cht_entry_->weightSum > 0)
                     ? cht_entry_->deltaSum / cht_entry_->weightSum

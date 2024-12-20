@@ -129,23 +129,19 @@ class ChessBoard {
   // and then uses piece count of rooks, knights, bishops, and queen for both sides
   uint64_t CHHash() const {
     return HashCat({
-      our_pieces_.as_int() & pawns_.as_int(),
+        our_pieces_.as_int() & pawns_.as_int(),
         their_pieces_.as_int() & pawns_.as_int(),
         our_king_.as_int(), their_king_.as_int(),
 
-        // below would count the number of each piece type on both sides
 
-        count_bits(rooks().as_int() & our_pieces_.as_int()),
+ /*       count_bits(rooks().as_int() & our_pieces_.as_int()),
         count_bits(rooks().as_int() & their_pieces_.as_int()),
         count_bits(bishops().as_int() & our_pieces_.as_int()),  
         count_bits(bishops().as_int() & their_pieces_.as_int()),
         count_bits(knights().as_int() & our_pieces_.as_int()),
         count_bits(knights().as_int() & their_pieces_.as_int()),
         count_bits(queens().as_int() & our_pieces_.as_int()),
-        count_bits(  queens().as_int() & their_pieces_.as_int()),
-
-
-
+        count_bits(  queens().as_int() & their_pieces_.as_int()),*/
     });
 
   }
