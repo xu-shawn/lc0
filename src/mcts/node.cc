@@ -174,7 +174,7 @@ uint32_t Node::GetChildrenVisits() const {
 }
 
 
-inline double GetCorrectionWeight(double weight) { return pow(weight, 0.3); }
+inline double GetCorrectionWeight(double weight) { return pow(fmax(0, weight - 4.0f), 0.3); }
 
 
 uint32_t Node::GetTotalVisits() const {
@@ -376,15 +376,16 @@ void Node::CancelScoreUpdate(uint32_t multivisit) {
 }
 
 void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
-                                  uint32_t multivisit, float multiweight) {
+                                  uint32_t multivisit, float multiweight, bool parent_visit) {
   assert(edges_);
 
 
     
-  if (cht_entry_ != nullptr) {
-    cht_entry_->deltaSum -=
-        (wl_ - v_) * GetCorrectionWeight(weight_);
-    cht_entry_->weightSum += GetCorrectionWeight(weight_ + multiweight) - GetCorrectionWeight(weight_);
+  if (cht_entry_ != nullptr && parent_visit) {
+    cht_entry_->deltaSum -= (wl_ - v_) * GetCorrectionWeight(children_weight_);
+    cht_entry_->weightSum +=
+        GetCorrectionWeight(children_weight_ + multiweight) -
+        GetCorrectionWeight(children_weight_);
 
     ch_delta_ = (cht_entry_->weightSum > 0)
                     ? cht_entry_->deltaSum / cht_entry_->weightSum
@@ -401,9 +402,11 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
   n_ += multivisit;
   weight_ += multiweight;
 
-  if (cht_entry_ != nullptr) {
+  if (parent_visit) children_weight_ += multiweight;
+
+  if (cht_entry_ != nullptr && parent_visit) {
     cht_entry_->deltaSum +=
-      (wl_ - v_) * GetCorrectionWeight(weight_);
+      (wl_ - v_) * GetCorrectionWeight(children_weight_);
   }
 
 

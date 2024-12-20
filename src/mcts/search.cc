@@ -2513,7 +2513,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     nl->FinalizeScoreUpdate(
        wl_corrected, nl->GetD(), nl->GetM(), nl->GetVS(),
         node_to_process.multivisit,
-        node_to_process.multivisit * avg_weight);
+        node_to_process.multivisit * avg_weight, false);
 
         // for testing cht is per node
     if (ntp_cht_entry != nullptr && !nl->IsTwin()) {

@@ -432,7 +432,6 @@ class Node {
   // flipped depending on the side to move.
   double d_ = 0.0f;
 
-
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Pointer to the low node.
   LowNode* low_node_ = nullptr;
@@ -623,7 +622,8 @@ class LowNode {
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
   void FinalizeScoreUpdate(float v, float d, float m, float vs,
-                           uint32_t multivisit, float multiweight);
+                           uint32_t multivisit, float multiweight,
+                           bool parent_visit = true);
 
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, float vs,
@@ -694,6 +694,8 @@ class LowNode {
   // Averaged draw probability. Works similarly to WL, except that D is not
   // flipped depending on the side to move.
   double d_ = 0.0f;
+
+  float children_weight_ = 0.0f;
 
   // Position hash and a TT key.
   uint64_t hash_ = 0;
