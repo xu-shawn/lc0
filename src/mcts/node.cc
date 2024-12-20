@@ -173,6 +173,10 @@ uint32_t Node::GetChildrenVisits() const {
   return low_node_ ? low_node_->GetChildrenVisits() : 0;
 }
 
+
+inline double GetCorrectionWeight(double weight) { return pow(weight, 0.3); }
+
+
 uint32_t Node::GetTotalVisits() const {
   return low_node_ ? low_node_->GetN() : 0;
 }
@@ -378,10 +382,9 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
 
     
   if (cht_entry_ != nullptr) {
-    float cht_weight_adj = multiweight / pow(weight_ + 1, 0.3);
-    cht_entry_->weightSum +=
-        cht_weight_adj;
-    cht_entry_->deltaSum += cht_weight_adj * (v_ - v);
+    cht_entry_->deltaSum -=
+        (wl_ - v_) * GetCorrectionWeight(weight_);
+    cht_entry_->weightSum += GetCorrectionWeight(weight_ + multiweight) - GetCorrectionWeight(weight_);
 
     ch_delta_ = (cht_entry_->weightSum > 0)
                     ? cht_entry_->deltaSum / cht_entry_->weightSum
@@ -394,13 +397,20 @@ void LowNode::FinalizeScoreUpdate(float v, float d, float m, float vs,
   m_ += multiweight * (m - m_) / (weight_ + multiweight);
   vs_ += multiweight * (vs - vs_) / (weight_ + multiweight);
 
+  // Increment N.
+  n_ += multivisit;
+  weight_ += multiweight;
+
+  if (cht_entry_ != nullptr) {
+    cht_entry_->deltaSum +=
+      (wl_ - v_) * GetCorrectionWeight(weight_);
+  }
+
 
 
   assert(WLDMInvariantsHold());
 
-  // Increment N.
-  n_ += multivisit;
-  weight_ += multiweight;
+
 }
 
 
@@ -409,6 +419,8 @@ void LowNode::AdjustForTerminal(float v, float d, float m, float vs,
   assert(static_cast<uint32_t>(multivisit) <= n_);
 
 
+  if (cht_entry_ != nullptr)
+    cht_entry_->deltaSum -= (wl_ - v_) * GetCorrectionWeight(weight_);
 
   // Recompute Q.
   wl_ += multiweight * v / weight_;
@@ -416,8 +428,8 @@ void LowNode::AdjustForTerminal(float v, float d, float m, float vs,
   m_ += multiweight * m / weight_;
   vs_ += multiweight * vs / weight_;
 
-  if (cht_entry_ != nullptr ) {cht_entry_->deltaSum -= multiweight * v;
-  }
+  if (cht_entry_ != nullptr)
+    cht_entry_->deltaSum += (wl_ - v_) * GetCorrectionWeight(weight_);
 
 
 

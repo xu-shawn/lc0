@@ -2506,7 +2506,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     float wl_corrected = nl->GetWL();
     if (use_correction_history && !nl->IsTwin() && !nl->IsTerminal()) {
-      wl_corrected -= ch_lambda * ch_delta;
+      wl_corrected += ch_lambda * ch_delta;
       wl_corrected = std::clamp(wl_corrected, -1.0f, 1.0f);
     }
 
