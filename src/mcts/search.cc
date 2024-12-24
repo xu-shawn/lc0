@@ -1937,9 +1937,9 @@ void SearchWorker::PickNodesToExtendTask(
 
             // a small hack to reduce policy on bad moves
             if (p < 0.01f) p /= 3;
-            if (cur_iters[idx].GetWL(0.0f) < -0.995) p /= 5;
-            else if (cur_iters[idx].GetWL(0.0f) < -0.99) p /= 3;
-            else if (cur_iters[idx].GetWL(0.0f) < -0.95) p /= 2;
+            //if (cur_iters[idx].GetWL(0.0f) < -0.995) p /= 5;
+            //else if (cur_iters[idx].GetWL(0.0f) < -0.99) p /= 3;
+            //else if (cur_iters[idx].GetWL(0.0f) < -0.95) p /= 2;
 
 
 
@@ -2506,14 +2506,14 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     float wl_corrected = nl->GetWL();
     if (use_correction_history && !nl->IsTwin() && !nl->IsTerminal()) {
-      wl_corrected -= ch_lambda * ch_delta;
+      wl_corrected += ch_lambda * ch_delta;
       wl_corrected = std::clamp(wl_corrected, -1.0f, 1.0f);
     }
 
     nl->FinalizeScoreUpdate(
        wl_corrected, nl->GetD(), nl->GetM(), nl->GetVS(),
         node_to_process.multivisit,
-        node_to_process.multivisit * avg_weight);
+        node_to_process.multivisit * avg_weight, false);
 
         // for testing cht is per node
     if (ntp_cht_entry != nullptr && !nl->IsTwin()) {
