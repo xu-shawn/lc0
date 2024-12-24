@@ -1953,7 +1953,9 @@ void SearchWorker::PickNodesToExtendTask(
               }
             }
 
-            
+            if (util > current_score[0] - p * puct_mult / (1 + weightstarted))
+              p *= 1.3;
+
             current_score[idx] =
               p * puct_mult / (1 + weightstarted) + util;
             cache_filled_idx++;
