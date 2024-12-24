@@ -1908,6 +1908,7 @@ void SearchWorker::PickNodesToExtendTask(
       }
 
 
+      float u_scale = 1.1;
 			const float puct_mult =
           ComputeExploreFactor(params_, node->GetWeight(), node->GetWL(),
                                node->GetVS(), node->GetE(), is_root_node);
@@ -1934,6 +1935,7 @@ void SearchWorker::PickNodesToExtendTask(
           const float util = current_util[idx];
           if (idx > cache_filled_idx) {
             float p = cur_iters[idx].GetP();
+            const float unscaled_p = p;
 
             // a small hack to reduce policy on bad moves
             if (p < 0.01f) p /= 3;
@@ -1941,10 +1943,8 @@ void SearchWorker::PickNodesToExtendTask(
             //else if (cur_iters[idx].GetWL(0.0f) < -0.99) p /= 3;
             //else if (cur_iters[idx].GetWL(0.0f) < -0.95) p /= 2;
 
-
-
             // only boost visited nodes
-						if (visited[idx]) {
+            if (visited[idx]) {
               if (util >= min_policy_boost_util_t1) {
                 p = std::max(p, policy_boost_t1);
               }
@@ -1953,9 +1953,9 @@ void SearchWorker::PickNodesToExtendTask(
               }
             }
 
-            
             current_score[idx] =
-              p * puct_mult / (1 + weightstarted) + util;
+                p * puct_mult / (1 + weightstarted) + util * u_scale;
+            u_scale -= unscaled_p * unscaled_p * unscaled_p;
             cache_filled_idx++;
           }
           if (is_root_node) {
