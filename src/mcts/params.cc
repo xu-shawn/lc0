@@ -684,7 +684,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kTopPolicyTierTwoNumBoostId, 0, 8) = 0;
   options->Add<BoolOption>(kUsePolicyBoostingId) = true;
 
-  options->Add<BoolOption>(kUseCorrectionHistoryId) = true;
+  options->Add<BoolOption>(kUseCorrectionHistoryId) = false;
   options->Add<FloatOption>(kCorrectionHistoryAlphaId, 0, 1) = 1;
   options->Add<FloatOption>(kCorrectionHistoryLambdaId, 0, 1) = 0.3;
 
