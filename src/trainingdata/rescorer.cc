@@ -1134,8 +1134,9 @@ void WriteNnueOutput(const FileData<FrameType>& data, const std::string& nnue_pl
 }
 
 template <typename FrameType>
-void WriteBinpackOutput(const FileData<FrameType>& data, const std::string& binpack_file) {
-  if (binpack_file.empty() ) return;
+void WriteBinpackOutput(const FileData<FrameType>& data, const std::string& binpack_file,
+                        ProcessFileFlags flags) {
+  if (binpack_file.empty()) return;
 
   static Mutex mutex;
   Mutex::Lock lock(mutex);
@@ -1156,7 +1157,8 @@ void WriteBinpackOutput(const FileData<FrameType>& data, const std::string& binp
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
 
-  if (PositionToFen(history.Last()) != "rbnqknbr/pppppppp/8/8/8/8/PPPPPPPP/RBNQKNBR w KQkq - 0 1") {
+  if (PositionToFen(history.Last()) !=
+      "rbnqknbr/pppppppp/8/8/8/8/PPPPPPPP/RBNQKNBR w KQkq - 0 1") {
     return;
   }
 
@@ -1166,16 +1168,18 @@ void WriteBinpackOutput(const FileData<FrameType>& data, const std::string& binp
 
     if (chunk.visits > 0) {
       Move m = MoveFromNNIndex(
-          chunk.played_idx, TransformForPosition(data.input_format, history));
+          flags.nnue_best_move ? chunk.best_idx : chunk.played_idx,
+          TransformForPosition(data.input_format, history));
       if (p.IsBlackToMove()) m.Flip();
 
       auto fen = PositionToFen(p);
+      auto q = flags.nnue_best_score ? chunk.best_q : chunk.played_q;
+
       SfbinpackEntry entry{
           .fen = fen.c_str(),
           .uci_move = m.ToString(false).c_str(),
           .score = static_cast<short>(
-              round(660.6 * chunk.played_q /
-                    (1 - 0.9751875 * std::pow(chunk.played_q, 10)))),
+              round(660.6 * q / (1 - 0.9751875 * std::pow(q, 10)))),
           .ply = static_cast<unsigned short>(p.GetGamePly()),
           .result = static_cast<short>(round(chunk.result_q)),
       };
@@ -1259,7 +1263,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     // Write NNUE output
     WriteNnueOutput(data, nnue_plain_file, flags);
 
-    WriteBinpackOutput(data, nnue_binpack_file);
+    WriteBinpackOutput(data, nnue_binpack_file, flags);
 
     // Write outputs
     WriteOutputs(data, file, outputDir);
