@@ -33,6 +33,7 @@
 #include <span>
 #include <sstream>
 
+#include "ffi.h"
 #include "gtb-probe.h"
 #include "neural/decoder.h"
 #include "syzygy/syzygy.h"
@@ -90,6 +91,9 @@ const OptionId kNnueBestMoveId{
     "If set to true the generated files do not compress well."};
 const OptionId kDeleteFilesId{"delete-files", "",
                               "Delete the input files after processing."};
+
+const OptionId kBinpackFileId{"binpack-file", "",
+                              "Write binpack training data to this file."};
 
 class PolicySubNode {
  public:
@@ -1130,6 +1134,65 @@ void WriteNnueOutput(const FileData<FrameType>& data, const std::string& nnue_pl
 }
 
 template <typename FrameType>
+void WriteBinpackOutput(const FileData<FrameType>& data, const std::string& binpack_file) {
+  if (binpack_file.empty() ) return;
+
+  static Mutex mutex;
+  Mutex::Lock lock(mutex);
+
+  sfbinpack_writer_handle* writer = sfbinpack_writer_new(binpack_file.c_str());
+  if (!writer) {
+    std::cerr << "Failed to open binpack writer for: " << binpack_file
+              << std::endl;
+    return;
+  }
+
+  PositionHistory history;
+  int rule50ply;
+  int gameply;
+  ChessBoard board;
+
+  PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]),
+                &board, &rule50ply, &gameply);
+  history.Reset(board, rule50ply, gameply);
+
+  if (PositionToFen(history.Last()) != "rbnqknbr/pppppppp/8/8/8/8/PPPPPPPP/RBNQKNBR w KQkq - 0 1") {
+    return;
+  }
+
+  for (size_t i = 0; i < data.fileContents.size(); i++) {
+    const auto& chunk = data.fileContents[i];
+    Position p = history.Last();
+
+    if (chunk.visits > 0) {
+      Move m = MoveFromNNIndex(
+          chunk.played_idx, TransformForPosition(data.input_format, history));
+      if (p.IsBlackToMove()) m.Flip();
+
+      auto fen = PositionToFen(p);
+      SfbinpackEntry entry{
+          .fen = fen.c_str(),
+          .uci_move = m.ToString(false).c_str(),
+          .score = static_cast<short>(
+              round(660.6 * chunk.played_q /
+                    (1 - 0.9751875 * std::pow(chunk.played_q, 10)))),
+          .ply = static_cast<unsigned short>(p.GetGamePly()),
+          .result = static_cast<short>(round(chunk.result_q)),
+      };
+
+      sfbinpack_writer_write_entry(writer, &entry);
+    }
+
+    if (i < data.moves.size()) {
+      history.Append(data.moves[i]);
+    }
+  }
+
+  sfbinpack_writer_finish(writer);
+  sfbinpack_writer_free(writer);
+}
+
+template <typename FrameType>
 void WriteOutputs(const FileData<FrameType>& data, const std::string& file,
                   const std::string& outputDir) {
   // Write processed training data
@@ -1183,7 +1246,8 @@ FileData<FrameType> ProcessFileInternal(std::vector<FrameType> fileContents,
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset,
                  float dtzBoost, int newInputFormat,
-                 std::string nnue_plain_file, ProcessFileFlags flags) {
+                 std::string nnue_plain_file, std::string nnue_binpack_file,
+                 ProcessFileFlags flags) {
   try {
     // Read file data
     std::vector<V6TrainingData> fileContents = ReadFile(file);
@@ -1194,6 +1258,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
 
     // Write NNUE output
     WriteNnueOutput(data, nnue_plain_file, flags);
+
+    WriteBinpackOutput(data, nnue_binpack_file);
 
     // Write outputs
     WriteOutputs(data, file, outputDir);
@@ -1214,7 +1280,8 @@ void ProcessFiles(const std::vector<std::string>& files,
                   SyzygyTablebase* tablebase, std::string outputDir,
                   float distTemp, float distOffset, float dtzBoost,
                   int newInputFormat, int offset, int mod,
-                  std::string nnue_plain_file, ProcessFileFlags flags) {
+                  std::string nnue_plain_file, std::string nnue_binpack_file,
+                  ProcessFileFlags flags) {
   std::cerr << "Thread: " << offset << " starting" << std::endl;
   for (size_t i = offset; i < files.size(); i += mod) {
     if (files[i].rfind(".gz") != files[i].size() - 3) {
@@ -1222,7 +1289,7 @@ void ProcessFiles(const std::vector<std::string>& files,
       continue;
     }
     ProcessFile(files[i], tablebase, outputDir, distTemp, distOffset, dtzBoost,
-                newInputFormat, nnue_plain_file, flags);
+                newInputFormat, nnue_plain_file, nnue_binpack_file, flags);
   }
 }
 
@@ -1302,6 +1369,7 @@ void RunRescorer() {
   options.Add<StringOption>(kInputDirId);
   options.Add<StringOption>(kOutputDirId);
   options.Add<StringOption>(kPolicySubsDirId);
+  options.Add<StringOption>(kBinpackFileId);
   options.Add<IntOption>(kThreadsId, 1, 20) = 1;
   options.Add<FloatOption>(kTempId, 0.001, 100) = 1;
   // Positive dist offset requires knowing the legal move set, so not supported
@@ -1320,8 +1388,11 @@ void RunRescorer() {
   if (!options.ProcessAllFlags()) return;
 
   if (options.GetOptionsDict().IsDefault<std::string>(kOutputDirId) &&
-      options.GetOptionsDict().IsDefault<std::string>(kNnuePlainFileId)) {
-    std::cerr << "Must provide an output dir or NNUE plain file." << std::endl;
+      options.GetOptionsDict().IsDefault<std::string>(kNnuePlainFileId) &&
+      options.GetOptionsDict().IsDefault<std::string>(kBinpackFileId)) {
+    std::cerr
+        << "Must provide an output dir or NNUE plain file or binpack file."
+        << std::endl;
     return;
   }
 
@@ -1379,7 +1450,8 @@ void RunRescorer() {
             options.GetOptionsDict().Get<float>(kDistributionOffsetId),
             dtz_boost, options.GetOptionsDict().Get<int>(kNewInputFormatId),
             offset_val, threads,
-            options.GetOptionsDict().Get<std::string>(kNnuePlainFileId), flags);
+            options.GetOptionsDict().Get<std::string>(kNnuePlainFileId),
+            options.GetOptionsDict().Get<std::string>(kBinpackFileId), flags);
       });
     }
     for (size_t i = 0; i < threads_.size(); i++) {
@@ -1393,7 +1465,8 @@ void RunRescorer() {
         options.GetOptionsDict().Get<float>(kTempId),
         options.GetOptionsDict().Get<float>(kDistributionOffsetId), dtz_boost,
         options.GetOptionsDict().Get<int>(kNewInputFormatId), 0, 1,
-        options.GetOptionsDict().Get<std::string>(kNnuePlainFileId), flags);
+        options.GetOptionsDict().Get<std::string>(kNnuePlainFileId),
+        options.GetOptionsDict().Get<std::string>(kBinpackFileId), flags);
   }
   std::cout << "Games processed: " << games << std::endl;
   std::cout << "Positions processed: " << positions << std::endl;
