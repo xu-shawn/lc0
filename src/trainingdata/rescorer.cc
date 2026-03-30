@@ -1141,13 +1141,6 @@ void WriteBinpackOutput(const FileData<FrameType>& data, const std::string& binp
   static Mutex mutex;
   Mutex::Lock lock(mutex);
 
-  sfbinpack_writer_handle* writer = sfbinpack_writer_new(binpack_file.c_str());
-  if (!writer) {
-    std::cerr << "Failed to open binpack writer for: " << binpack_file
-              << std::endl;
-    return;
-  }
-
   PositionHistory history;
   int rule50ply;
   int gameply;
@@ -1159,6 +1152,13 @@ void WriteBinpackOutput(const FileData<FrameType>& data, const std::string& binp
 
   if (PositionToFen(history.Last()) !=
       "rbnqknbr/pppppppp/8/8/8/8/PPPPPPPP/RBNQKNBR w KQkq - 0 1") {
+    return;
+  }
+
+  sfbinpack_writer_handle* writer = sfbinpack_writer_new(binpack_file.c_str());
+  if (!writer) {
+    std::cerr << "Failed to open binpack writer for: " << binpack_file
+              << std::endl;
     return;
   }
 
