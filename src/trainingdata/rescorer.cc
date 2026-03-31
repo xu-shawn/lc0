@@ -482,11 +482,11 @@ bool IsAllDraws(const FileData<FrameType>& data) {
   return true;
 }
 
-std::vector<V6TrainingData> ReadFile(const std::string& file) {
-  std::vector<V6TrainingData> fileContents;
+std::vector<V7TrainingData> ReadFile(const std::string& file) {
+  std::vector<V7TrainingData> fileContents;
 
   TrainingDataReader reader(file);
-  V6TrainingData chunk;
+  V7TrainingData chunk;
   while (reader.ReadChunk(&chunk)) {
     fileContents.push_back(chunk);
   }
@@ -495,7 +495,8 @@ std::vector<V6TrainingData> ReadFile(const std::string& file) {
 }
 
 template <typename FrameType>
-FileData<FrameType> ProcessAndValidateFileData(std::vector<FrameType> fileContents) {
+FileData<FrameType> ProcessAndValidateFileData(
+    std::vector<FrameType> fileContents) {
   FileData<FrameType> data;
   data.fileContents = std::move(fileContents);
 
@@ -555,7 +556,8 @@ void ApplyPolicySubstitutions(FileData<FrameType>& data) {
 }
 
 template <typename FrameType>
-void ApplySyzygyRescoring(FileData<FrameType>& data, SyzygyTablebase* tablebase) {
+void ApplySyzygyRescoring(FileData<FrameType>& data,
+                          SyzygyTablebase* tablebase) {
   PositionHistory history;
   int rule50ply;
   int gameply;
@@ -715,8 +717,9 @@ void ApplySyzygyRescoring(FileData<FrameType>& data, SyzygyTablebase* tablebase)
 }
 
 template <typename FrameType>
-void ApplyPolicyAdjustments(FileData<FrameType>& data, SyzygyTablebase* tablebase,
-                            float distTemp, float distOffset, float dtzBoost) {
+void ApplyPolicyAdjustments(FileData<FrameType>& data,
+                            SyzygyTablebase* tablebase, float distTemp,
+                            float distOffset, float dtzBoost) {
   if (distTemp == 1.0f && distOffset == 0.0f && dtzBoost == 0.0f) {
     return;  // No adjustments needed
   }
@@ -913,7 +916,8 @@ void ApplyGaviotaCorrections(FileData<FrameType>& data) {
 }
 
 template <typename FrameType>
-void ApplyDTZCorrections(FileData<FrameType>& data, SyzygyTablebase* tablebase) {
+void ApplyDTZCorrections(FileData<FrameType>& data,
+                         SyzygyTablebase* tablebase) {
   // Correct move_count using DTZ for 3 piece no-pawn positions only.
   // If Gaviota TBs are enabled no need to use syzygy.
   if (gaviotaEnabled) return;
@@ -1088,7 +1092,8 @@ void ConvertInputFormat(FileData<FrameType>& data, int newInputFormat) {
 }
 
 template <typename FrameType>
-void WriteNnueOutput(const FileData<FrameType>& data, const std::string& nnue_plain_file,
+void WriteNnueOutput(const FileData<FrameType>& data,
+                     const std::string& nnue_plain_file,
                      ProcessFileFlags flags) {
   // Output data in Stockfish plain format.
   if (!nnue_plain_file.empty()) {
@@ -1134,7 +1139,8 @@ void WriteNnueOutput(const FileData<FrameType>& data, const std::string& nnue_pl
 }
 
 template <typename FrameType>
-void WriteBinpackOutput(const FileData<FrameType>& data, const std::string& binpack_file,
+void WriteBinpackOutput(const FileData<FrameType>& data,
+                        const std::string& binpack_file,
                         ProcessFileFlags flags) {
   if (binpack_file.empty()) return;
 
@@ -1151,7 +1157,9 @@ void WriteBinpackOutput(const FileData<FrameType>& data, const std::string& binp
   history.Reset(board, rule50ply, gameply);
 
   if (PositionToFen(history.Last()) !=
-      "rbnqknbr/pppppppp/8/8/8/8/PPPPPPPP/RBNQKNBR w KQkq - 0 1") {
+      "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") {
+    std::cerr << "Unexpected starting position for binpack output, skipping: "
+              << PositionToFen(history.Last()) << std::endl;
     return;
   }
 
@@ -1214,11 +1222,12 @@ void WriteOutputs(const FileData<FrameType>& data, const std::string& file,
 
 template <typename FrameType>
 FileData<FrameType> ProcessFileInternal(std::vector<FrameType> fileContents,
-                                        SyzygyTablebase* tablebase, float distTemp,
-                                        float distOffset, float dtzBoost,
-                                        int newInputFormat) {
+                                        SyzygyTablebase* tablebase,
+                                        float distTemp, float distOffset,
+                                        float dtzBoost, int newInputFormat) {
   // Process and validate file data
-  FileData<FrameType> data = ProcessAndValidateFileData(std::move(fileContents));
+  FileData<FrameType> data =
+      ProcessAndValidateFileData(std::move(fileContents));
 
   // Apply policy substitutions if available
   ApplyPolicySubstitutions(data);
@@ -1254,9 +1263,9 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  ProcessFileFlags flags) {
   try {
     // Read file data
-    std::vector<V6TrainingData> fileContents = ReadFile(file);
+    std::vector<V7TrainingData> fileContents = ReadFile(file);
 
-    FileData data =
+    FileData<V7TrainingData> data =
         ProcessFileInternal(std::move(fileContents), tablebase, distTemp,
                             distOffset, dtzBoost, newInputFormat);
 
@@ -1511,9 +1520,9 @@ void RunRescorer() {
 
 template <typename FrameType>
 std::vector<FrameType> RescoreTrainingData(std::vector<FrameType> fileContents,
-                                           SyzygyTablebase* tablebase, float distTemp,
-                                           float distOffset, float dtzBoost,
-                                           int newInputFormat) {
+                                           SyzygyTablebase* tablebase,
+                                           float distTemp, float distOffset,
+                                           float dtzBoost, int newInputFormat) {
   FileData<FrameType> data =
       ProcessFileInternal(std::move(fileContents), tablebase, distTemp,
                           distOffset, dtzBoost, newInputFormat);
