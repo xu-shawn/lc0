@@ -1,142 +1,146 @@
-/*
-  This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2021 The LCZero Authors
-
-  Leela Chess is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  Leela Chess is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
-
-  Additional permission under GNU GPL version 3 section 7
-
-  If you modify this Program, or any covered work, by linking or
-  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
-  modified version of those libraries), containing parts covered by the
-  terms of the respective license agreement, the licensors of this
-  Program grant you additional permission to convey the resulting work.
-*/
+#include <algorithm>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 #include "chess/board.h"
-#include "default_search.h"
-#include "engine.h"
-#include "search/register.h"
-#include "selfplay/loop.h"
-#include "tools/backendbench.h"
-#include "tools/benchmark.h"
-#include "tools/describenet.h"
-#include "tools/leela2onnx.h"
-#include "tools/onnx2leela.h"
-#include "utils/commandline.h"
-#include "utils/esc_codes.h"
-#include "utils/logging.h"
-#include "utils/trace.h"
-#include "version.h"
+#include "chess/position.h"
+#include "neural/encoder.h"
+#include "neural/factory.h"
+#include "neural/loader.h"
+#include "neural/network.h"
+#include "utils/optionsdict.h"
+#include "utils/protomessage.h"
 
-namespace lczero {
-void ChooseAndRunEngine() {
-  // First try the engine which is explicitly specified on the command line.
-  for (const std::string_view search_name :
-       SearchManager::Get()->GetSearchNames()) {
-    if (CommandLine::ConsumeCommand(search_name)) {
-      RunEngine(SearchManager::Get()->GetFactoryByName(search_name));
-      return;
+using namespace lczero;
+
+void PrintOutput(NetworkComputation& computation, int sample_idx,
+                 const std::string& fen) {
+  float value = computation.GetQVal(sample_idx);
+  // float d_val = computation.GetDVal(sample_idx); // WDL
+  // float m_val = computation.GetMVal(sample_idx); // Moves left
+
+  std::cout << "FEN: " << fen << "\n";
+  std::cout << "Value: " << value << "\n";
+
+  // Print top policy moves
+  std::vector<std::pair<float, int>> policy;
+  for (int i = 0; i < 1858; ++i) {  // 1858 is standard policy size
+    float p = computation.GetPVal(sample_idx, i);
+    if (p > 0.0) {
+      policy.push_back({p, i});
     }
   }
+  std::sort(policy.rbegin(), policy.rend());
 
-  // Then if DEFAULT_SEARCH is defined, run the engine specified by it.
-#ifdef DEFAULT_SEARCH
-  SearchFactory* factory =
-      SearchManager::Get()->GetFactoryByName(DEFAULT_SEARCH);
-  if (!factory) throw Exception("Unknown search algorithm: " DEFAULT_SEARCH);
-  RunEngine(factory);
-  return;
-#endif
-
-  // Then try to run the engine which is specified by the name of the binary.
-  const std::string& binary_name = CommandLine::BinaryName();
-  for (const std::string_view search_name :
-       SearchManager::Get()->GetSearchNames()) {
-    if (binary_name.find(search_name) != std::string::npos) {
-      RunEngine(SearchManager::Get()->GetFactoryByName(search_name));
-      return;
-    }
+  std::cout << "Policy (Top > 1%): ";
+  for (const auto& p : policy) {
+    std::cout << p.second << ":" << p.first << " ";
   }
-
-  // Finally, run "classic" search through the new API.
-  RunEngine(SearchManager::Get()->GetFactoryByName("classic"));
+  std::cout << "\n";
+  std::cout << "--------------------------------------------------\n";
 }
-}  // namespace lczero
 
-int main(int argc, const char** argv) {
-  LCTRACE_INITIALIZE;
-  using namespace lczero;
-  EscCodes::Init();
-  LOGFILE << "Lc0 started.";
-  CERR << EscCodes::Bold() << EscCodes::Red() << "       _";
-  CERR << "|   _ | |";
-  CERR << "|_ |_ |_|" << EscCodes::Reset() << " v" << GetVersionStr()
-       << " built " << __DATE__;
-
-  try {
-    InitializeMagicBitboards();
-
-    CommandLine::Init(argc, argv);
-    if (CommandLine::BinaryName().find("simple") == std::string::npos) {
-      CommandLine::RegisterMode("selfplay", "Play games with itself");
-      CommandLine::RegisterMode("benchmark", "Quick benchmark");
-      CommandLine::RegisterMode("bench", "Very quick benchmark");
-      CommandLine::RegisterMode("backendbench",
-                                "Quick benchmark of backend only");
-      CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
-      CommandLine::RegisterMode("onnx2leela",
-                                "Convert ONNX network to Leela net.");
-      CommandLine::RegisterMode("describenet",
-                                "Shows details about the Leela network.");
-    }
-    for (const std::string_view search_name :
-         SearchManager::Get()->GetSearchNames()) {
-      CommandLine::RegisterMode(
-          std::string(search_name),
-          "Use \"" + std::string(search_name) + "\" search");
-    }
-
-    if (CommandLine::ConsumeCommand("selfplay")) {
-      // Selfplay mode.
-      StdoutUciResponder uci_responder;
-      SelfPlayLoop loop(&uci_responder);
-      loop.Run();
-    } else if (CommandLine::ConsumeCommand("benchmark")) {
-      // Benchmark mode, longer version.
-      Benchmark benchmark;
-      benchmark.Run();
-    } else if (CommandLine::ConsumeCommand("bench")) {
-      // Benchmark mode, shorter version.
-      Benchmark benchmark;
-      benchmark.Run(/*run_shorter_benchmark=*/true);
-    } else if (CommandLine::ConsumeCommand("backendbench")) {
-      // Backend Benchmark mode.
-      BackendBenchmark benchmark;
-      benchmark.Run();
-    } else if (CommandLine::ConsumeCommand("leela2onnx")) {
-      lczero::ConvertLeelaToOnnx();
-    } else if (CommandLine::ConsumeCommand("onnx2leela")) {
-      lczero::ConvertOnnxToLeela();
-    } else if (CommandLine::ConsumeCommand("describenet")) {
-      lczero::DescribeNetworkCmd();
-    } else {
-      lczero::ChooseAndRunEngine();
-    }
-  } catch (std::exception& e) {
-    std::cerr << "Unhandled exception: " << e.what() << std::endl;
-    abort();
+int main(int argc, char* argv[]) {
+  if (argc < 2) {
+    std::cerr << "Usage: " << argv[0] << " <network_path> [batch_size]\n";
+    return 1;
   }
+
+  std::string network_path = argv[1];
+  int batch_size = 4;
+  if (argc >= 3) {
+    batch_size = std::stoi(argv[2]);
+  }
+
+  InitializeMagicBitboards();
+  // InitializeHash(); // If needed? Position::Hash() uses HashCat which might
+  // need init? utils/hashcat.h usually has static tables.
+
+  // Load weights
+  std::cerr << "Loading network: " << network_path << "\n";
+  auto weights = LoadWeightsFromFile(network_path);
+
+  // Setup options
+  OptionsDict options;
+  // We want CPU backend usually if not specified.
+  // Let's rely on auto-detection or force something if needed.
+  // options.RegisterOption("backend", "backend to use", "check");
+
+  // Auto-select backend
+  auto backends = NetworkFactory::Get()->GetBackendsList();
+  std::string backend_name;
+  if (!backends.empty()) {
+    backend_name = backends[0];
+    std::cerr << "Auto-selected backend: " << backend_name << "\n";
+  } else {
+    std::cerr << "No backends found! Ensure you have compiled with backend "
+                 "support.\n";
+    return 1;
+  }
+
+  // Create network
+  auto network = NetworkFactory::Get()->Create(backend_name, weights, options);
+
+  std::cerr << "Network created. Batch size: " << batch_size << "\n";
+
+  // Interactive loop
+  std::vector<std::string> batch_fens;
+  batch_fens.reserve(batch_size);
+
+  std::string line;
+  while (true) {
+    batch_fens.clear();
+    for (int i = 0; i < batch_size; ++i) {
+      if (std::getline(std::cin, line)) {
+        // Trim whitespace?
+        if (!line.empty()) {
+          batch_fens.push_back(line);
+        } else {
+          i--;  // retry
+        }
+      } else {
+        // EOF
+        if (batch_fens.empty()) return 0;
+        break;
+      }
+    }
+
+    if (batch_fens.empty()) break;
+
+    // Process batch
+    auto computation = network->NewComputation();
+    int current_batch = 0;
+
+    for (const auto& fen : batch_fens) {
+      PositionHistory history;
+      history.Reset(Position::FromFen(fen));
+
+      int transform = 0;
+      auto input_format = network->GetCapabilities().input_format;
+
+      InputPlanes planes =
+          EncodePositionForNN(input_format, history,
+                              0,  // history planes
+                              FillEmptyHistory::NO, &transform);
+
+      computation->AddInput(std::move(planes));
+      current_batch++;
+    }
+
+    computation->ComputeBlocking();
+
+    for (int k = 0; k < current_batch; ++k) {
+      PrintOutput(*computation, k, batch_fens[k]);
+    }
+    std::cout << "BATCH_DONE\n";
+    std::cout.flush();
+
+    if (std::cin.eof()) break;
+  }
+
+  return 0;
 }

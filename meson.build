@@ -139,11 +139,6 @@ common_files += [
   'src/neural/register.cc',
   'src/neural/shared_params.cc',
   'src/neural/wrapper.cc',
-  'src/search/classic/node.cc',
-  'src/syzygy/syzygy.cc',
-  'src/trainingdata/reader.cc',
-  'src/trainingdata/trainingdata.cc',
-  'src/trainingdata/writer.cc',
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
   'src/utils/esc_codes.cc',
@@ -157,8 +152,6 @@ common_files += [
 ]
 
 files += [
-  'src/engine_loop.cc',
-  'src/engine.cc',
   'src/neural/backends/network_check.cc',
   'src/neural/backends/network_demux.cc',
   'src/neural/backends/network_mux.cc',
@@ -175,34 +168,9 @@ files += [
   'src/neural/xla/onnx2hlo.cc',
   'src/neural/xla/print_hlo.cc',
   'src/neural/xla/xla_tensor.cc',
-  'src/search/classic/params.cc',
-  'src/search/classic/search.cc',
-  'src/search/classic/stoppers/alphazero.cc',
-  'src/search/classic/stoppers/common.cc',
-  'src/search/classic/stoppers/factory.cc',
-  'src/search/classic/stoppers/legacy.cc',
-  'src/search/classic/stoppers/simple.cc',
-  'src/search/classic/stoppers/smooth.cc',
-  'src/search/classic/stoppers/stoppers.cc',
-  'src/search/classic/stoppers/timemgr.cc',
-  'src/search/classic/wrapper.cc',
-  'src/search/register.cc',
-  'src/selfplay/game.cc',
-  'src/selfplay/loop.cc',
-  'src/selfplay/multigame.cc',
-  'src/selfplay/tournament.cc',
-  'src/tools/backendbench.cc',
-  'src/tools/benchmark.cc',
-  'src/tools/describenet.cc',
-  'src/tools/leela2onnx.cc',
-  'src/tools/onnx2leela.cc',
   'src/utils/histogram.cc',
   'src/utils/numa.cc',
   'src/utils/weights_adapter.cc',
-]
-
-files += [
-  'src/search/instamove/instamove.cc',
 ]
 
 includes += include_directories('src')
@@ -221,17 +189,6 @@ if host_machine.system() == 'windows'
   common_files += 'src/utils/filesystem.win32.cc'
 else
   common_files += 'src/utils/filesystem.posix.cc'
-endif
-
-#############################################################################
-## DAG CLASSIC SEARCH
-#############################################################################
-if get_option('dag_classic')
-  files += [
-    'src/search/dag_classic/node.cc',
-    'src/search/dag_classic/search.cc',
-    'src/search/dag_classic/wrapper.cc',
-  ]
 endif
 
 #############################################################################
@@ -941,17 +898,6 @@ if get_option('lc0')
 endif
 
 #############################################################################
-## Rescorer Executable
-#############################################################################
-
-if get_option('rescorer')
-  gaviota_dep = subproject('gaviotatb').get_variable('gaviotatb_dep')
-  executable('rescorer', 'src/rescorer_main.cc',
-       [common_files, 'src/trainingdata/rescorer.cc'],
-       include_directories: includes, dependencies: [deps, gaviota_dep], install: true)
-endif
-
-#############################################################################
 ## Tests
 #############################################################################
 
@@ -985,22 +931,11 @@ if get_option('gtest')
     include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:optionsparser.xml', timeout: 90)
 
-  test('SyzygyTest',
-    executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
-    include_directories: includes, link_with: lc0_lib, dependencies: gtest
-  ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
-
   test('EncodePositionForNN',
     executable('encoder_test', 'src/neural/encoder_test.cc', pb_files,
     include_directories: includes, link_with: lc0_lib,
     dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
-
-  test('EngineTest',
-    executable('engine_test', 'src/engine_test.cc', 'src/engine.cc',
-               'src/neural/memcache.cc', pb_files,
-    include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
-    args: '--gtest_output=xml:engine_test.xml', timeout: 90)
 endif
 
 
