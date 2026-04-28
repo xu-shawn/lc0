@@ -21,6 +21,11 @@
 
 using namespace lczero;
 
+// Sentinel used by minimized binpacks to mark entries that should be skipped
+// (e.g. positions excluded by the minimizer). We pass these through verbatim
+// rather than overwriting their score.
+constexpr int16_t kSkippedScore = 32002;
+
 static int16_t QToCentipawns(double q) {
   double cp = 660.6 * q / (1.0 - 0.9751875 * std::pow(q, 10));
   cp = std::clamp(cp, -32000.0, 32000.0);
@@ -65,41 +70,57 @@ int main(int argc, char* argv[]) {
     binpack::Reader reader(input_path);
     binpack::Writer writer(output_path);
 
-    std::vector<binpack::Entry> batch;
-    batch.reserve(batch_size);
+    struct Pending {
+      binpack::Entry entry;
+      bool needs_eval;
+    };
+    std::vector<Pending> buffer;
+    buffer.reserve(batch_size);
+    std::size_t pending_evals = 0;
 
     const auto input_format = network->GetCapabilities().input_format;
 
     auto flush = [&]() {
-      if (batch.empty()) return;
-      auto comp = network->NewComputation();
-      for (const auto& e : batch) {
-        PositionHistory history;
-        history.Reset(Position::FromFen(e.fen));
-        int transform = 0;
-        InputPlanes planes = EncodePositionForNN(
-            input_format, history, /*history_planes=*/8,
-            FillEmptyHistory::FEN_ONLY, &transform);
-        comp->AddInput(std::move(planes));
+      if (buffer.empty()) return;
+      if (pending_evals > 0) {
+        auto comp = network->NewComputation();
+        for (const auto& p : buffer) {
+          if (!p.needs_eval) continue;
+          PositionHistory history;
+          history.Reset(Position::FromFen(p.entry.fen));
+          int transform = 0;
+          InputPlanes planes = EncodePositionForNN(
+              input_format, history, /*history_planes=*/8,
+              FillEmptyHistory::FEN_ONLY, &transform);
+          comp->AddInput(std::move(planes));
+        }
+        comp->ComputeBlocking();
+        std::size_t k = 0;
+        for (auto& p : buffer) {
+          if (!p.needs_eval) continue;
+          const float q = comp->GetQVal(static_cast<int>(k++));
+          p.entry.score = QToCentipawns(static_cast<double>(q));
+        }
       }
-      comp->ComputeBlocking();
-      for (std::size_t i = 0; i < batch.size(); ++i) {
-        const float q = comp->GetQVal(static_cast<int>(i));
-        binpack::Entry out = batch[i];
-        out.score = QToCentipawns(static_cast<double>(q));
-        writer.write(out);
-      }
-      batch.clear();
+      for (const auto& p : buffer) writer.write(p.entry);
+      buffer.clear();
+      pending_evals = 0;
     };
 
     using clock = std::chrono::steady_clock;
     const auto t_start = clock::now();
     auto t_last = t_start;
     std::size_t total = 0;
+    std::size_t skipped = 0;
     std::size_t last_total = 0;
     for (const auto& e : reader) {
-      batch.push_back(e);
-      if (batch.size() == static_cast<std::size_t>(batch_size)) flush();
+      const bool needs_eval = (e.score != kSkippedScore);
+      buffer.push_back({e, needs_eval});
+      if (needs_eval) {
+        if (++pending_evals == static_cast<std::size_t>(batch_size)) flush();
+      } else {
+        ++skipped;
+      }
       if (++total % 1000 == 0) {
         const auto now = clock::now();
         const double dt = std::chrono::duration<double>(now - t_last).count();
@@ -117,7 +138,8 @@ int main(int argc, char* argv[]) {
     const double secs =
         std::chrono::duration<double>(clock::now() - t_start).count();
     const double avg = total / std::max(secs, 1e-9);
-    std::cerr << "\rdone, " << total << " entries in " << secs << "s ("
+    std::cerr << "\rdone, " << total << " entries (" << skipped
+              << " skipped passthrough) in " << secs << "s ("
               << static_cast<long>(avg) << " pos/s) -> " << output_path
               << "          \n";
     return EXIT_SUCCESS;
