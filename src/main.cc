@@ -1,10 +1,15 @@
 #include <algorithm>
-#include <fstream>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
-#include <optional>
 #include <string>
+#include <system_error>
 #include <vector>
+
+#include <binpack/binpack.hpp>
 
 #include "chess/board.h"
 #include "chess/position.h"
@@ -13,134 +18,117 @@
 #include "neural/loader.h"
 #include "neural/network.h"
 #include "utils/optionsdict.h"
-#include "utils/protomessage.h"
 
 using namespace lczero;
 
-void PrintOutput(NetworkComputation& computation, int sample_idx,
-                 const std::string& fen) {
-  float value = computation.GetQVal(sample_idx);
-  // float d_val = computation.GetDVal(sample_idx); // WDL
-  // float m_val = computation.GetMVal(sample_idx); // Moves left
-
-  std::cout << "FEN: " << fen << "\n";
-  std::cout << "Value: " << value << "\n";
-
-  // Print top policy moves
-  std::vector<std::pair<float, int>> policy;
-  for (int i = 0; i < 1858; ++i) {  // 1858 is standard policy size
-    float p = computation.GetPVal(sample_idx, i);
-    if (p > 0.0) {
-      policy.push_back({p, i});
-    }
-  }
-  std::sort(policy.rbegin(), policy.rend());
-
-  std::cout << "Policy (Top > 1%): ";
-  for (const auto& p : policy) {
-    std::cout << p.second << ":" << p.first << " ";
-  }
-  std::cout << "\n";
-  std::cout << "--------------------------------------------------\n";
+static int16_t QToCentipawns(double q) {
+  double cp = 660.6 * q / (1.0 - 0.9751875 * std::pow(q, 10));
+  cp = std::clamp(cp, -32000.0, 32000.0);
+  return static_cast<int16_t>(std::lround(cp));
 }
 
 int main(int argc, char* argv[]) {
-  if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <network_path> [batch_size]\n";
+  if (argc < 4) {
+    std::cerr << "Usage: " << argv[0]
+              << " <network_path> <input.binpack> <output.binpack> [batch_size]\n";
     return 1;
   }
 
-  std::string network_path = argv[1];
-  int batch_size = 4;
-  if (argc >= 3) {
-    batch_size = std::stoi(argv[2]);
+  const std::string network_path = argv[1];
+  const std::string input_path = argv[2];
+  const std::string output_path = argv[3];
+  int batch_size = 256;
+  if (argc >= 5) batch_size = std::stoi(argv[4]);
+  if (batch_size <= 0) {
+    std::cerr << "batch_size must be > 0\n";
+    return 1;
   }
 
   InitializeMagicBitboards();
-  // InitializeHash(); // If needed? Position::Hash() uses HashCat which might
-  // need init? utils/hashcat.h usually has static tables.
 
-  // Load weights
   std::cerr << "Loading network: " << network_path << "\n";
   auto weights = LoadWeightsFromFile(network_path);
 
-  // Setup options
   OptionsDict options;
-  // We want CPU backend usually if not specified.
-  // Let's rely on auto-detection or force something if needed.
-  // options.RegisterOption("backend", "backend to use", "check");
-
-  // Auto-select backend
   auto backends = NetworkFactory::Get()->GetBackendsList();
-  std::string backend_name;
-  if (!backends.empty()) {
-    backend_name = backends[0];
-    std::cerr << "Auto-selected backend: " << backend_name << "\n";
-  } else {
+  if (backends.empty()) {
     std::cerr << "No backends found! Ensure you have compiled with backend "
                  "support.\n";
     return 1;
   }
-
-  // Create network
+  const std::string backend_name = backends[0];
+  std::cerr << "Auto-selected backend: " << backend_name << "\n";
   auto network = NetworkFactory::Get()->Create(backend_name, weights, options);
-
   std::cerr << "Network created. Batch size: " << batch_size << "\n";
 
-  // Interactive loop
-  std::vector<std::string> batch_fens;
-  batch_fens.reserve(batch_size);
+  try {
+    binpack::Reader reader(input_path);
+    binpack::Writer writer(output_path);
 
-  std::string line;
-  while (true) {
-    batch_fens.clear();
-    for (int i = 0; i < batch_size; ++i) {
-      if (std::getline(std::cin, line)) {
-        // Trim whitespace?
-        if (!line.empty()) {
-          batch_fens.push_back(line);
-        } else {
-          i--;  // retry
-        }
-      } else {
-        // EOF
-        if (batch_fens.empty()) return 0;
-        break;
+    std::vector<binpack::Entry> batch;
+    batch.reserve(batch_size);
+
+    const auto input_format = network->GetCapabilities().input_format;
+
+    auto flush = [&]() {
+      if (batch.empty()) return;
+      auto comp = network->NewComputation();
+      for (const auto& e : batch) {
+        PositionHistory history;
+        history.Reset(Position::FromFen(e.fen));
+        int transform = 0;
+        InputPlanes planes = EncodePositionForNN(
+            input_format, history, /*history_planes=*/8,
+            FillEmptyHistory::FEN_ONLY, &transform);
+        comp->AddInput(std::move(planes));
+      }
+      comp->ComputeBlocking();
+      for (std::size_t i = 0; i < batch.size(); ++i) {
+        const float q = comp->GetQVal(static_cast<int>(i));
+        binpack::Entry out = batch[i];
+        out.score = QToCentipawns(static_cast<double>(q));
+        writer.write(out);
+      }
+      batch.clear();
+    };
+
+    using clock = std::chrono::steady_clock;
+    const auto t_start = clock::now();
+    auto t_last = t_start;
+    std::size_t total = 0;
+    std::size_t last_total = 0;
+    for (const auto& e : reader) {
+      batch.push_back(e);
+      if (batch.size() == static_cast<std::size_t>(batch_size)) flush();
+      if (++total % 1000 == 0) {
+        const auto now = clock::now();
+        const double dt = std::chrono::duration<double>(now - t_last).count();
+        const double rate = (total - last_total) / std::max(dt, 1e-9);
+        const double avg = total / std::max(
+            std::chrono::duration<double>(now - t_start).count(), 1e-9);
+        std::cerr << "\rrelabeled " << total << "  ("
+                  << static_cast<long>(rate) << " pos/s, avg "
+                  << static_cast<long>(avg) << ")        " << std::flush;
+        t_last = now;
+        last_total = total;
       }
     }
-
-    if (batch_fens.empty()) break;
-
-    // Process batch
-    auto computation = network->NewComputation();
-    int current_batch = 0;
-
-    for (const auto& fen : batch_fens) {
-      PositionHistory history;
-      history.Reset(Position::FromFen(fen));
-
-      int transform = 0;
-      auto input_format = network->GetCapabilities().input_format;
-
-      InputPlanes planes =
-          EncodePositionForNN(input_format, history,
-                              0,  // history planes
-                              FillEmptyHistory::NO, &transform);
-
-      computation->AddInput(std::move(planes));
-      current_batch++;
-    }
-
-    computation->ComputeBlocking();
-
-    for (int k = 0; k < current_batch; ++k) {
-      PrintOutput(*computation, k, batch_fens[k]);
-    }
-    std::cout << "BATCH_DONE\n";
-    std::cout.flush();
-
-    if (std::cin.eof()) break;
+    flush();
+    const double secs =
+        std::chrono::duration<double>(clock::now() - t_start).count();
+    const double avg = total / std::max(secs, 1e-9);
+    std::cerr << "\rdone, " << total << " entries in " << secs << "s ("
+              << static_cast<long>(avg) << " pos/s) -> " << output_path
+              << "          \n";
+    return EXIT_SUCCESS;
+  } catch (const binpack::format_error& ex) {
+    std::cerr << "binpack format error: " << ex.what() << '\n';
+    return EXIT_FAILURE;
+  } catch (const std::system_error& ex) {
+    std::cerr << "I/O error: " << ex.what() << '\n';
+    return EXIT_FAILURE;
+  } catch (const std::exception& ex) {
+    std::cerr << "error: " << ex.what() << '\n';
+    return EXIT_FAILURE;
   }
-
-  return 0;
 }
