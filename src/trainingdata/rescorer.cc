@@ -1138,6 +1138,32 @@ void WriteNnueOutput(const FileData<FrameType>& data,
   }
 }
 
+// MoveFromNNIndex rebuilds moves from the policy move table, which drops two
+// flags that the UCI/binpack encoder relies on:
+//   * castling comes back as a plain "king to rook square" move (e.g. e1h1),
+//     so ToString() emits king-takes-rook instead of standard UCI (e1g1), and
+//   * knight promotions come back as plain, non-promotion moves, so the "n"
+//     suffix is lost (e7e8 instead of e7e8n).
+// Restore the flags directly from the board (in the side-to-move frame, before
+// flipping), so ToString() yields valid UCI. This is cheaper than generating
+// the full legal move list for every move.
+Move ResolveMoveFlags(const ChessBoard& board, Move m) {
+  // Queen/rook/bishop promotions already carry their piece type.
+  if (m.is_promotion()) return m;
+  const Square from = m.from();
+  const Square to = m.to();
+  // Castling is encoded as the king landing on its own rook's square.
+  if ((board.ours() & board.kings()).get(from) &&
+      (board.ours() & board.rooks()).get(to)) {
+    return Move::WhiteCastling(from.file(), to.file());
+  }
+  // Knight promotions are stored as a plain pawn push to the last rank.
+  if (to.rank() == kRank8 && (board.ours() & board.pawns()).get(from)) {
+    return Move::WhitePromotion(from, to, kKnight);
+  }
+  return m;
+}
+
 template <typename FrameType>
 void WriteBinpackOutput(const FileData<FrameType>& data,
                         const std::string& binpack_file,
@@ -1178,14 +1204,16 @@ void WriteBinpackOutput(const FileData<FrameType>& data,
       Move m = MoveFromNNIndex(
           flags.nnue_best_move ? chunk.best_idx : chunk.played_idx,
           TransformForPosition(data.input_format, history));
+      m = ResolveMoveFlags(p.GetBoard(), m);
       if (p.IsBlackToMove()) m.Flip();
 
       auto fen = PositionToFen(p);
+      auto uci_move = m.ToString(false);
       auto q = flags.nnue_best_score ? chunk.best_q : chunk.played_q;
 
       SfbinpackEntry entry{
           .fen = fen.c_str(),
-          .uci_move = m.ToString(false).c_str(),
+          .uci_move = uci_move.c_str(),
           .score = static_cast<short>(
               round(660.6 * q / (1 - 0.9751875 * std::pow(q, 10)))),
           .ply = static_cast<unsigned short>(p.GetGamePly()),
