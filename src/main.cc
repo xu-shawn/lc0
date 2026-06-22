@@ -77,6 +77,10 @@ int main(int argc, char* argv[]) {
   auto weights = LoadWeightsFromFile(network_path);
 
   OptionsDict options;
+  // Relabeling only consumes the value/Q output; skip the policy head so its
+  // kernels don't occupy the GPU compute stream. Backends that don't recognize
+  // this option ignore it.
+  options.Set<bool>("value_only", true);
   auto backends = NetworkFactory::Get()->GetBackendsList();
   if (backends.empty()) {
     std::cerr << "No backends found! Ensure you have compiled with backend "

@@ -167,6 +167,10 @@ class CudnnNetwork : public Network {
     MultiHeadWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
     enable_graph_capture_ = options.GetOrDefault<bool>("graph_capture", true);
+    // Skip the policy head for value-only workloads (e.g. binpack relabeling):
+    // it feeds nothing downstream of the trunk, so its kernels are pure
+    // overhead on the compute stream.
+    value_only_ = options.GetOrDefault<bool>("value_only", false);
 
     conv_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
@@ -812,7 +816,10 @@ class CudnnNetwork : public Network {
       }
     }
 
-    // Policy head.
+    // Policy head. Skipped entirely for value-only inference: it feeds nothing
+    // downstream of the trunk, so omitting its kernels (and the policy D2H
+    // copy) frees the compute stream proportionally to the head's cost.
+    if (!value_only_) {
     if (attn_policy_) {
       network_[l++]->Eval(
           batchSize, tensor_mem_[0], tensor_mem_[2], tensor_mem_[1],
@@ -856,6 +863,7 @@ class CudnnNetwork : public Network {
         io->op_policy_mem_, io->op_policy_mem_gpu_,
         sizeof(io->op_policy_mem_[0]) * kNumOutputPolicy * batchSize,
         cudaMemcpyDeviceToHost, download_stream));
+    }  // !value_only_
 
     // value head
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
@@ -1042,6 +1050,7 @@ class CudnnNetwork : public Network {
   bool has_se_;
   bool conv_policy_;
   bool attn_policy_;
+  bool value_only_;  // skip policy head (value/wdl-only inference)
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 

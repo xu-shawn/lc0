@@ -253,6 +253,11 @@ class CudaNetwork : public Network {
 
     multi_stream_ = options.GetOrDefault<bool>("multi_stream", false);
 
+    // Skip the policy head entirely. The policy branch hangs off the trunk
+    // output and feeds nothing downstream, so for value-only workloads (e.g.
+    // binpack relabeling) its kernels are pure overhead on the compute stream.
+    value_only_ = options.GetOrDefault<bool>("value_only", false);
+
     // layout used by cuda backend is nchw.
     has_tensor_cores_ = false;
     constexpr bool fp16 = std::is_same<half, DataType>::value;
@@ -871,7 +876,10 @@ class CudaNetwork : public Network {
     }
 #endif
 
-    // Policy head.
+    // Policy head. Skipped entirely for value-only inference: it feeds nothing
+    // downstream of the trunk, so omitting its kernels (and the policy D2H
+    // copy) frees the compute stream proportionally to the head's cost.
+    if (!value_only_) {
     if (attn_policy_) {
       network_[l++]->Eval(
           batchSize, spare1, flow, spare2, scratch_mem, scratch_size_, nullptr,
@@ -914,6 +922,7 @@ class CudaNetwork : public Network {
         io->op_policy_mem_, io->op_policy_mem_gpu_,
         sizeof(io->op_policy_mem_[0]) * kNumOutputPolicy * batchSize,
         cudaMemcpyDeviceToHost, download_stream));
+    }  // !value_only_
 
     // value head
     network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2, scratch_mem,
@@ -1103,6 +1112,7 @@ class CudaNetwork : public Network {
                                           // tower
   bool multi_stream_;                     // run multiple parallel network evals
   bool allow_cache_opt_;  // try to fit residual block activations in L2 cache
+  bool value_only_;       // skip policy head (value/wdl-only inference)
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
