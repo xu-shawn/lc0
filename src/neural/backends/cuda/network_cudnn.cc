@@ -890,7 +890,10 @@ class CudnnNetwork : public Network {
         sizeof(io->op_value_mem_[0]) * (wdl_ ? 3 : 1) * batchSize,
         cudaMemcpyDeviceToHost, download_stream));
 
-    if (moves_left_) {
+    // Moves-left head. Skipped for value-only inference: the relabeler reads
+    // only the value/Q output, so the MLH layers are pure overhead on the
+    // compute stream. It is the last head, so no layer cursor fixup is needed.
+    if (moves_left_ && !value_only_) {
       // Moves left head
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                           scratch_mem_, scratch_size_, cudnn_, cublas_,
@@ -1054,7 +1057,7 @@ class CudnnNetwork : public Network {
   bool has_se_;
   bool conv_policy_;
   bool attn_policy_;
-  bool value_only_;  // skip policy head (value/wdl-only inference)
+  bool value_only_;  // skip policy + moves-left heads (value-only)
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 

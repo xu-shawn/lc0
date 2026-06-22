@@ -253,9 +253,10 @@ class CudaNetwork : public Network {
 
     multi_stream_ = options.GetOrDefault<bool>("multi_stream", false);
 
-    // Skip the policy head entirely. The policy branch hangs off the trunk
-    // output and feeds nothing downstream, so for value-only workloads (e.g.
-    // binpack relabeling) its kernels are pure overhead on the compute stream.
+    // Skip the policy and moves-left heads entirely. Both hang off the trunk
+    // output and feed nothing downstream, so for value-only workloads (e.g.
+    // binpack relabeling) their kernels are pure overhead on the compute
+    // stream. The value head is the only one whose output is consumed.
     value_only_ = options.GetOrDefault<bool>("value_only", false);
 
     // layout used by cuda backend is nchw.
@@ -932,7 +933,10 @@ class CudaNetwork : public Network {
     network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2, scratch_mem,
                         scratch_size_, nullptr, cublas,
                         compute_stream);  // value head
-    if (!moves_left_ && !multi_stream_) {
+    // For value-only inference the moves-left head is skipped below, so the
+    // value head is the last compute op and must record the ordering event
+    // here (mirroring the genuine no-MLH case).
+    if ((!moves_left_ || value_only_) && !multi_stream_) {
 #if CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
       ReportCUDAErrors(
           cudaEventRecordWithFlags(compute_ordering_event_, compute_stream,
@@ -955,7 +959,11 @@ class CudaNetwork : public Network {
 #endif
     }
 
-    if (moves_left_) {
+    // Moves-left head. Skipped for value-only inference: the relabeler reads
+    // only the value/Q output, so the MLH layers (embedding + 2 FC) are pure
+    // overhead on the compute stream. It is the last head, so no layer cursor
+    // fixup is needed.
+    if (moves_left_ && !value_only_) {
       // Moves left head
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
                           scratch_size_, nullptr, cublas,
@@ -1116,7 +1124,7 @@ class CudaNetwork : public Network {
                                           // tower
   bool multi_stream_;                     // run multiple parallel network evals
   bool allow_cache_opt_;  // try to fit residual block activations in L2 cache
-  bool value_only_;       // skip policy head (value/wdl-only inference)
+  bool value_only_;       // skip policy + moves-left heads (value-only)
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).

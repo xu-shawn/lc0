@@ -79,8 +79,13 @@ int main(int argc, char* argv[]) {
   OptionsDict options;
   // Relabeling only consumes the value/Q output; skip the policy head so its
   // kernels don't occupy the GPU compute stream. Backends that don't recognize
-  // this option ignore it.
-  options.Set<bool>("value_only", true);
+  // this option ignore it. Set LC0_RELABEL_VALUE_ONLY=0 to keep the policy head
+  // (e.g. to A/B that the value output is byte-identical with and without it).
+  const char* value_only_env = std::getenv("LC0_RELABEL_VALUE_ONLY");
+  const bool value_only = !(value_only_env && std::string(value_only_env) == "0");
+  options.Set<bool>("value_only", value_only);
+  std::cerr << "value_only (skip policy head): " << (value_only ? "on" : "off")
+            << "\n";
   auto backends = NetworkFactory::Get()->GetBackendsList();
   if (backends.empty()) {
     std::cerr << "No backends found! Ensure you have compiled with backend "
