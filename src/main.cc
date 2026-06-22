@@ -1,19 +1,12 @@
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cmath>
-#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
-#include <deque>
-#include <exception>
 #include <iostream>
 #include <memory>
-#include <mutex>
-#include <optional>
 #include <string>
 #include <system_error>
-#include <thread>
 #include <vector>
 
 #include <binpack/binpack.hpp>
@@ -61,69 +54,6 @@ static std::string QOutputPath(const std::string& output_path) {
   return output_path + ".q";
 }
 
-// A bounded, thread-safe FIFO queue used to hand batches between the relabeler
-// pipeline stages. push() blocks while the queue is full; pop() blocks until an
-// item is available or the queue is closed and drained. The bound caps how many
-// batches can be in flight, keeping memory use proportional to the batch size.
-template <typename T>
-class BoundedQueue {
- public:
-  explicit BoundedQueue(std::size_t capacity) : capacity_(capacity) {}
-
-  // Returns false if the queue was closed before the item could be enqueued.
-  bool push(T item) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    not_full_.wait(lock, [&] { return queue_.size() < capacity_ || closed_; });
-    if (closed_) return false;
-    queue_.push_back(std::move(item));
-    lock.unlock();
-    not_empty_.notify_one();
-    return true;
-  }
-
-  // Returns std::nullopt once the queue is closed and fully drained.
-  std::optional<T> pop() {
-    std::unique_lock<std::mutex> lock(mutex_);
-    not_empty_.wait(lock, [&] { return !queue_.empty() || closed_; });
-    if (queue_.empty()) return std::nullopt;
-    T item = std::move(queue_.front());
-    queue_.pop_front();
-    lock.unlock();
-    not_full_.notify_one();
-    return item;
-  }
-
-  // Wakes all blocked producers/consumers; queued items remain drainable.
-  void close() {
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      closed_ = true;
-    }
-    not_empty_.notify_all();
-    not_full_.notify_all();
-  }
-
- private:
-  const std::size_t capacity_;
-  std::mutex mutex_;
-  std::condition_variable not_full_;
-  std::condition_variable not_empty_;
-  std::deque<T> queue_;
-  bool closed_ = false;
-};
-
-// One unit of work flowing through the pipeline. `entries` holds every input
-// record in original order; `needs_eval[i]` marks the ones to re-score (skipped
-// passthrough entries keep their score). `planes` holds the encoded NN inputs
-// for the needs_eval entries in order, and `q` is filled with their Q values by
-// the GPU stage.
-struct Batch {
-  std::vector<binpack::Entry> entries;
-  std::vector<char> needs_eval;
-  std::vector<InputPlanes> planes;
-  std::vector<float> q;
-};
-
 int main(int argc, char* argv[]) {
   if (argc < 4) {
     std::cerr << "Usage: " << argv[0]
@@ -134,7 +64,6 @@ int main(int argc, char* argv[]) {
   const std::string network_path = argv[1];
   const std::string input_path = argv[2];
   const std::string output_path = argv[3];
-  // Default tuned by sweep: 128 maximizes relabel throughput on the GPU.
   int batch_size = 128;
   if (argc >= 5) batch_size = std::stoi(argv[4]);
   if (batch_size <= 0) {
@@ -172,154 +101,89 @@ int main(int argc, char* argv[]) {
   std::cerr << "Writing centipawn scores to: " << output_path << "\n";
   std::cerr << "Writing Q-resolution scores to: " << q_output_path << "\n";
 
-  // The relabeler runs as a 4-stage pipeline so the CPU-bound read/encode and
-  // write work overlaps the GPU evaluation instead of running serially:
-  //   reader+encoder -> [q_to_gpu] -> GPU eval -> [q_to_writers] -> 2 writers
-  // Each .write() re-parses the FEN, so the two output files get their own
-  // writer threads to parallelize that cost. Bounded queues cap the number of
-  // in-flight batches (memory) and provide backpressure to the slowest stage.
   try {
+    binpack::Reader reader(input_path);
+    binpack::Writer writer(output_path);
+    binpack::Writer q_writer(q_output_path);
+
+    struct Pending {
+      binpack::Entry entry;
+      bool needs_eval;
+      float q;
+    };
+    std::vector<Pending> buffer;
+    buffer.reserve(batch_size);
+    std::size_t pending_evals = 0;
+
     const auto input_format = network->GetCapabilities().input_format;
 
-    constexpr std::size_t kQueueDepth = 4;
-    BoundedQueue<std::shared_ptr<Batch>> to_gpu(kQueueDepth);
-    BoundedQueue<std::shared_ptr<const Batch>> to_cp_writer(kQueueDepth);
-    BoundedQueue<std::shared_ptr<const Batch>> to_q_writer(kQueueDepth);
-
-    std::atomic<std::size_t> total{0};
-    std::atomic<std::size_t> skipped{0};
-
-    // Holds the first exception thrown by any worker thread so it can be
-    // rethrown on the main thread after the pipeline drains.
-    std::mutex error_mutex;
-    std::exception_ptr first_error;
-    auto record_error = [&]() {
-      std::lock_guard<std::mutex> lock(error_mutex);
-      if (!first_error) first_error = std::current_exception();
+    auto flush = [&]() {
+      if (buffer.empty()) return;
+      if (pending_evals > 0) {
+        auto comp = network->NewComputation();
+        for (const auto& p : buffer) {
+          if (!p.needs_eval) continue;
+          PositionHistory history;
+          history.Reset(Position::FromFen(p.entry.fen));
+          int transform = 0;
+          InputPlanes planes = EncodePositionForNN(
+              input_format, history, /*history_planes=*/8,
+              FillEmptyHistory::FEN_ONLY, &transform);
+          comp->AddInput(std::move(planes));
+        }
+        comp->ComputeBlocking();
+        std::size_t k = 0;
+        for (auto& p : buffer) {
+          if (!p.needs_eval) continue;
+          p.q = comp->GetQVal(static_cast<int>(k++));
+        }
+      }
+      for (const auto& p : buffer) {
+        binpack::Entry e = p.entry;
+        binpack::Entry q_e = p.entry;
+        if (p.needs_eval) {
+          e.score = QToCentipawns(static_cast<double>(p.q));
+          q_e.score = QToInt16(static_cast<double>(p.q));
+        }
+        writer.write(e);
+        q_writer.write(q_e);
+      }
+      buffer.clear();
+      pending_evals = 0;
     };
 
     using clock = std::chrono::steady_clock;
     const auto t_start = clock::now();
-
-    // Stage A: read entries, encode NN inputs, emit fixed-size batches.
-    std::thread reader_thread([&] {
-      try {
-        binpack::Reader reader(input_path);
-        auto batch = std::make_shared<Batch>();
-        std::size_t local_total = 0;
-        std::size_t local_skipped = 0;
-        for (const auto& e : reader) {
-          const bool needs_eval = (e.score != kSkippedScore);
-          batch->entries.push_back(e);
-          batch->needs_eval.push_back(needs_eval ? 1 : 0);
-          if (needs_eval) {
-            PositionHistory history;
-            history.Reset(Position::FromFen(e.fen));
-            int transform = 0;
-            batch->planes.push_back(EncodePositionForNN(
-                input_format, history, /*history_planes=*/8,
-                FillEmptyHistory::FEN_ONLY, &transform));
-          } else {
-            ++local_skipped;
-          }
-          ++local_total;
-          if (batch->planes.size() == static_cast<std::size_t>(batch_size)) {
-            if (!to_gpu.push(std::move(batch))) return;
-            batch = std::make_shared<Batch>();
-          }
-        }
-        total.store(local_total);
-        skipped.store(local_skipped);
-        if (!batch->entries.empty()) to_gpu.push(std::move(batch));
-      } catch (...) {
-        record_error();
+    auto t_last = t_start;
+    std::size_t total = 0;
+    std::size_t skipped = 0;
+    std::size_t last_total = 0;
+    for (const auto& e : reader) {
+      const bool needs_eval = (e.score != kSkippedScore);
+      buffer.push_back({e, needs_eval, 0.0f});
+      if (needs_eval) {
+        if (++pending_evals == static_cast<std::size_t>(batch_size)) flush();
+      } else {
+        ++skipped;
       }
-      to_gpu.close();
-    });
-
-    // Stage C: write one output file (re-parses each FEN in .write()). The
-    // centipawn writer (log_progress) also reports throughput; both writers see
-    // the same entry stream so either gives an accurate count.
-    auto writer_stage = [&](const std::string& path,
-                            BoundedQueue<std::shared_ptr<const Batch>>& queue,
-                            int16_t (*map)(double), bool log_progress) {
-      try {
-        binpack::Writer writer(path);
-        std::size_t written = 0;
-        std::size_t last_written = 0;
-        auto t_last = clock::now();
-        while (auto item = queue.pop()) {
-          const Batch& batch = **item;
-          std::size_t k = 0;
-          for (std::size_t i = 0; i < batch.entries.size(); ++i) {
-            binpack::Entry e = batch.entries[i];
-            if (batch.needs_eval[i]) {
-              e.score = map(static_cast<double>(batch.q[k++]));
-            }
-            writer.write(e);
-            if (log_progress && ++written % 1000 == 0) {
-              const auto now = clock::now();
-              const double dt =
-                  std::chrono::duration<double>(now - t_last).count();
-              const double rate = (written - last_written) / std::max(dt, 1e-9);
-              const double avg =
-                  written / std::max(
-                                std::chrono::duration<double>(now - t_start)
-                                    .count(),
-                                1e-9);
-              std::cerr << "\rrelabeled " << written << "  ("
-                        << static_cast<long>(rate) << " pos/s, avg "
-                        << static_cast<long>(avg) << ")        " << std::flush;
-              t_last = now;
-              last_written = written;
-            }
-          }
-        }
-      } catch (...) {
-        record_error();
+      if (++total % 1000 == 0) {
+        const auto now = clock::now();
+        const double dt = std::chrono::duration<double>(now - t_last).count();
+        const double rate = (total - last_total) / std::max(dt, 1e-9);
+        const double avg = total / std::max(
+            std::chrono::duration<double>(now - t_start).count(), 1e-9);
+        std::cerr << "\rrelabeled " << total << "  ("
+                  << static_cast<long>(rate) << " pos/s, avg "
+                  << static_cast<long>(avg) << ")        " << std::flush;
+        t_last = now;
+        last_total = total;
       }
-    };
-    std::thread cp_writer_thread(writer_stage, std::cref(output_path),
-                                 std::ref(to_cp_writer), &QToCentipawns, true);
-    std::thread q_writer_thread(writer_stage, std::cref(q_output_path),
-                                std::ref(to_q_writer), &QToInt16, false);
-
-    // Stage B (this thread): evaluate each batch on the GPU and fan the scored
-    // batch out to both writer queues.
-    try {
-      while (auto item = to_gpu.pop()) {
-        std::shared_ptr<Batch> batch = std::move(*item);
-        if (!batch->planes.empty()) {
-          auto comp = network->NewComputation();
-          for (auto& planes : batch->planes) comp->AddInput(std::move(planes));
-          comp->ComputeBlocking();
-          batch->q.resize(batch->planes.size());
-          for (std::size_t k = 0; k < batch->planes.size(); ++k) {
-            batch->q[k] = comp->GetQVal(static_cast<int>(k));
-          }
-        }
-        batch->planes.clear();
-        batch->planes.shrink_to_fit();
-        std::shared_ptr<const Batch> shared = std::move(batch);
-        to_cp_writer.push(shared);
-        to_q_writer.push(shared);
-      }
-    } catch (...) {
-      record_error();
     }
-    to_cp_writer.close();
-    to_q_writer.close();
-
-    reader_thread.join();
-    cp_writer_thread.join();
-    q_writer_thread.join();
-
-    if (first_error) std::rethrow_exception(first_error);
-
+    flush();
     const double secs =
         std::chrono::duration<double>(clock::now() - t_start).count();
-    const double avg = total.load() / std::max(secs, 1e-9);
-    std::cerr << "\rdone, " << total.load() << " entries (" << skipped.load()
+    const double avg = total / std::max(secs, 1e-9);
+    std::cerr << "\rdone, " << total << " entries (" << skipped
               << " skipped passthrough) in " << secs << "s ("
               << static_cast<long>(avg) << " pos/s) -> " << output_path
               << "          \n";
