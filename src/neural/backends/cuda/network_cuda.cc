@@ -878,8 +878,12 @@ class CudaNetwork : public Network {
 
     // Policy head. Skipped entirely for value-only inference: it feeds nothing
     // downstream of the trunk, so omitting its kernels (and the policy D2H
-    // copy) frees the compute stream proportionally to the head's cost.
-    if (!value_only_) {
+    // copy) frees the compute stream proportionally to the head's cost. The
+    // policy layers still occupy slots in network_, so the layer cursor l must
+    // advance past them to keep the value/MLH heads correctly indexed.
+    if (value_only_) {
+      l += conv_policy_ ? 3 : 2;
+    } else {
     if (attn_policy_) {
       network_[l++]->Eval(
           batchSize, spare1, flow, spare2, scratch_mem, scratch_size_, nullptr,
@@ -922,7 +926,7 @@ class CudaNetwork : public Network {
         io->op_policy_mem_, io->op_policy_mem_gpu_,
         sizeof(io->op_policy_mem_[0]) * kNumOutputPolicy * batchSize,
         cudaMemcpyDeviceToHost, download_stream));
-    }  // !value_only_
+    }  // value_only_ else
 
     // value head
     network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2, scratch_mem,
