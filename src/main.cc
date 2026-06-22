@@ -134,7 +134,8 @@ int main(int argc, char* argv[]) {
   const std::string network_path = argv[1];
   const std::string input_path = argv[2];
   const std::string output_path = argv[3];
-  int batch_size = 256;
+  // Default tuned by sweep: 128 maximizes relabel throughput on the GPU.
+  int batch_size = 128;
   if (argc >= 5) batch_size = std::stoi(argv[4]);
   if (batch_size <= 0) {
     std::cerr << "batch_size must be > 0\n";
