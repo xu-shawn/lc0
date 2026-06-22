@@ -32,6 +32,28 @@ static int16_t QToCentipawns(double q) {
   return static_cast<int16_t>(std::lround(cp));
 }
 
+// Maps Q in [-1, 1] linearly onto [-32000, 32000], preserving the raw
+// evaluation resolution rather than the centipawn mapping. The range stays
+// below the kSkippedScore sentinel (32002) to avoid collisions.
+static int16_t QToInt16(double q) {
+  double s = std::clamp(q, -1.0, 1.0) * 32000.0;
+  return static_cast<int16_t>(std::lround(s));
+}
+
+// Derives the "original resolution" output path by inserting `.q` before a
+// trailing .binpack extension (e.g. out.binpack -> out.q.binpack), falling
+// back to appending the suffix when there is no such extension.
+static std::string QOutputPath(const std::string& output_path) {
+  const std::string ext = ".binpack";
+  if (output_path.size() >= ext.size() &&
+      output_path.compare(output_path.size() - ext.size(), ext.size(), ext) ==
+          0) {
+    return output_path.substr(0, output_path.size() - ext.size()) +
+           ".q" + ext;
+  }
+  return output_path + ".q";
+}
+
 int main(int argc, char* argv[]) {
   if (argc < 4) {
     std::cerr << "Usage: " << argv[0]
@@ -66,13 +88,19 @@ int main(int argc, char* argv[]) {
   auto network = NetworkFactory::Get()->Create(backend_name, weights, options);
   std::cerr << "Network created. Batch size: " << batch_size << "\n";
 
+  const std::string q_output_path = QOutputPath(output_path);
+  std::cerr << "Writing centipawn scores to: " << output_path << "\n";
+  std::cerr << "Writing Q-resolution scores to: " << q_output_path << "\n";
+
   try {
     binpack::Reader reader(input_path);
     binpack::Writer writer(output_path);
+    binpack::Writer q_writer(q_output_path);
 
     struct Pending {
       binpack::Entry entry;
       bool needs_eval;
+      float q;
     };
     std::vector<Pending> buffer;
     buffer.reserve(batch_size);
@@ -98,11 +126,19 @@ int main(int argc, char* argv[]) {
         std::size_t k = 0;
         for (auto& p : buffer) {
           if (!p.needs_eval) continue;
-          const float q = comp->GetQVal(static_cast<int>(k++));
-          p.entry.score = QToCentipawns(static_cast<double>(q));
+          p.q = comp->GetQVal(static_cast<int>(k++));
         }
       }
-      for (const auto& p : buffer) writer.write(p.entry);
+      for (const auto& p : buffer) {
+        binpack::Entry e = p.entry;
+        binpack::Entry q_e = p.entry;
+        if (p.needs_eval) {
+          e.score = QToCentipawns(static_cast<double>(p.q));
+          q_e.score = QToInt16(static_cast<double>(p.q));
+        }
+        writer.write(e);
+        q_writer.write(q_e);
+      }
       buffer.clear();
       pending_evals = 0;
     };
@@ -115,7 +151,7 @@ int main(int argc, char* argv[]) {
     std::size_t last_total = 0;
     for (const auto& e : reader) {
       const bool needs_eval = (e.score != kSkippedScore);
-      buffer.push_back({e, needs_eval});
+      buffer.push_back({e, needs_eval, 0.0f});
       if (needs_eval) {
         if (++pending_evals == static_cast<std::size_t>(batch_size)) flush();
       } else {
