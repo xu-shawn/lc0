@@ -52,6 +52,7 @@ struct WeightsToOnnxConverterOptions {
   bool alt_selu = false;       // Use discrete "Selu" implementation.
   bool no_shape = false;       // Avoid use of "Shape" operator.
   bool no_wdl_softmax = false; // Skip wdl softmax.
+  bool value_only = false;     // Emit only the value head (skip policy + mlh).
   std::string policy_head = "vanilla";
   std::string value_head = "winner";
 

@@ -1137,12 +1137,18 @@ void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
     flow = MakeAttentionBody(&builder, flow, weights);
   }
 
-  // Policy head.
-  MakePolicyHead(onnx, &builder, flow, weights);
+  // Policy head. Skipped for value-only conversion: it hangs off the trunk and
+  // feeds nothing downstream, so omitting it keeps those nodes out of the graph
+  // (and, for TRT, out of the built engine) entirely.
+  if (!options_.value_only) {
+    MakePolicyHead(onnx, &builder, flow, weights);
+  }
   // Value head.
   MakeValueHead(onnx, &builder, flow, weights);
-  // Moves left head.
-  MakeMovesLeftHead(onnx, &builder, flow, weights);
+  // Moves left head. Also skipped for value-only conversion.
+  if (!options_.value_only) {
+    MakeMovesLeftHead(onnx, &builder, flow, weights);
+  }
 
   onnx->set_model(builder.OutputAsString());
 }
