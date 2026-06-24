@@ -204,6 +204,11 @@ class OnnxNetwork final : public Network {
   bool fp16_;
   bool bf16_;
   bool cpu_wdl_;
+  // Bind only the consumed value/WDL output, pruning the policy and moves-left
+  // branches from graph execution (value-only inference, e.g. binpack
+  // relabeling). The pruned heads hang off the trunk and feed nothing
+  // downstream, so their nodes are pure overhead when only Q is read.
+  bool value_only_;
   // The batch size to use, or -1 for variable.
   int batch_size_;
   // The lower limit for variable batch size.
@@ -241,7 +246,9 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
   if (wdl_head != -1) {
     wdl_output_data_.resize(3 * max_batch_size);
   }
-  output_tensors_step_[policy_head] = kNumOutputPolicy;
+  if (policy_head != -1) {
+    output_tensors_step_[policy_head] = kNumOutputPolicy;
+  }
   if (wdl_head != -1) {
     output_tensors_step_[wdl_head] = 3;
   }
@@ -449,7 +456,12 @@ Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
   }
 
   Ort::IoBinding binding{network_->session_[step - 1]};
+  // For value-only inference only the value/WDL output is read; binding it as
+  // the sole fetch lets onnxruntime prune the policy and moves-left branches.
+  const int kept_head =
+      network_->wdl_head_ != -1 ? network_->wdl_head_ : network_->value_head_;
   for (size_t i = 0; i < inputs_outputs_->output_tensors_step_.size(); i++) {
+    if (network_->value_only_ && static_cast<int>(i) != kept_head) continue;
     int size = inputs_outputs_->output_tensors_step_[i];
     int64_t dims[] = {batch_size, size};
     binding.BindOutput(
@@ -568,8 +580,13 @@ void OnnxComputation<DataType>::ComputeBlocking() {
                                        network_->compute_stream_));
       ReportCUDAErrors(cudaStreamWaitEvent(
           network_->download_stream_, inputs_outputs_->evaluation_done_event_));
+      const int kept_head = network_->wdl_head_ != -1 ? network_->wdl_head_
+                                                       : network_->value_head_;
       for (size_t j = 0; j < inputs_outputs_->output_tensors_step_.size();
            j++) {
+        // Pruned heads aren't computed in value-only mode, so skip their D2H
+        // copy (mirroring the binding above).
+        if (network_->value_only_ && static_cast<int>(j) != kept_head) continue;
         size_t offset = i * inputs_outputs_->output_tensors_step_[j];
         ReportCUDAErrors(cudaMemcpyAsync(
             static_cast<DataType*>(inputs_outputs_->output_tensors_data_[j]) +
@@ -796,6 +813,11 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   onnx_env_.DisableTelemetryEvents();
   gpu_ = opts.GetOrDefault<int>("gpu", 0);
 
+  // Bind only the consumed value/WDL output so onnxruntime prunes the policy
+  // and moves-left branches from execution. Backends/workloads that don't set
+  // this option are unaffected (defaults to false).
+  value_only_ = opts.GetOrDefault<bool>("value_only", false);
+
 #ifdef USE_ONNX_CUDART
   if (provider_ == OnnxProvider::CUDA || provider_ == OnnxProvider::TRT) {
     auto nv_version = [](int v) {
@@ -878,11 +900,15 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
     throw Exception("NN doesn't have input planes defined.");
   }
   inputs_.emplace_back(md.input_planes());
-  if (!md.has_output_policy()) {
+  // A value-only model (policy/mlh stripped at conversion) is valid here; only
+  // the value/WDL output is consumed. Other models must have a policy head.
+  if (!md.has_output_policy() && !value_only_) {
     throw Exception("NN doesn't have policy head defined.");
   }
-  policy_head_ = outputs_.size();
-  outputs_.emplace_back(md.output_policy());
+  if (md.has_output_policy()) {
+    policy_head_ = outputs_.size();
+    outputs_.emplace_back(md.output_policy());
+  }
   if (md.has_output_wdl()) {
     wdl_head_ = outputs_.size();
     outputs_.emplace_back(md.output_wdl());
@@ -950,6 +976,12 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     converter_options.value_head =
         opts.GetOrDefault<std::string>("value_head", "winner");
     converter_options.no_wdl_softmax = true;
+    // Value-only workloads (e.g. binpack relabeling) read only Q, so drop the
+    // policy and moves-left heads from the converted graph. For TRT this keeps
+    // them out of the built engine, eliminating their compute (not just the
+    // output copy, which is all runtime output-pruning can save once an engine
+    // is built with the heads baked in).
+    converter_options.value_only = opts.GetOrDefault<bool>("value_only", false);
     converter_options.alt_selu =
         kProvider == OnnxProvider::COREML ? true : false;
     // No execution provider has a better mish version, some don't even have it.
