@@ -86,6 +86,12 @@ int main(int argc, char* argv[]) {
   options.Set<bool>("value_only", value_only);
   std::cerr << "value_only (skip policy head): " << (value_only ? "on" : "off")
             << "\n";
+  // The CUDA backend sizes all of its host/device buffers and its per-batch
+  // cuda-graph table from "max_batch" (default 1024). We feed it batches of
+  // exactly batch_size, so the backend must be told to size for at least that
+  // many positions; otherwise batch_size > 1024 overflows those buffers. There
+  // is no inherent kernel limit -- batch is passed as the CUDA grid dimension.
+  options.Set<int>("max_batch", batch_size);
   auto backends = NetworkFactory::Get()->GetBackendsList();
   if (backends.empty()) {
     std::cerr << "No backends found! Ensure you have compiled with backend "
