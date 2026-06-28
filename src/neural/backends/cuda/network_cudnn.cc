@@ -167,7 +167,7 @@ class CudnnNetwork : public Network {
     MultiHeadWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
     enable_graph_capture_ = options.GetOrDefault<bool>("graph_capture", true);
-    // Skip the policy head for value-only workloads (e.g. binpack relabeling):
+    // Skip the policy head for value-only workloads (e.g. relabeling):
     // it feeds nothing downstream of the trunk, so its kernels are pure
     // overhead on the compute stream.
     value_only_ = options.GetOrDefault<bool>("value_only", false);

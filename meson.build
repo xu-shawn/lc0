@@ -174,7 +174,6 @@ files += [
 ]
 
 includes += include_directories('src')
-includes += include_directories('src/binpacks/include')
 
 deps += dependency('absl_flat_hash_map', 'absl', modules:['absl::flat_hash_map'],
                    include_type: 'system',

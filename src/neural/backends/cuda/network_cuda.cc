@@ -255,7 +255,7 @@ class CudaNetwork : public Network {
 
     // Skip the policy and moves-left heads entirely. Both hang off the trunk
     // output and feed nothing downstream, so for value-only workloads (e.g.
-    // binpack relabeling) their kernels are pure overhead on the compute
+    // relabeling) their kernels are pure overhead on the compute
     // stream. The value head is the only one whose output is consumed.
     value_only_ = options.GetOrDefault<bool>("value_only", false);
 
