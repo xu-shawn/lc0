@@ -64,6 +64,17 @@ int main(int argc, char* argv[]) {
   // many positions; otherwise batch_size > 1024 overflows those buffers. There
   // is no inherent kernel limit -- batch is passed as the CUDA grid dimension.
   options.Set<int>("max_batch", batch_size);
+  // CUDA graph capture re-runs the forward pass in a capturing stream to record
+  // a replayable graph. On bleeding-edge GPUs/toolkits (e.g. sm_120 + CUDA 13)
+  // that capture path can fail ("CUDA error: invalid argument" in
+  // network_cuda.cc) even though the plain eval path works. For a streaming
+  // relabel job the launch-overhead savings from graphs are minor, so default
+  // capture off; set LC0_RELABEL_GRAPH_CAPTURE=1 to re-enable. Backends that
+  // don't recognize the option ignore it.
+  const char* graph_env = std::getenv("LC0_RELABEL_GRAPH_CAPTURE");
+  const bool graph_capture = graph_env && std::string(graph_env) == "1";
+  options.Set<bool>("graph_capture", graph_capture);
+  std::cerr << "graph_capture: " << (graph_capture ? "on" : "off") << "\n";
   auto backends = NetworkFactory::Get()->GetBackendsList();
   if (backends.empty()) {
     std::cerr << "No backends found! Ensure you have compiled with backend "
