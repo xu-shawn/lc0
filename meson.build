@@ -899,7 +899,8 @@ if get_option('lc0')
   lgs_args = lgs_commit != '' ? ['-DLGS_COMMIT="' + lgs_commit + '"'] : []
   executable('lc0', ['src/main.cc', 'src/lgs_relabel.cc'],
        files, include_directories: includes,
-       dependencies: [deps, dependency('libzstd')], cpp_args: lgs_args,
+       dependencies: [deps, dependency('libzstd', fallback: ['zstd', 'libzstd_dep'])],
+       cpp_args: lgs_args,
        install: true)
 endif
 
