@@ -644,7 +644,9 @@ class CudaNetwork : public Network {
       comp.AddInput(InputPlanes{(size_t)kNumInputPlanes});
       // Make sure cublas is initialized in this thread.
       comp.ComputeBlocking();
-      for (int i = 0; i < GetMiniBatchSize(); i++) {
+      // The computation already holds one input: never exceed max_batch.
+      const int graphs = std::min(GetMiniBatchSize(), max_batch_size_ - 1);
+      for (int i = 0; i < graphs; i++) {
         comp.AddInput(InputPlanes{(size_t)kNumInputPlanes});
         auto lock = LockEval();
         comp.CaptureGraph(std::move(lock));
