@@ -72,6 +72,18 @@ int RunLgsRelabel(Network* network, const std::string& network_path,
   lgs::Reader reader(in_path);
   const auto net_input_format = network->GetCapabilities().input_format;
 
+  // Debug: LC0_LGS_DUMP=<prefix> writes the dense input planes
+  // (<prefix>.planes.f32, N x 112 x 64) and outputs (<prefix>.qd.f32, N x 2)
+  // of every evaluated position, for checking other inference paths.
+  const char* dump_prefix = std::getenv("LC0_LGS_DUMP");
+  FILE* dump_planes = nullptr;
+  FILE* dump_qd = nullptr;
+  if (dump_prefix) {
+    dump_planes = std::fopen((std::string(dump_prefix) + ".planes.f32").c_str(), "wb");
+    dump_qd = std::fopen((std::string(dump_prefix) + ".qd.f32").c_str(), "wb");
+    if (!dump_planes || !dump_qd) throw std::runtime_error("cannot open dump files");
+  }
+
   std::vector<lgs::Block> out_blocks;
   uint64_t evaluated = 0, total_pos = 0;
   int games_done = 0;
@@ -97,6 +109,10 @@ int RunLgsRelabel(Network* network, const std::string& network_path,
       for (size_t k = 0; k < rows.size(); k++) {
         q[rows[k]] = comp->GetQVal(static_cast<int>(k));
         d[rows[k]] = comp->GetDVal(static_cast<int>(k));
+        if (dump_qd) {
+          const float qd[2] = {q[rows[k]], d[rows[k]]};
+          std::fwrite(qd, sizeof(qd), 1, dump_qd);
+        }
       }
       evaluated += rows.size();
       rows.clear();
@@ -123,9 +139,17 @@ int RunLgsRelabel(Network* network, const std::string& network_path,
           static_cast<pblczero::NetworkFormat::InputFormat>(store_fmt[g]);
       for (uint32_t r = first; r < first + n_pos[g]; r++) {
         int transform = 0;
-        comp->AddInput(EncodePositionForNN(net_input_format, history, 8,
-                                           FillEmptyHistory::FEN_ONLY,
-                                           &transform));
+        InputPlanes planes = EncodePositionForNN(
+            net_input_format, history, 8, FillEmptyHistory::FEN_ONLY, &transform);
+        if (dump_planes) {
+          float dense[kInputPlanes * 64];
+          for (int p = 0; p < kInputPlanes; p++)
+            for (int sq = 0; sq < 64; sq++)
+              dense[p * 64 + sq] =
+                  ((planes[p].mask >> sq) & 1) ? planes[p].value : 0.0f;
+          std::fwrite(dense, sizeof(dense), 1, dump_planes);
+        }
+        comp->AddInput(std::move(planes));
         rows.push_back(r);
         if (static_cast<int>(rows.size()) == batch_size) flush();
         if (r + 1 == first + n_pos[g]) break;  // last move not needed
@@ -167,6 +191,8 @@ int RunLgsRelabel(Network* network, const std::string& network_path,
               << " pos/s" << std::endl;
   }
 
+  if (dump_planes) std::fclose(dump_planes);
+  if (dump_qd) std::fclose(dump_qd);
   lgs::EncodeBlocks(&out_blocks, 19, 4);
   const std::string shard_name = in_path.substr(in_path.find_last_of('/') + 1);
   const std::string net_name =
