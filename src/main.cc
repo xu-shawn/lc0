@@ -18,6 +18,7 @@
 #include "neural/loader.h"
 #include "neural/network.h"
 #include "utils/optionsdict.h"
+#include "lgs_relabel.h"
 
 using namespace lczero;
 
@@ -102,6 +103,21 @@ int main(int argc, char* argv[]) {
   std::cerr << "Auto-selected backend: " << backend_name << "\n";
   auto network = NetworkFactory::Get()->Create(backend_name, weights, options);
   std::cerr << "Network created. Batch size: " << batch_size << "\n";
+
+  // LGS shards: evaluate every position with its real game history and write
+  // an LGS side file (bt4_q, bt4_d) instead of a binpack.
+  if (input_path.size() > 4 &&
+      input_path.compare(input_path.size() - 4, 4, ".lgs") == 0) {
+    const char* mg = std::getenv("LC0_LGS_MAX_GAMES");
+    try {
+      return RunLgsRelabel(network.get(), network_path, backend_name,
+                           input_path, output_path, batch_size,
+                           mg ? std::atoi(mg) : 0);
+    } catch (const std::exception& ex) {
+      std::cerr << "error: " << ex.what() << '\n';
+      return EXIT_FAILURE;
+    }
+  }
 
   const std::string q_output_path = QOutputPath(output_path);
   std::cerr << "Writing centipawn scores to: " << output_path << "\n";

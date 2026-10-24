@@ -894,8 +894,13 @@ configure_file(output : 'default_backend.h',
 
 if get_option('lc0')
   files += common_files
-  executable('lc0', 'src/main.cc',
-       files, include_directories: includes, dependencies: deps, install: true)
+  lgs_commit = run_command('git', 'rev-parse', '--short=12', 'HEAD',
+                           check: false).stdout().strip()
+  lgs_args = lgs_commit != '' ? ['-DLGS_COMMIT="' + lgs_commit + '"'] : []
+  executable('lc0', ['src/main.cc', 'src/lgs_relabel.cc'],
+       files, include_directories: includes,
+       dependencies: [deps, dependency('libzstd')], cpp_args: lgs_args,
+       install: true)
 endif
 
 #############################################################################
