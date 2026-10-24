@@ -6,6 +6,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <stdexcept>
 #include <system_error>
 #include <vector>
 
@@ -55,6 +56,81 @@ static std::string QOutputPath(const std::string& output_path) {
   return output_path + ".q";
 }
 
+// Evaluates dense input planes (N x 112 x 64 float32) and writes q, d.
+static int RunPlanes(Network* network, const std::string& in_path,
+                     const std::string& out_path, int batch_size,
+                     const std::vector<int>& bench_batches) {
+  FILE* f = std::fopen(in_path.c_str(), "rb");
+  if (!f) throw std::runtime_error("cannot open " + in_path);
+  std::vector<InputPlanes> inputs;
+  std::vector<float> dense(kInputPlanes * 64);
+  while (std::fread(dense.data(), sizeof(float), dense.size(), f) ==
+         dense.size()) {
+    InputPlanes planes(kInputPlanes);
+    for (int p = 0; p < kInputPlanes; p++) {
+      uint64_t mask = 0;
+      float value = 1.0f;
+      for (int sq = 0; sq < 64; sq++) {
+        const float v = dense[p * 64 + sq];
+        if (v != 0.0f) {
+          if (!mask) value = v;
+          mask |= 1ull << sq;
+        }
+      }
+      planes[p].mask = mask;
+      planes[p].value = value;
+    }
+    inputs.push_back(std::move(planes));
+  }
+  std::fclose(f);
+  const size_t n = inputs.size();
+  std::cerr << "Read " << n << " positions from " << in_path << "\n";
+  if (n == 0) return EXIT_FAILURE;
+
+  using clock = std::chrono::steady_clock;
+  std::vector<float> qd(2 * n);
+  const auto t0 = clock::now();
+  for (size_t b = 0; b < n; b += batch_size) {
+    const size_t e = std::min(n, b + batch_size);
+    auto comp = network->NewComputation();
+    for (size_t i = b; i < e; i++) comp->AddInput(InputPlanes(inputs[i]));
+    comp->ComputeBlocking();
+    for (size_t i = b; i < e; i++) {
+      qd[2 * i] = comp->GetQVal(static_cast<int>(i - b));
+      qd[2 * i + 1] = comp->GetDVal(static_cast<int>(i - b));
+    }
+  }
+  const double secs = std::chrono::duration<double>(clock::now() - t0).count();
+  FILE* o = std::fopen(out_path.c_str(), "wb");
+  if (!o) throw std::runtime_error("cannot open " + out_path);
+  std::fwrite(qd.data(), sizeof(float), qd.size(), o);
+  std::fclose(o);
+  std::cerr << "Wrote q,d of " << n << " positions to " << out_path << " ("
+            << secs << " s)\n";
+
+  const char* it_env = std::getenv("LC0_BENCH_ITERS");
+  const int iters = it_env ? std::max(1, std::atoi(it_env)) : 30;
+  for (int bs : bench_batches) {
+    auto run = [&]() {
+      auto comp = network->NewComputation();
+      for (int i = 0; i < bs; i++) comp->AddInput(InputPlanes(inputs[i % n]));
+      comp->ComputeBlocking();
+      float sum = 0;
+      for (int i = 0; i < bs; i++) sum += comp->GetQVal(i);
+      return sum;
+    };
+    run();
+    run();  // warm up (graph capture for this batch size)
+    const auto t1 = clock::now();
+    for (int k = 0; k < iters; k++) run();
+    const double dt = std::chrono::duration<double>(clock::now() - t1).count();
+    std::cout << "bench batch " << bs << ": " << static_cast<long>(bs * iters / dt)
+              << " pos/s (" << 1000.0 * dt / iters << " ms per batch, "
+              << iters << " iterations)" << std::endl;
+  }
+  return EXIT_SUCCESS;
+}
+
 int main(int argc, char* argv[]) {
   if (argc < 4) {
     std::cerr << "Usage: " << argv[0]
@@ -74,6 +150,30 @@ int main(int argc, char* argv[]) {
 
   InitializeMagicBitboards();
 
+  // Planes mode: <input> is a dense planes file (N x 112 x 64 float32, as
+  // written by LC0_LGS_DUMP). Writes q and d (N x 2 float32) to <output>.
+  // LC0_BENCH_BATCHES=512,1024,... also times those batch sizes
+  // (LC0_BENCH_ITERS iterations each, default 30).
+  const bool planes_mode =
+      input_path.size() > 11 &&
+      input_path.compare(input_path.size() - 11, 11, ".planes.f32") == 0;
+  std::vector<int> bench_batches;
+  if (const char* bb = std::getenv("LC0_BENCH_BATCHES")) {
+    std::string s(bb);
+    size_t pos = 0;
+    while (pos < s.size()) {
+      size_t end = s.find(',', pos);
+      if (end == std::string::npos) end = s.size();
+      const int b = std::atoi(s.substr(pos, end - pos).c_str());
+      if (b > 0) bench_batches.push_back(b);
+      pos = end + 1;
+    }
+  }
+  int max_batch = batch_size;
+  if (planes_mode) {
+    for (int b : bench_batches) max_batch = std::max(max_batch, b);
+  }
+
   std::cerr << "Loading network: " << network_path << "\n";
   auto weights = LoadWeightsFromFile(network_path);
 
@@ -92,17 +192,33 @@ int main(int argc, char* argv[]) {
   // exactly batch_size, so the backend must be told to size for at least that
   // many positions; otherwise batch_size > 1024 overflows those buffers. There
   // is no inherent kernel limit -- batch is passed as the CUDA grid dimension.
-  options.Set<int>("max_batch", batch_size);
+  options.Set<int>("max_batch", max_batch);
   auto backends = NetworkFactory::Get()->GetBackendsList();
   if (backends.empty()) {
     std::cerr << "No backends found! Ensure you have compiled with backend "
                  "support.\n";
     return 1;
   }
-  const std::string backend_name = backends[0];
-  std::cerr << "Auto-selected backend: " << backend_name << "\n";
+  // LC0_BACKEND=<name> overrides the automatic choice (the highest-priority
+  // backend compiled in, e.g. cuda-bt4fast), for example LC0_BACKEND=cuda-fp16.
+  const char* backend_env = std::getenv("LC0_BACKEND");
+  const std::string backend_name =
+      (backend_env && *backend_env) ? std::string(backend_env) : backends[0];
+  std::cerr << (backend_env && *backend_env ? "Selected backend: "
+                                            : "Auto-selected backend: ")
+            << backend_name << "\n";
   auto network = NetworkFactory::Get()->Create(backend_name, weights, options);
   std::cerr << "Network created. Batch size: " << batch_size << "\n";
+
+  if (planes_mode) {
+    try {
+      return RunPlanes(network.get(), input_path, output_path, batch_size,
+                       bench_batches);
+    } catch (const std::exception& ex) {
+      std::cerr << "error: " << ex.what() << '\n';
+      return EXIT_FAILURE;
+    }
+  }
 
   // LGS shards: evaluate every position with its real game history and write
   // an LGS side file (bt4_q, bt4_d) instead of a binpack.
