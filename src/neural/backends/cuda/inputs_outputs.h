@@ -107,6 +107,13 @@ struct InputsOutputs {
     if (wdl && sizeof(DataType) != sizeof(float)) {
       wdl_cpu_softmax_ = std::make_unique<float[]>(maxBatchSize * 2);
     }
+    if (wdl) {
+      // fp32 WDL logits written by the bt4fast path.
+      ReportCUDAErrors(cudaHostAlloc(&op_value_f32_mem_,
+                                     maxBatchSize * 3 * sizeof(float), 0));
+      ReportCUDAErrors(
+          cudaMalloc(&op_value_f32_mem_gpu_, maxBatchSize * 3 * sizeof(float)));
+    }
     ReportCUDAErrors(
         cudaEventCreateWithFlags(&upload_done_event_, cudaEventDisableTiming));
     ReportCUDAErrors(
@@ -167,6 +174,8 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaFree(op_policy_mem_gpu_));
     ReportCUDAErrors(cudaFreeHost(op_value_mem_));
     ReportCUDAErrors(cudaFree(op_value_mem_gpu_));
+    if (op_value_f32_mem_) ReportCUDAErrors(cudaFreeHost(op_value_f32_mem_));
+    if (op_value_f32_mem_gpu_) ReportCUDAErrors(cudaFree(op_value_f32_mem_gpu_));
     ReportCUDAErrors(cudaEventDestroy(upload_done_event_));
     ReportCUDAErrors(cudaEventDestroy(policy_done_event_));
     ReportCUDAErrors(cudaEventDestroy(value_done_event_));
@@ -209,6 +218,8 @@ struct InputsOutputs {
   DataType* op_moves_left_mem_gpu_ = nullptr;
 
   std::unique_ptr<float[]> wdl_cpu_softmax_;
+  float* op_value_f32_mem_ = nullptr;
+  float* op_value_f32_mem_gpu_ = nullptr;
 
   // memory needed to run the network owned by InputsOutputs when multi_stream
   // is enabled

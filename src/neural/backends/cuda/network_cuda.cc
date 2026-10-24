@@ -31,6 +31,7 @@
 #include <mutex>
 #include <type_traits>
 
+#include "bt4fast.h"
 #include "cuda_common.h"
 #include "inputs_outputs.h"
 #include "kernels.h"
@@ -202,7 +203,8 @@ class CudaNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class CudaNetwork : public Network {
  public:
-  CudaNetwork(const WeightsFile& file, const OptionsDict& options)
+  CudaNetwork(const WeightsFile& file, const OptionsDict& options,
+              bool bt4fast = false)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
@@ -399,6 +401,34 @@ class CudaNetwork : public Network {
                       "' does not exist in this net.");
     }
 
+    // bt4fast: fused fp16 path for BT4-shaped attention-body nets on sm_75+.
+    // Falls back to the regular cuda-fp16 layers if the net or GPU doesn't
+    // fit it.
+    use_bt4fast_ = false;
+    if (bt4fast) {
+      std::string why;
+      if (!fp16) {
+        why = "requires fp16";
+      } else if (deviceProp.major * 10 + deviceProp.minor < 75) {
+        why = "requires compute capability 7.5 or newer";
+      } else if (!has_tensor_cores_) {
+        why = "requires tensor cores";
+      } else if (multi_stream_) {
+        why = "multi_stream is not supported";
+      } else if (bt4fast::Bt4FastNetwork::Supported(
+                     weights, weights.value_heads.at(value_head),
+                     file.format().network_format(), &why)) {
+        use_bt4fast_ = true;
+      }
+      if (!use_bt4fast_) {
+        CERR << "bt4fast path not used (" << why
+             << "); using the regular cuda-fp16 layers.";
+      }
+    }
+    // With value_only the fast path computes everything that is read, so the
+    // regular layers are not built at all.
+    bt4fast_only_ = use_bt4fast_ && value_only_;
+
     // Attention policy head or body may need more memory
     const size_t attentionPolicySize =
         getMaxAttentionHeadSize(weights.policy_heads.at(policy_head),
@@ -407,8 +437,10 @@ class CudaNetwork : public Network {
 
     const size_t attentionBodySize =
         getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(DataType);
-    scratch_size_ = std::max(scratch_size_,
-                             std::max(attentionPolicySize, attentionBodySize));
+    if (!bt4fast_only_) {
+      scratch_size_ = std::max(
+          scratch_size_, std::max(attentionPolicySize, attentionBodySize));
+    }
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 
@@ -481,7 +513,7 @@ class CudaNetwork : public Network {
       resi_last_ = getLastLayer();
     }
 
-    if (attn_body_) {
+    if (attn_body_ && !bt4fast_only_) {
       Activations activations;
       const auto smolgen_activation =
           file.format().network_format().smolgen_activation();
@@ -510,7 +542,7 @@ class CudaNetwork : public Network {
     }
 
     // Policy head.
-    {
+    if (!bt4fast_only_) {
       MultiHeadWeights::PolicyHead& head = weights.policy_heads.at(policy_head);
       if (attn_policy_) {
         auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
@@ -568,11 +600,11 @@ class CudaNetwork : public Network {
     }
 
     // Value heads.
-    {
+    wdl_ = file.format().network_format().value() ==
+           pblczero::NetworkFormat::VALUE_WDL;
+    if (!bt4fast_only_) {
       const MultiHeadWeights::ValueHead& head =
           weights.value_heads.at(value_head);
-      wdl_ = file.format().network_format().value() ==
-             pblczero::NetworkFormat::VALUE_WDL;
       BaseLayer<DataType>* lastlayer = attn_body_ ? encoder_last_ : resi_last_;
       auto value_main = std::make_unique<ValueHead<DataType>>(
           lastlayer, head, scratch_mem_, attn_body_, wdl_, act, max_batch_size_,
@@ -584,7 +616,7 @@ class CudaNetwork : public Network {
     moves_left_ = (file.format().network_format().moves_left() ==
                    pblczero::NetworkFormat::MOVES_LEFT_V1) &&
                   options.GetOrDefault<bool>("mlh", true);
-    if (moves_left_) {
+    if (moves_left_ && !bt4fast_only_) {
       if (attn_body_) {
         auto embedded_mov = std::make_unique<EmbeddingLayer<DataType>>(
             encoder_last_, weights.ip_mov_w, weights.ip_mov_b, scratch_mem_,
@@ -624,8 +656,14 @@ class CudaNetwork : public Network {
     }
 
     if ((attn_policy_ || use_res_block_winograd_fuse_opt_ || attn_body_) &&
-        (scratch_size_ > maxSize)) {
+        (scratch_size_ > maxSize) && !bt4fast_only_) {
       maxSize = scratch_size_;
+    }
+
+    if (use_bt4fast_) {
+      bt4fast_ = std::make_unique<bt4fast::Bt4FastNetwork>(
+          weights, weights.value_heads.at(value_head), max_batch_size_,
+          options.GetOrDefault<bool>("bt4fast_autotune", true));
     }
 
     if (!multi_stream_) {
@@ -778,8 +816,10 @@ class CudaNetwork : public Network {
 #endif
     }
 
-    expandPlanes_NCHW(tensor_mem[0], ipDataMasks, ipDataValues,
-                      batchSize * kInputPlanes, compute_stream);
+    if (!bt4fast_) {
+      expandPlanes_NCHW(tensor_mem[0], ipDataMasks, ipDataValues,
+                        batchSize * kInputPlanes, compute_stream);
+    }
 
     auto* opPol = io->op_policy_mem_gpu_;
     auto* opVal = io->op_value_mem_gpu_;
@@ -855,7 +895,20 @@ class CudaNetwork : public Network {
       spare2 = tensor_mem[1];
     }
 
-    if (attn_body_) {
+    if (attn_body_ && bt4fast_) {
+      // Attention body and value head in one go; the body output is only
+      // materialized when a regular head still needs it.
+      bt4fast_->Eval(batchSize, ipDataMasks,
+                     reinterpret_cast<const half*>(ipDataValues),
+                     wdl_ ? io->op_value_f32_mem_gpu_ : nullptr,
+                     bt4fast_only_ ? nullptr
+                                   : reinterpret_cast<half*>(tensor_mem[1]),
+                     compute_stream);
+      if (!bt4fast_only_) l++;  // regular attention body layer
+      flow = tensor_mem[1];
+      spare1 = tensor_mem[0];
+      spare2 = tensor_mem[2];
+    } else if (attn_body_) {
       network_[l++]->Eval(
           batchSize, tensor_mem[1],
           (numBlocks_ > 0) ? tensor_mem[2] : tensor_mem[0],
@@ -932,9 +985,13 @@ class CudaNetwork : public Network {
     }  // value_only_ else
 
     // value head
-    network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2, scratch_mem,
-                        scratch_size_, nullptr, cublas,
-                        compute_stream);  // value head
+    if (bt4fast_) {
+      if (!bt4fast_only_) l++;  // computed by bt4fast_->Eval() above
+    } else {
+      network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2,
+                          scratch_mem, scratch_size_, nullptr, cublas,
+                          compute_stream);  // value head
+    }
     // For value-only inference the moves-left head is skipped below, so the
     // value head is the last compute op and must record the ordering event
     // here (mirroring the genuine no-MLH case).
@@ -948,10 +1005,17 @@ class CudaNetwork : public Network {
     ReportCUDAErrors(cudaEventRecord(io->value_done_event_, compute_stream));
     ReportCUDAErrors(
         cudaStreamWaitEvent(download_stream, io->value_done_event_, 0));
-    ReportCUDAErrors(cudaMemcpyAsync(
-        io->op_value_mem_, io->op_value_mem_gpu_,
-        sizeof(io->op_value_mem_[0]) * (wdl_ ? 3 : 1) * batchSize,
-        cudaMemcpyDeviceToHost, download_stream));
+    if (bt4fast_ && wdl_) {
+      ReportCUDAErrors(cudaMemcpyAsync(
+          io->op_value_f32_mem_, io->op_value_f32_mem_gpu_,
+          sizeof(float) * 3 * batchSize, cudaMemcpyDeviceToHost,
+          download_stream));
+    } else {
+      ReportCUDAErrors(cudaMemcpyAsync(
+          io->op_value_mem_, io->op_value_mem_gpu_,
+          sizeof(io->op_value_mem_[0]) * (wdl_ ? 3 : 1) * batchSize,
+          cudaMemcpyDeviceToHost, download_stream));
+    }
 
     if (wdl_) {
 #if CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
@@ -1020,9 +1084,17 @@ class CudaNetwork : public Network {
         float* wdl = sizeof(io->op_value_mem_[0]) == sizeof(float)
                          ? (float*)io->op_value_mem_
                          : io->wdl_cpu_softmax_.get();
-        float w = FromType(io->op_value_mem_[3 * i + 0]);
-        float d = FromType(io->op_value_mem_[3 * i + 1]);
-        float l = FromType(io->op_value_mem_[3 * i + 2]);
+        float w, d, l;
+        if (bt4fast_) {
+          // fp32 logits from the bt4fast value head.
+          w = io->op_value_f32_mem_[3 * i + 0];
+          d = io->op_value_f32_mem_[3 * i + 1];
+          l = io->op_value_f32_mem_[3 * i + 2];
+        } else {
+          w = FromType(io->op_value_mem_[3 * i + 0]);
+          d = FromType(io->op_value_mem_[3 * i + 1]);
+          l = FromType(io->op_value_mem_[3 * i + 2]);
+        }
         float m = std::max({w, d, l});
         w = std::exp(w - m);
         d = std::exp(d - m);
@@ -1127,6 +1199,9 @@ class CudaNetwork : public Network {
   bool multi_stream_;                     // run multiple parallel network evals
   bool allow_cache_opt_;  // try to fit residual block activations in L2 cache
   bool value_only_;       // skip policy + moves-left heads (value-only)
+  bool use_bt4fast_ = false;   // run the body + value head via bt4fast
+  bool bt4fast_only_ = false;  // ... and build no regular layers at all
+  std::unique_ptr<bt4fast::Bt4FastNetwork> bt4fast_;
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
@@ -1286,7 +1361,8 @@ void CudaNetworkComputation<DataType>::ComputeBlocking() {
 
 template <typename DataType>
 std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
-                                         const OptionsDict& options) {
+                                         const OptionsDict& options,
+                                         bool bt4fast = false) {
   if (!w) {
     throw Exception(
         "The cuda" +
@@ -1352,7 +1428,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
                       NF::InputEmbeddingFormat_Name(nf.input_embedding()) +
                       " is not supported by the CUDA backend.");
   }
-  return std::make_unique<CudaNetwork<DataType>>(weights, options);
+  return std::make_unique<CudaNetwork<DataType>>(weights, options, bt4fast);
 }
 
 std::unique_ptr<Network> MakeCudaNetworkAuto(
@@ -1373,6 +1449,21 @@ std::unique_ptr<Network> MakeCudaNetworkAuto(
   return MakeCudaNetwork<float>(weights, options);
 }
 
+// cuda-bt4fast: the cuda-fp16 backend with the bt4fast path for BT4-shaped
+// attention-body networks on sm_75+ (other nets use the regular layers; GPUs
+// older than sm_75 get cuda-auto).
+std::unique_ptr<Network> MakeCudaNetworkBt4Fast(
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
+  int gpu_id = options.GetOrDefault<int>("gpu", 0);
+  cudaDeviceProp deviceProp = {};
+  cudaGetDeviceProperties(&deviceProp, gpu_id);
+  if (deviceProp.major * 10 + deviceProp.minor < 75) {
+    return MakeCudaNetworkAuto(weights, options);
+  }
+  return MakeCudaNetwork<half>(weights, options, true);
+}
+
+REGISTER_NETWORK("cuda-bt4fast", MakeCudaNetworkBt4Fast, 105)
 REGISTER_NETWORK("cuda-auto", MakeCudaNetworkAuto, 104)
 REGISTER_NETWORK("cuda", MakeCudaNetwork<float>, 103)
 REGISTER_NETWORK("cuda-fp16", MakeCudaNetwork<half>, 102)
