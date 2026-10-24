@@ -116,6 +116,30 @@ __device__ __forceinline__ uint4 ldg16(const half* p) {
   return __ldg(reinterpret_cast<const uint4*>(p));
 }
 
+// Read-only 16-byte load that asks L2 to fetch the whole 128-byte line (the
+// next k tile of the same rows then hits L2).
+__device__ __forceinline__ uint4 ldg16_l2line(const half* p) {
+#ifdef BT4FAST_NO_MMA
+  return __ldg(reinterpret_cast<const uint4*>(p));
+#else
+  uint4 r;
+  asm("ld.global.nc.L2::128B.v4.u32 {%0,%1,%2,%3}, [%4];\n"
+      : "=r"(r.x), "=r"(r.y), "=r"(r.z), "=r"(r.w)
+      : "l"(p));
+  return r;
+#endif
+}
+
+__device__ __forceinline__ void ldsm_x2(uint32_t (&r)[2], uint32_t addr) {
+#ifdef BT4FAST_NO_MMA
+  __trap();
+#else
+  asm volatile("ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0,%1}, [%2];\n"
+               : "=r"(r[0]), "=r"(r[1])
+               : "r"(addr));
+#endif
+}
+
 __device__ __forceinline__ uint32_t pack_half2(float lo, float hi) {
   half2 h = __floats2half2_rn(lo, hi);
   return *reinterpret_cast<uint32_t*>(&h);
@@ -232,8 +256,15 @@ __device__ __forceinline__ void AttentionRows16(uint32_t q, uint32_t k,
 // tile of the next output tile is fetched before the epilogue of the
 // current one, so its latency is hidden by the epilogue.
 //
+// PIPE selects the main loop:
+//  1: k16 fragments, one register stage (loads issued one k tile ahead,
+//     stored after 3/4 of the tile's math).
+//  2: k8 fragments, two register stages (loads issued two k tiles ahead,
+//     ~1.75 k tiles of latency cover), lines prefetched whole into L2,
+//     HMMAs issued B-stationary in serpentine order (operand reuse).
 // MODE (benchmarking only): 0 = normal, 3 = main loop without epilogue.
-template <int BM, int BN, int WM, int WN, int EPI, int MIN_BLOCKS, int MODE = 0>
+template <int BM, int BN, int WM, int WN, int EPI, int MIN_BLOCKS, int MODE = 0,
+          int PIPE = 2>
 __global__ void __launch_bounds__((BM / WM) * (BN / WN) * 32, MIN_BLOCKS)
     gemm_kernel(const GemmParams p) {
   constexpr int BK = 32;
@@ -258,7 +289,8 @@ __global__ void __launch_bounds__((BM / WM) * (BN / WN) * 32, MIN_BLOCKS)
   constexpr int LPR = WN / 4;      // lanes per row in epilogue phase 2
   constexpr int RPI = 32 / LPR;    // rows per phase-2 iteration
   constexpr int PIT = 16 / RPI;    // phase-2 iterations per m16 slice
-  static_assert(16 * ES * 4 * (NTH / 32) <= GemmSmemBytes<BM, BN>(),
+  static_assert(EPI == kEpiAttention || MODE == 3 ||
+                    16 * ES * 4 * (NTH / 32) <= GemmSmemBytes<BM, BN>(),
                 "epilogue staging does not fit");
   // With 64-wide warp tiles the weight rows are stored permuted (see
   // PermutedRowSource): each thread then holds two runs of 8 consecutive
@@ -376,6 +408,89 @@ __global__ void __launch_bounds__((BM / WM) * (BN / WN) * 32, MIN_BLOCKS)
     }
   };
 
+  // --- PIPE 2: two register stages, k8 fragments.
+  uint4 ra2[2][A_LD];
+  uint4 rb2[2][B_LD];
+  auto gload2 = [&](int kt, uint4 (&ra_)[A_LD], uint4 (&rb_)[B_LD]) {
+#pragma unroll
+    for (int i = 0; i < A_LD; i++)
+      ra_[i] = ldg16_l2line(a_src[i] + kt * p.a_ktile_stride);
+#pragma unroll
+    for (int i = 0; i < B_LD; i++)
+      rb_[i] = ldg16_l2line(b_src + (long long)i * ROWS_PER_PASS * p.ldb + kt * BK);
+  };
+  auto sstore2 = [&](int stage, const uint4 (&ra_)[A_LD],
+                     const uint4 (&rb_)[B_LD]) {
+    half* s = smem + stage * STAGE + st_off;
+#pragma unroll
+    for (int i = 0; i < A_LD; i++)
+      *reinterpret_cast<uint4*>(s + i * ROWS_PER_PASS * BK) = ra_[i];
+#pragma unroll
+    for (int i = 0; i < B_LD; i++)
+      *reinterpret_cast<uint4*>(s + (BM + i * ROWS_PER_PASS) * BK) = rb_[i];
+  };
+  // k8 fragment addressing: A x4 = m16 tiles (2ip, 2ip+1), B x4 = n8 tiles
+  // 4jq .. 4jq+3, all at k chunk s.
+  const uint32_t a8_off = (warp_m * WM + (lane >> 4) * 16 + (lane & 15)) * (BK * 2);
+  const int a8_x = ((lane & 15) >> 1) & 3;
+  const uint32_t b8_off = (BM + warp_n * WN + (lane >> 3) * 8 + (lane & 7)) * (BK * 2);
+  const int b8_x = ((lane & 7) >> 1) & 3;
+  const uint32_t b8_off_x2 =
+      (BM + warp_n * WN + ((lane >> 3) & 1) * 8 + (lane & 7)) * (BK * 2);
+  uint32_t fa8[2][MT][2];
+  uint32_t fb8[2][NT];
+  auto lfrag8 = [&](int stage, int kc, int buf) {
+    const uint32_t base = smem_base + stage * (STAGE * 2);
+#pragma unroll
+    for (int ip = 0; ip < MT / 2; ip++) {
+      uint32_t r[4];
+      ldsm_x4(r, base + a8_off + ip * 32 * (BK * 2) + ((kc ^ a8_x) << 4));
+      fa8[buf][2 * ip][0] = r[0];
+      fa8[buf][2 * ip][1] = r[1];
+      fa8[buf][2 * ip + 1][0] = r[2];
+      fa8[buf][2 * ip + 1][1] = r[3];
+    }
+#pragma unroll
+    for (int jq = 0; jq < NT / 4; jq++) {
+      uint32_t r[4];
+      ldsm_x4(r, base + b8_off + jq * 32 * (BK * 2) + ((kc ^ b8_x) << 4));
+#pragma unroll
+      for (int t = 0; t < 4; t++) fb8[buf][4 * jq + t] = r[t];
+    }
+    if (NT % 4 == 2) {
+      // x2: lanes 0-15 give the addresses; keep lanes 16-31 in range too.
+      uint32_t r[2];
+      ldsm_x2(r, base + b8_off_x2 + (NT / 4) * 32 * (BK * 2) + ((kc ^ b8_x) << 4));
+      fb8[buf][NT - 2] = r[0];
+      fb8[buf][NT - 1] = r[1];
+    }
+  };
+  auto mma8 = [&](int buf) {
+#pragma unroll
+    for (int j = 0; j < NT; j++) {
+#pragma unroll
+      for (int ii = 0; ii < MT; ii++) {
+        const int i = (j & 1) ? MT - 1 - ii : ii;  // serpentine: B reuse
+        mma_16816(acc[i][j], fa8[buf][i][0], fa8[buf][i][1], fb8[buf][j]);
+      }
+    }
+  };
+  // One k tile of the PIPE 2 main loop; R = register stage index (kt & 1).
+  auto ktile2 = [&](int kt, int stage, uint4 (&raR)[A_LD], uint4 (&rbR)[B_LD],
+                    uint4 (&raN)[A_LD], uint4 (&rbN)[B_LD]) {
+    if (kt + 2 < KT) gload2(kt + 2, raR, rbR);  // raR held tile kt (stored)
+    lfrag8(stage, 1, 1);
+    mma8(0);
+    lfrag8(stage, 2, 0);
+    mma8(1);
+    lfrag8(stage, 3, 1);
+    mma8(0);
+    if (kt + 1 < KT) sstore2(stage ^ 1, raN, rbN);  // tile kt + 1
+    __syncthreads();
+    if (kt + 1 < KT) lfrag8(stage ^ 1, 0, 0);
+    mma8(1);
+  };
+
   // Epilogue constants that do not depend on the tile row.
   const int g = lane >> 2;
   const int t4 = lane & 3;
@@ -395,14 +510,27 @@ __global__ void __launch_bounds__((BM / WM) * (BN / WN) * 32, MIN_BLOCKS)
   int pid = blockIdx.x;
   if (pid >= tiles) return;
   setup(pid);
-  gload(0);
+  if (PIPE == 2) {
+    gload2(0, ra2[0], rb2[0]);
+    if (KT > 1) gload2(1, ra2[1], rb2[1]);
+  } else {
+    gload(0);
+  }
   while (true) {
     // Shared-memory epilogue staging overlaps stage 0: wait for the
     // previous tile's epilogue.
     if (!kDirect) __syncthreads();
-    sstore(0);
+    if (PIPE == 2) {
+      sstore2(0, ra2[0], rb2[0]);
+    } else {
+      sstore(0);
+    }
     __syncthreads();
-    lfrag(0, 0, 0);
+    if (PIPE == 2) {
+      lfrag8(0, 0, 0);
+    } else {
+      lfrag(0, 0, 0);
+    }
 #pragma unroll
     for (int i = 0; i < MT; i++)
 #pragma unroll
@@ -410,29 +538,42 @@ __global__ void __launch_bounds__((BM / WM) * (BN / WN) * 32, MIN_BLOCKS)
 #pragma unroll
         for (int k = 0; k < 4; k++) acc[i][j][k] = 0.0f;
 
-    int stage = 0;
-    for (int kt = 0; kt < KT; kt++) {
-      const bool more = kt + 1 < KT;
-      // k16 step 0: prefetch next k tile, fragments for step 1.
-      if (more) gload(kt + 1);
-      lfrag(stage, 1, 1);
-      mma_part(0, 0, MT);
-      // k16 step 1, first half; then publish the next k tile to shared
-      // memory (3/4 of the tile's math covers the global load latency).
-      mma_part(1, 0, MT / 2);
-      if (more) sstore(stage ^ 1);
-      __syncthreads();
-      stage ^= 1;
-      if (more) lfrag(stage, 0, 0);
-      mma_part(1, MT / 2, MT);
+    if (PIPE == 2) {
+      // Unrolled by two so that register stages are compile-time indexed.
+      for (int kt = 0; kt < KT; kt += 2) {
+        ktile2(kt, 0, ra2[0], rb2[0], ra2[1], rb2[1]);
+        if (kt + 1 < KT) ktile2(kt + 1, 1, ra2[1], rb2[1], ra2[0], rb2[0]);
+      }
+    } else {
+      int stage = 0;
+      for (int kt = 0; kt < KT; kt++) {
+        const bool more = kt + 1 < KT;
+        // k16 step 0: prefetch next k tile, fragments for step 1.
+        if (more) gload(kt + 1);
+        lfrag(stage, 1, 1);
+        mma_part(0, 0, MT);
+        // k16 step 1, first half; then publish the next k tile to shared
+        // memory (3/4 of the tile's math covers the global load latency).
+        mma_part(1, 0, MT / 2);
+        if (more) sstore(stage ^ 1);
+        __syncthreads();
+        stage ^= 1;
+        if (more) lfrag(stage, 0, 0);
+        mma_part(1, MT / 2, MT);
+      }
     }
 
-    // Prefetch the first k tile of this block's next output tile.
+    // Prefetch the first k tile(s) of this block's next output tile.
     const int em0 = m0, en0 = n0, etn = tn;
     const int next = pid + gridDim.x;
     if (next < tiles) {
       setup(next);
-      gload(0);
+      if (PIPE == 2) {
+        gload2(0, ra2[0], rb2[0]);
+        if (KT > 1) gload2(1, ra2[1], rb2[1]);
+      } else {
+        gload(0);
+      }
     }
     // No barrier needed here: the main loop's last barrier comes after every
     // warp's last shared memory read.

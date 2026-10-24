@@ -110,7 +110,9 @@ const char* GemmCfgName(int cfg);
 int GemmCfgBN(int cfg);
 int GemmCfgWN(int cfg);  // columns per row-statistics tile
 // Must be called once per device before Gemm() (sets smem attributes).
+// Reads BT4FAST_GEMM_PIPE (1 = previous GEMM main loop).
 void InitKernels();
+int GemmPipe();
 void Gemm(int cfg, int epi, const GemmParams& p, cudaStream_t stream);
 
 // Combines the per-tile statistics of rows of n_cols channels written by a

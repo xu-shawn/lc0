@@ -30,6 +30,7 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 
@@ -89,26 +90,40 @@ using Cfg3 = CfgT<64, 64, 32, 32, 4>;
 // Attention-fused QKV: 48 KB for the Q/K/V staging of the epilogue.
 using CfgA = CfgT<128, 192, 64, 48, 1, 6 * 128 * 32 * 2>;
 
+// Main loop variant (see gemm_kernel): 2 by default, BT4FAST_GEMM_PIPE=1
+// selects the previous one. Both give bit-identical results.
+int g_pipe = 2;
+
 // Resident blocks per device for each kernel (persistent grid size).
-template <class C, int EPI>
+template <class C, int EPI, int PIPE>
 struct GemmResident {
   static int blocks;
 };
-template <class C, int EPI>
-int GemmResident<C, EPI>::blocks = 0;
+template <class C, int EPI, int PIPE>
+int GemmResident<C, EPI, PIPE>::blocks = 0;
 
-template <class C, int EPI>
-void LaunchGemm(const GemmParams& p, cudaStream_t s) {
+template <class C, int EPI, int PIPE>
+void LaunchGemmP(const GemmParams& p, cudaStream_t s) {
   const int tiles = ((p.M + C::kBM - 1) / C::kBM) * (p.N / C::kBN);
-  const int resident = GemmResident<C, EPI>::blocks;
+  const int resident = GemmResident<C, EPI, PIPE>::blocks;
   dim3 grid(resident > 0 ? std::min(tiles, resident) : tiles, p.splits);
-  gemm_kernel<C::kBM, C::kBN, C::kWM, C::kWN, EPI, C::kMinB>
+  gemm_kernel<C::kBM, C::kBN, C::kWM, C::kWN, EPI, C::kMinB, 0, PIPE>
       <<<grid, C::kThreads, C::kSmem, s>>>(p);
 }
 
 template <class C, int EPI>
-void InitGemm() {
-  auto kernel = gemm_kernel<C::kBM, C::kBN, C::kWM, C::kWN, EPI, C::kMinB>;
+void LaunchGemm(const GemmParams& p, cudaStream_t s) {
+  if (g_pipe == 1) {
+    LaunchGemmP<C, EPI, 1>(p, s);
+  } else {
+    LaunchGemmP<C, EPI, 2>(p, s);
+  }
+}
+
+template <class C, int EPI, int PIPE>
+void InitGemmP() {
+  auto kernel =
+      gemm_kernel<C::kBM, C::kBN, C::kWM, C::kWN, EPI, C::kMinB, 0, PIPE>;
   Check(cudaFuncSetAttribute(kernel,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              C::kSmem),
@@ -120,7 +135,16 @@ void InitGemm() {
   Check(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm, kernel,
                                                       C::kThreads, C::kSmem),
         "occupancy");
-  GemmResident<C, EPI>::blocks = sms * std::max(per_sm, 1);
+  GemmResident<C, EPI, PIPE>::blocks = sms * std::max(per_sm, 1);
+}
+
+template <class C, int EPI>
+void InitGemm() {
+  if (g_pipe == 1) {
+    InitGemmP<C, EPI, 1>();
+  } else {
+    InitGemmP<C, EPI, 2>();
+  }
 }
 
 template <class C>
@@ -163,6 +187,8 @@ void InitCfg() {
 
 }  // namespace
 
+int GemmPipe() { return g_pipe; }
+
 const char* GemmCfgName(int cfg) {
   static const char* names[] = {"128x256", "256x128", "128x128", "64x64",
                                 "128x192attn"};
@@ -182,6 +208,9 @@ int GemmCfgWN(int cfg) {
 }
 
 void InitKernels() {
+  if (const char* env = std::getenv("BT4FAST_GEMM_PIPE")) {
+    g_pipe = std::atoi(env) == 1 ? 1 : 2;
+  }
   InitCfg<Cfg0>();
   InitCfg<Cfg1>();
   InitCfg<Cfg2>();

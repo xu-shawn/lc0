@@ -480,6 +480,7 @@ Bt4FastNetwork::Bt4FastNetwork(const MultiHeadWeights& w,
        << heads_ << " heads, dff " << dff_
        << (ln_fuse_ ? "; layer norms folded into GEMMs" : "; layer norm passes")
        << (attn_fuse_ ? "; attention fused into the QKV GEMM" : "")
+       << "; GEMM main loop " << GemmPipe()
        << "; GEMM tiles: " << cfgs;
 }
 
