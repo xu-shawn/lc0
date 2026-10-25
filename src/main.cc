@@ -248,6 +248,7 @@ int main(int argc, char* argv[]) {
       binpack::Entry entry;
       bool needs_eval;
       float q;
+      InputPlanes planes;  // encoded when the entry is read (chain history)
     };
     std::vector<Pending> buffer;
     buffer.reserve(batch_size);
@@ -259,15 +260,9 @@ int main(int argc, char* argv[]) {
       if (buffer.empty()) return;
       if (pending_evals > 0) {
         auto comp = network->NewComputation();
-        for (const auto& p : buffer) {
+        for (auto& p : buffer) {
           if (!p.needs_eval) continue;
-          PositionHistory history;
-          history.Reset(Position::FromFen(p.entry.fen));
-          int transform = 0;
-          InputPlanes planes = EncodePositionForNN(
-              input_format, history, /*history_planes=*/8,
-              FillEmptyHistory::FEN_ONLY, &transform);
-          comp->AddInput(std::move(planes));
+          comp->AddInput(std::move(p.planes));
         }
         comp->ComputeBlocking();
         std::size_t k = 0;
@@ -296,9 +291,59 @@ int main(int argc, char* argv[]) {
     std::size_t total = 0;
     std::size_t skipped = 0;
     std::size_t last_total = 0;
+    // Chain history: within a binpack chain each entry is the position reached
+    // by the previous entry's move, so the game history is known and is fed to
+    // the network as in real play. A new chain (or anything that doesn't
+    // continue the previous entry) restarts the history from its FEN.
+    // LC0_RELABEL_HISTORY=fen restores the old FEN-only encoding.
+    const char* hist_env = std::getenv("LC0_RELABEL_HISTORY");
+    const bool chain_history = !(hist_env && std::string(hist_env) == "fen");
+    std::cerr << "history: " << (chain_history ? "binpack chains" : "FEN only")
+              << "\n";
+    auto key3 = [](const std::string& fen) {  // placement, side, castling
+      int spaces = 0;
+      for (size_t i = 0; i < fen.size(); i++) {
+        if (fen[i] == ' ' && ++spaces == 3) return fen.substr(0, i);
+      }
+      return fen;
+    };
+    PositionHistory chain;
+    bool chain_valid = false;
+    std::string expect_key;
+    int expect_ply = -1;
+    std::size_t continued = 0, restarted = 0, unparsed = 0;
+    const char* max_env = std::getenv("LC0_RELABEL_MAX_ENTRIES");  // tests only
+    const std::size_t max_entries = max_env ? std::stoull(max_env) : 0;
     for (const auto& e : reader) {
+      if (max_entries && total >= max_entries) break;
       const bool needs_eval = (e.score != kSkippedScore);
-      buffer.push_back({e, needs_eval, 0.0f});
+      const bool cont = chain_history && chain_valid && e.ply == expect_ply &&
+                        key3(e.fen) == expect_key;
+      if (cont) {
+        continued++;
+      } else {
+        chain.Reset(Position::FromFen(e.fen));
+        restarted++;
+      }
+      InputPlanes planes;
+      if (needs_eval) {
+        int transform = 0;
+        planes = EncodePositionForNN(input_format, chain, /*history_planes=*/8,
+                                     FillEmptyHistory::FEN_ONLY, &transform);
+      }
+      chain_valid = false;
+      if (chain_history) {
+        try {
+          const Move m = chain.Last().GetBoard().ParseMove(e.move_uci);
+          chain.Append(m);
+          expect_key = key3(PositionToFen(chain.Last()));
+          expect_ply = e.ply + 1;
+          chain_valid = true;
+        } catch (const std::exception&) {
+          unparsed++;
+        }
+      }
+      buffer.push_back({e, needs_eval, 0.0f, std::move(planes)});
       if (needs_eval) {
         if (++pending_evals == static_cast<std::size_t>(batch_size)) flush();
       } else {
@@ -325,6 +370,12 @@ int main(int argc, char* argv[]) {
               << " skipped passthrough) in " << secs << "s ("
               << static_cast<long>(avg) << " pos/s) -> " << output_path
               << "          \n";
+    std::cout << "{\"entries\":" << total << ",\"skipped\":" << skipped
+              << ",\"history\":\"" << (chain_history ? "chain" : "fen")
+              << "\",\"continued\":" << continued
+              << ",\"restarted\":" << restarted << ",\"unparsed\":" << unparsed
+              << ",\"seconds\":" << secs << ",\"pos_per_s\":"
+              << static_cast<long>(avg) << "}" << std::endl;
     return EXIT_SUCCESS;
   } catch (const binpack::format_error& ex) {
     std::cerr << "binpack format error: " << ex.what() << '\n';
