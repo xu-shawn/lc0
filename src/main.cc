@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
+#include <limits>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -243,6 +245,16 @@ int main(int argc, char* argv[]) {
     binpack::Reader reader(input_path);
     binpack::Writer writer(output_path);
     binpack::Writer q_writer(q_output_path);
+    // Optional supplement: the raw network value of every entry as float32,
+    // little-endian, in entry order (NaN where the score is passed through).
+    std::ofstream qf32;
+    if (const char* f32_path = std::getenv("LC0_RELABEL_QF32")) {
+      qf32.open(f32_path, std::ios::binary | std::ios::trunc);
+      if (!qf32) {
+        throw std::runtime_error(std::string("cannot open ") + f32_path);
+      }
+      std::cerr << "Writing raw float values to: " << f32_path << "\n";
+    }
 
     struct Pending {
       binpack::Entry entry;
@@ -280,6 +292,12 @@ int main(int argc, char* argv[]) {
         }
         writer.write(e);
         q_writer.write(q_e);
+        if (qf32.is_open()) {
+          const float qf = p.needs_eval
+                               ? p.q
+                               : std::numeric_limits<float>::quiet_NaN();
+          qf32.write(reinterpret_cast<const char*>(&qf), sizeof(qf));
+        }
       }
       buffer.clear();
       pending_evals = 0;
@@ -363,6 +381,10 @@ int main(int argc, char* argv[]) {
       }
     }
     flush();
+    if (qf32.is_open()) {
+      qf32.close();
+      if (qf32.fail()) throw std::runtime_error("float supplement not written");
+    }
     const double secs =
         std::chrono::duration<double>(clock::now() - t_start).count();
     const double avg = total / std::max(secs, 1e-9);
