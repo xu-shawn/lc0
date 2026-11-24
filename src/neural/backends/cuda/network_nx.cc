@@ -1,9 +1,10 @@
 // cuda-nx: inference backend for the nx network family (value head only), version 1.
 //
-// Weights come from a flat fp32 blob written by nx_export.py (option blob=<path> or
-// LC0_NX_BLOB), in the layouts the kernels use; the network file given to lc0 only
-// provides the input format. GEMMs: cuBLAS, fp16 operands, fp32 accumulation; the
-// residual stream, attention logits, softmax, norms and the edge stream are fp32.
+// Weights: read from the network file (BT6 .pb.gz) and rearranged into the layouts the kernels use
+// (BuildFromNet: the same tensors scripts/nx/nx_export.py writes). Option blob=<path> or LC0_NX_BLOB
+// loads such a blob instead, and LC0_NX_WRITE_BLOB=<path> writes the tensors built from the network
+// file in that format. GEMMs: fp16 operands, fp32 accumulation; the residual stream, attention
+// logits, softmax, norms and the edge stream are fp32.
 //
 // LC0_NX_DUMP=<prefix> writes intermediate tensors of the first LC0_NX_DUMP_N (4)
 // positions of the first batch: x0, block0, block3, edge0, logits (float32).
@@ -29,6 +30,7 @@
 #include "neural/network.h"
 #include "nx_kernels.h"
 #include "utils/exception.h"
+#include "utils/weights_adapter.h"
 
 namespace lczero {
 namespace {
@@ -113,6 +115,242 @@ std::map<std::string, Tensor> LoadBlob(const std::string& path) {
     out.emplace(name, std::move(t));
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Tensors from the network file. Each .pb layer is first put in the ONNX layout scripts/nx/nxref.py
+// uses (the wmap.json transforms), then concatenated and transposed as scripts/nx/nx_export.py does,
+// so the result equals the blob that script writes (names, dims, order, fp16 rounding of the GEMM
+// weights).
+
+using NetLayer = pblczero::Weights::Layer;
+enum class Xf { kSame, kT, kT10, kT210 };
+
+// kSame: as stored. kT: stored [s1][s0], returned [s0][s1] (wmap "T" and "perm('rev', 1, 0)").
+// kT10: stored [d0][d1], returned [d1][d0]. kT210: stored [d0][d1][d2], returned [d2][d1][d0].
+Tensor OnnxLayer(const NetLayer& l, Xf xf, std::vector<int> shape, const char* what) {
+  const std::vector<float> a = LayerAdapter(l).as_vector();
+  size_t n = 1;
+  for (int d : shape) n *= d;
+  if (a.size() != n)
+    throw Exception(std::string("cuda-nx: network file: ") + what + " has " + std::to_string(a.size()) +
+                    " values, expected " + std::to_string(n) + " (is this the BT6 network with its weights?)");
+  Tensor t;
+  t.dims = shape;
+  t.data.resize(n);
+  if (xf == Xf::kSame) {
+    t.data = a;
+  } else if (xf == Xf::kT) {
+    const size_t s0 = shape[0], s1 = shape[1];
+    for (size_t i = 0; i < s0; i++)
+      for (size_t j = 0; j < s1; j++) t.data[i * s1 + j] = a[j * s0 + i];
+  } else if (xf == Xf::kT10) {  // shape = [d1][d0]
+    const size_t d1 = shape[0], d0 = shape[1];
+    for (size_t i = 0; i < d1; i++)
+      for (size_t j = 0; j < d0; j++) t.data[i * d0 + j] = a[j * d1 + i];
+  } else {  // kT210, shape = [d2][d1][d0]
+    const size_t d2 = shape[0], d1 = shape[1], d0 = shape[2];
+    for (size_t x = 0; x < d2; x++)
+      for (size_t y = 0; y < d1; y++)
+        for (size_t z = 0; z < d0; z++) t.data[(x * d1 + y) * d0 + z] = a[(z * d1 + y) * d2 + x];
+  }
+  return t;
+}
+
+Tensor Transpose2(const Tensor& m) {  // [r][c] -> [c][r]
+  const size_t r = m.dims[0], cc = m.dims[1];
+  Tensor t;
+  t.dims = {(int)cc, (int)r};
+  t.data.resize(r * cc);
+  for (size_t i = 0; i < r; i++)
+    for (size_t j = 0; j < cc; j++) t.data[j * r + i] = m.data[i * cc + j];
+  return t;
+}
+
+Tensor Concat(const std::vector<const Tensor*>& parts, int axis) {  // 1-D, or 2-D along axis 1
+  Tensor t;
+  if (axis == 0) {
+    for (auto* p : parts) t.data.insert(t.data.end(), p->data.begin(), p->data.end());
+    t.dims = {(int)t.data.size()};
+    return t;
+  }
+  const size_t r = parts[0]->dims[0];
+  size_t cols = 0;
+  for (auto* p : parts) cols += p->dims[1];
+  t.dims = {(int)r, (int)cols};
+  t.data.resize(r * cols);
+  size_t off = 0;
+  for (auto* p : parts) {
+    const size_t pc = p->dims[1];
+    for (size_t i = 0; i < r; i++)
+      std::copy(p->data.begin() + i * pc, p->data.begin() + (i + 1) * pc, t.data.begin() + i * cols + off);
+    off += pc;
+  }
+  return t;
+}
+
+// Names stored as fp16 in the blob (GEMM weights; the backend multiplies in fp16 anyway).
+bool BlobHalf(const std::string& n) {
+  static const char* kHalf[] = {"emb.pre_w", "emb.w", "emb.ffn1_w", "emb.ffn2_w", "val.w0", "val.w1"};
+  for (const char* h : kHalf)
+    if (n == h) return true;
+  if (n.rfind("blk", 0) == 0) {
+    const auto dot = n.find('.');
+    const std::string f = n.substr(dot + 1);
+    return f == "qkvg_w" || f == "dense_w" || f == "ffn1_w" || f == "ffn2_w";
+  }
+  return false;
+}
+
+std::vector<std::pair<std::string, Tensor>> BuildFromNet(const WeightsFile& file) {
+  const auto& w = file.weights();
+  const auto& bt6 = file.format().network_format().bt6();
+  std::vector<std::pair<std::string, Tensor>> recs;
+  auto put = [&](const std::string& name, Tensor t) { recs.emplace_back(name, std::move(t)); };
+  auto gemm = [&](const std::string& name, const Tensor& in_out) { put(name, Transpose2(in_out)); };
+  auto L = [](const NetLayer& l, Xf xf, std::vector<int> shape, const std::string& what) {
+    return OnnxLayer(l, xf, std::move(shape), what.c_str());
+  };
+  const int E = 1024, H = 32;
+
+  Tensor alpha;
+  alpha.dims = {1};
+  alpha.data = {bt6.embedding_ffn_alpha()};
+  put("const.alpha_emb", alpha);
+  Tensor sites;
+  for (size_t k = 0; k < bt6.edge_update_after_size(); k++) sites.data.push_back((float)bt6.edge_update_after(k));
+  sites.dims = {(int)sites.data.size()};
+  put("const.sites", sites);
+  // embedding: emb_in columns are [pos (512) | planes (112) | zero pad (16)]
+  gemm("emb.pre_w", L(w.ip_emb_preproc_w(), Xf::kT, {768, 32768}, "ip_emb_preproc_w"));
+  put("emb.pre_b", L(w.ip_emb_preproc_b(), Xf::kSame, {32768}, "ip_emb_preproc_b"));
+  {
+    const Tensor we = L(w.ip_emb_w(), Xf::kT, {624, E}, "ip_emb_w");  // rows: planes 0..111, pos 112..623
+    Tensor wp;
+    wp.dims = {640, E};
+    wp.data.assign(640 * E, 0.0f);
+    std::copy(we.data.begin() + 112 * E, we.data.begin() + 624 * E, wp.data.begin());
+    std::copy(we.data.begin(), we.data.begin() + 112 * E, wp.data.begin() + 512 * E);
+    gemm("emb.w", wp);
+  }
+  put("emb.b", L(w.ip_emb_b(), Xf::kSame, {E}, "ip_emb_b"));
+  put("emb.ln_g", L(w.ip_emb_ln_gammas(), Xf::kSame, {E}, "ip_emb_ln_gammas"));
+  put("emb.ln_b", L(w.ip_emb_ln_betas(), Xf::kSame, {E}, "ip_emb_ln_betas"));
+  {
+    Tensor m = L(w.ip_mult_gate(), Xf::kT, {64, E}, "ip_mult_gate");
+    for (float& v : m.data) v = std::max(v, 0.0f);
+    put("emb.gate_mul", m);
+  }
+  put("emb.gate_add", L(w.ip_add_gate(), Xf::kT, {64, E}, "ip_add_gate"));
+  {
+    const auto& f = w.ip_emb_ffn();
+    const Tensor g = L(f.dense_gate_w(), Xf::kT, {E, 2048}, "ip_emb_ffn.dense_gate_w");
+    const Tensor d1 = L(f.dense1_w(), Xf::kT, {E, 2048}, "ip_emb_ffn.dense1_w");
+    gemm("emb.ffn1_w", Concat({&g, &d1}, 1));
+    put("emb.ffn1_b", L(f.dense1_b(), Xf::kSame, {2048}, "ip_emb_ffn.dense1_b"));
+    gemm("emb.ffn2_w", L(f.dense2_w(), Xf::kT, {2048, E}, "ip_emb_ffn.dense2_w"));
+    put("emb.ffn2_b", L(f.dense2_b(), Xf::kSame, {E}, "ip_emb_ffn.dense2_b"));
+  }
+  put("emb.ffn_ln_g", L(w.ip_emb_ffn_ln_gammas(), Xf::kSame, {E}, "ip_emb_ffn_ln_gammas"));
+  put("emb.ffn_ln_b", L(w.ip_emb_ffn_ln_betas(), Xf::kSame, {E}, "ip_emb_ffn_ln_betas"));
+  // streams
+  put("pair_stream.p_in", L(w.pair_stream().p_in(), Xf::kT, {34, 16}, "pair_stream.p_in"));
+  put("pair_stream.t_off", L(w.pair_stream().t_off(), Xf::kT, {225, 16}, "pair_stream.t_off"));
+  put("edge_stream.p_in", L(w.edge_stream().p_in(), Xf::kT, {34, 16}, "edge_stream.p_in"));
+  put("edge_stream.t_off", L(w.edge_stream().t_off(), Xf::kT, {225, 16}, "edge_stream.t_off"));
+  for (size_t b = 0; b < w.encoder_size(); b++) {
+    const auto& enc = w.encoder(b);
+    const auto& m = enc.mha();
+    const std::string o = "blk" + std::to_string(b) + ".", p = "encoder[" + std::to_string(b) + "].";
+    put(o + "ln1_g", L(enc.ln1_gammas(), Xf::kSame, {E}, p + "ln1_gammas"));
+    put(o + "ln1_b", L(enc.ln1_betas(), Xf::kSame, {E}, p + "ln1_betas"));
+    put(o + "ln2_g", L(enc.ln2_gammas(), Xf::kSame, {E}, p + "ln2_gammas"));
+    put(o + "ln2_b", L(enc.ln2_betas(), Xf::kSame, {E}, p + "ln2_betas"));
+    {
+      const Tensor q = L(m.q_w(), Xf::kT, {E, E}, p + "mha.q_w"), k = L(m.k_w(), Xf::kT, {E, E}, p + "mha.k_w");
+      const Tensor v = L(m.v_w(), Xf::kT, {E, E}, p + "mha.v_w");
+      const Tensor og = L(m.output_gate_w(), Xf::kT, {E, E}, p + "mha.output_gate_w");
+      gemm(o + "qkvg_w", Concat({&q, &k, &v, &og}, 1));
+      const Tensor qb = L(m.q_b(), Xf::kSame, {E}, p + "mha.q_b"), kb = L(m.k_b(), Xf::kSame, {E}, p + "mha.k_b");
+      const Tensor vb = L(m.v_b(), Xf::kSame, {E}, p + "mha.v_b");
+      const Tensor gb = L(m.output_gate_b(), Xf::kSame, {E}, p + "mha.output_gate_b");
+      put(o + "qkvg_b", Concat({&qb, &kb, &vb, &gb}, 0));
+    }
+    gemm(o + "dense_w", L(m.dense_w(), Xf::kT, {E, E}, p + "mha.dense_w"));
+    put(o + "dense_b", L(m.dense_b(), Xf::kSame, {E}, p + "mha.dense_b"));
+    {
+      const auto& f = enc.ffn();
+      const Tensor g = L(f.dense_gate_w(), Xf::kT, {E, E}, p + "ffn.dense_gate_w");
+      const Tensor d1 = L(f.dense1_w(), Xf::kT, {E, E}, p + "ffn.dense1_w");
+      gemm(o + "ffn1_w", Concat({&g, &d1}, 1));
+      put(o + "ffn1_b", L(f.dense1_b(), Xf::kSame, {E}, p + "ffn.dense1_b"));
+      gemm(o + "ffn2_w", L(f.dense2_w(), Xf::kT, {E, E}, p + "ffn.dense2_w"));
+      put(o + "ffn2_b", L(f.dense2_b(), Xf::kSame, {E}, p + "ffn.dense2_b"));
+    }
+    put(o + "attack_w", L(m.attack_w(), Xf::kT, {H, 34}, p + "mha.attack_w"));
+    put(o + "gate_q", L(m.attack_gate_q(), Xf::kT210, {32, 34, 32}, p + "mha.attack_gate_q"));
+    put(o + "gate_k", L(m.attack_gate_k(), Xf::kT210, {32, 34, 32}, p + "mha.attack_gate_k"));
+    put(o + "pair_att_w", L(m.pair_att_w(), Xf::kT, {H, 16}, p + "mha.pair_att_w"));
+    put(o + "edge_e_w", L(m.edge_e_w(), Xf::kT, {H, 16}, p + "mha.edge_e_w"));
+    put(o + "edge_m_w", L(m.edge_m_w(), Xf::kT, {H, 16}, p + "mha.edge_m_w"));
+    put(o + "edge_g_w", L(m.edge_g_w(), Xf::kT, {H, 16}, p + "mha.edge_g_w"));
+    put(o + "edge_g_b", L(m.edge_g_b(), Xf::kSame, {H}, p + "mha.edge_g_b"));
+    put(o + "edge_t_edge", L(m.edge_t_edge(), Xf::kSame, {H}, p + "mha.edge_t_edge"));
+    put(o + "edge_t_node", L(m.edge_t_node(), Xf::kSame, {H}, p + "mha.edge_t_node"));
+  }
+  for (size_t k = 0; k < w.edge_stream().update_size(); k++) {
+    const auto& u = w.edge_stream().update(k);
+    const std::string o = "eu" + std::to_string(k) + ".", p = "edge_stream.update[" + std::to_string(k) + "].";
+    put(o + "o_e", L(u.o_e(), Xf::kT, {H, 16}, p + "o_e"));
+    put(o + "tri_v", L(u.tri_v(), Xf::kT, {16, 32}, p + "tri_v"));
+    put(o + "tri_eg", L(u.tri_eg(), Xf::kT10, {16, 16}, p + "tri_eg"));
+    put(o + "tri_eg_b", L(u.tri_eg_b(), Xf::kSame, {16}, p + "tri_eg_b"));
+    put(o + "tri_o", L(u.tri_o(), Xf::kT, {32, 16}, p + "tri_o"));
+    put(o + "ffn_in", L(u.ffn_in(), Xf::kT, {16, 64}, p + "ffn_in"));
+    put(o + "ffn_in_b", L(u.ffn_in_b(), Xf::kSame, {64}, p + "ffn_in_b"));
+    put(o + "ffn_rev", L(u.ffn_rev(), Xf::kT, {16, 64}, p + "ffn_rev"));
+    put(o + "ffn_out", L(u.ffn_out(), Xf::kT, {64, 16}, p + "ffn_out"));
+  }
+  put("final.ln_g", L(w.encoder_final_norm().gammas(), Xf::kSame, {E}, "encoder_final_norm.gammas"));
+  put("final.ln_b", L(w.encoder_final_norm().betas(), Xf::kSame, {E}, "encoder_final_norm.betas"));
+  const auto& v = w.value_heads().winner();
+  gemm("val.w0", L(v.ip_val_w(), Xf::kT, {E, 128}, "value_heads.winner.ip_val_w"));
+  put("val.b0", L(v.ip_val_b(), Xf::kSame, {128}, "value_heads.winner.ip_val_b"));
+  gemm("val.w1", L(v.ip1_val_w(), Xf::kT, {8192, 128}, "value_heads.winner.ip1_val_w"));
+  put("val.b1", L(v.ip1_val_b(), Xf::kSame, {128}, "value_heads.winner.ip1_val_b"));
+  gemm("val.w2", L(v.ip2_val_w(), Xf::kT, {128, 3}, "value_heads.winner.ip2_val_w"));
+  put("val.b2", L(v.ip2_val_b(), Xf::kSame, {3}, "value_heads.winner.ip2_val_b"));
+  // As the blob: GEMM weights rounded to fp16.
+  for (auto& [name, t] : recs)
+    if (BlobHalf(name))
+      for (float& x : t.data) x = __half2float(__float2half(x));
+  return recs;
+}
+
+void WriteBlob(const std::string& path, const std::vector<std::pair<std::string, Tensor>>& recs) {
+  std::ofstream f(path, std::ios::binary);
+  if (!f) throw Exception("cuda-nx: cannot write " + path);
+  f.write("NXB2", 4);
+  for (const auto& [name, t] : recs) {
+    const uint32_t nl = name.size(), nd = t.dims.size();
+    const uint8_t half_ = BlobHalf(name) ? 1 : 0;
+    f.write(reinterpret_cast<const char*>(&nl), 4);
+    f.write(name.data(), nl);
+    f.write(reinterpret_cast<const char*>(&half_), 1);
+    f.write(reinterpret_cast<const char*>(&nd), 4);
+    for (int d : t.dims) {
+      const uint32_t v = d;
+      f.write(reinterpret_cast<const char*>(&v), 4);
+    }
+    if (half_) {
+      std::vector<half> h(t.data.size());
+      for (size_t i = 0; i < h.size(); i++) h[i] = __float2half(t.data[i]);
+      f.write(reinterpret_cast<const char*>(h.data()), h.size() * 2);
+    } else {
+      f.write(reinterpret_cast<const char*>(t.data.data()), t.data.size() * 4);
+    }
+  }
+  if (!f) throw Exception("cuda-nx: write failed: " + path);
 }
 
 class NxNetwork;
@@ -330,7 +568,6 @@ NxNetwork::NxNetwork(const WeightsFile& file, const OptionsDict& opts) {
                               pblczero::NetworkFormat::MOVES_LEFT_NONE};
   std::string blob_path = opts.GetOrDefault<std::string>("blob", "");
   if (blob_path.empty() && std::getenv("LC0_NX_BLOB")) blob_path = std::getenv("LC0_NX_BLOB");
-  if (blob_path.empty()) throw Exception("cuda-nx: no weights blob (blob=<path> or LC0_NX_BLOB)");
   max_batch_ = opts.GetOrDefault<int>("max_batch", 1024);
   gpu_ = opts.GetOrDefault<int>("gpu", 0);
   if (const char* d = std::getenv("LC0_NX_DUMP")) dump_prefix_ = d;
@@ -363,7 +600,15 @@ NxNetwork::NxNetwork(const WeightsFile& file, const OptionsDict& opts) {
   BlasCheck(cublasSetStream(blas_, stream_), "stream");
   BlasCheck(cublasSetMathMode(blas_, CUBLAS_TENSOR_OP_MATH), "math mode");
 
-  blob_ = LoadBlob(blob_path);
+  if (!blob_path.empty()) {
+    blob_ = LoadBlob(blob_path);
+  } else {
+    if (file.format().network_format().network() != pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_BT6)
+      throw Exception("cuda-nx: the network file is not a BT6 network");
+    auto recs = BuildFromNet(file);
+    if (const char* wb = std::getenv("LC0_NX_WRITE_BLOB")) WriteBlob(wb, recs);
+    for (auto& [name, t] : recs) blob_.emplace(name, std::move(t));
+  }
   alpha_emb_ = Get("const.alpha_emb").data[0];
   for (float s : Get("const.sites").data) sites_.push_back((int)s);
   pre_w_ = UpH("emb.pre_w"); pre_b_ = UpF("emb.pre_b");

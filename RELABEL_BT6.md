@@ -16,7 +16,6 @@ Only the WDL value head is evaluated (q = W - L); policy is skipped.
 - An NVIDIA GPU with tensor cores, sm_75 (Turing) or newer. The kernels were tuned on a Quadro RTX 6000; they use
   mma.m16n8k8 fp16 instructions, ldmatrix and up to 64 KB of shared memory per block.
 - CUDA 12.x, gcc 11 or newer (the tree is C++20), meson and ninja.
-- Python 3 with `numpy`, `protobuf` and `grpcio-tools`, for the weight export.
 - The network file `BT6-1024x24x32h-swa-7000000.pb.gz` (937 MB) from the link above.
 
 ## 1. Build
@@ -35,25 +34,14 @@ ninja -C build-nx lc0
 - Optionally add `"-Dcpp_link_args=['-static-libstdc++','-static-libgcc']"` for a binary that runs on machines with an
   older libstdc++.
 
-## 2. Weights
-
-The backend reads its weights from a flat blob. lc0 itself only needs the network's input format, so it can be given a
-copy of the network file without weights.
+## 2. Relabel
 
 ```sh
-python3 -m grpc_tools.protoc -I proto --python_out=scripts/nx proto/net.proto      # writes scripts/nx/net_pb2.py
-NX_PB=BT6-1024x24x32h-swa-7000000.pb.gz python3 scripts/nx/nx_export.py nx16.blob   # ~480 MB, a few minutes
-python3 scripts/nx/strip_weights.py BT6-1024x24x32h-swa-7000000.pb.gz nx-format.pb.gz
+export LC0_BACKEND=cuda-nx
+./build-nx/lc0 BT6-1024x24x32h-swa-7000000.pb.gz in.binpack out.binpack 1024
 ```
 
-The blob stores GEMM weights as fp16, which the backend multiplies in anyway; everything else is fp32.
-
-## 3. Relabel
-
-```sh
-export LC0_BACKEND=cuda-nx LC0_NX_BLOB=nx16.blob
-./build-nx/lc0 nx-format.pb.gz in.binpack out.binpack 1024
-```
+The backend reads the weights from the network file and rearranges them into its own layouts at startup.
 
 - **Batch size.** Pass 1024: it is the backend's batch, and the result cache only works at that size. The default is
   128.
@@ -61,6 +49,13 @@ export LC0_BACKEND=cuda-nx LC0_NX_BLOB=nx16.blob
 - **History.** By default each position is evaluated with its real 8-position history, rebuilt from the binpack's game
   chains. Set `LC0_RELABEL_HISTORY=fen` for data without games, such as sampled search-tree positions.
 - **Skip marks.** Entries carrying the skip mark of minimized binpacks (score 32002) pass through unevaluated.
+- **Faster startup.** Reading the network file adds about 15 s per run. For many short jobs, write the rearranged
+  weights once and load them instead:
+  1. Run once with `LC0_NX_WRITE_BLOB=nx16.blob`, which writes the ~480 MB file `nx16.blob`. Alternatively, run
+     `scripts/nx/nx_export.py`, which writes the same file.
+  2. Make a copy of the network file without weights with `scripts/nx/strip_weights.py`. lc0 only reads the input
+     format from it.
+  3. Run with `LC0_NX_BLOB=nx16.blob` and that copy.
 - **Splitting across GPUs.** Binpack chunks (`BINP` + u32 size + data) are independent. To use several GPUs, cut a file
   at chunk boundaries, relabel the parts separately and concatenate the outputs in order. Every part should hold whole
   chunks; parts of 24 MB take about 75 minutes on an RTX 6000.
@@ -74,6 +69,8 @@ export LC0_BACKEND=cuda-nx LC0_NX_BLOB=nx16.blob
 | `LC0_NX_CACHE_BITS=b` | Result cache with 2^b entries; the default 24 means 16M entries and 512 MB of host RAM. Identical inputs (all 112 planes) reuse their first result. 0 disables it. |
 | `LC0_RELABEL_MIN_PLY=N` | Do not evaluate unmarked entries with ply < N. They get the skip mark in both outputs (NaN in q.f32) and stay in the chains for later positions' history. Off by default. |
 | `LC0_RELABEL_FILTERED=1` | The same for entries whose move captures or whose side to move is in check, as nnue-pytorch's `filtered` drops them. Search-tree samples (ply 9999) are exempt. Off by default. |
+| `LC0_NX_BLOB=file` | Load pre-arranged weights instead of reading them from the network file. |
+| `LC0_NX_WRITE_BLOB=file` | Write the weights read from the network file in that format. |
 | `LC0_NX_PROFILE=1`, `LC0_NX_EDGE_PROFILE=1` | Per-stage GPU times, printed every few batches. |
 
 ## Speed and accuracy
@@ -90,7 +87,9 @@ Compared with ONNX Runtime fp32 on the original graph (30,000 positions each):
 | test80 game positions, chain history | 9.9e-5 | 0.0009 | 0.0032 | 0.0086 | 0 |
 
 The few larger differences come from numerically chaotic positions, where any rounding is amplified by about 1000×.
-`scripts/nx/nxref.py` is an fp64 NumPy reference of the value path, for checking other builds.
+`scripts/nx/nxref.py` is an fp64 NumPy reference of the value path, for checking other builds. The Python tools in
+`scripts/nx` need `numpy`, `protobuf` and `net_pb2.py`; generate it with
+`python3 -m grpc_tools.protoc -I proto --python_out=scripts/nx proto/net.proto`.
 
 ## How it works
 
