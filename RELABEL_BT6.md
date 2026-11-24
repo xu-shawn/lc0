@@ -21,18 +21,21 @@ Only the WDL value head is evaluated (q = W - L); policy is skipped.
 ## 1. Build
 
 ```sh
-CUDA=/usr/local/cuda   # your CUDA root
-CC=gcc-11 CXX=g++-11 meson setup build-nx --buildtype=release -Dplain_cuda=true -Dcudnn=false \
-  -Dnative_cuda=false -Dcc_cuda=75 -Dblas=false -Dopenblas=false -Donednn=false -Ddnnl=false -Dopencl=false \
-  -Dgtest=false -Drescorer=false -Donnx=false -Dcudnn_include=$CUDA/include -Dcudnn_libdirs=$CUDA/lib64 \
-  -Dnvcc_ccbin=g++-11
+meson setup build-nx --buildtype=release
 ninja -C build-nx lc0
 ```
 
-- `-Dcc_cuda` selects the GPU architecture, e.g. 86 for Ampere consumer cards or 89 for Ada.
-- meson downloads its subprojects on the first setup.
-- Optionally add `"-Dcpp_link_args=['-static-libstdc++','-static-libgcc']"` for a binary that runs on machines with an
-  older libstdc++.
+This builds for the GPU in the machine (lc0's default, nvcc `-arch=native`). Add options only where they apply:
+
+| Option | When |
+|---|---|
+| `-Dcc_cuda=75` (or 86, 89, ...) | Building for a specific GPU, e.g. on a machine without one. Otherwise nvcc targets all major architectures, including pre-Turing ones these kernels cannot compile for. |
+| `-Dcudnn_include=$CUDA/include -Dcudnn_libdirs=$CUDA/lib64` | CUDA is not in `/usr/local/cuda`, `/opt/cuda` or `/usr/lib/cuda`. |
+| `CC=gcc-11 CXX=g++-11` before `meson`, `-Dnvcc_ccbin=g++-11` | The default compiler is older than gcc 10 (the tree is C++20) or not supported by your nvcc. |
+| `-Dnative_arch=false` | The binary will run on other machines: release builds otherwise use `-march=native`. |
+| `"-Dcpp_link_args=['-static-libstdc++','-static-libgcc']"` | Those machines have an older libstdc++. |
+
+meson downloads its subprojects on the first setup.
 
 ## 2. Relabel
 
