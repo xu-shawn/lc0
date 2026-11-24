@@ -168,6 +168,12 @@ void LaunchCfg(int epi, const GemmParams& p, cudaStream_t s) {
       return LaunchGemm<C, kEpiResStats>(p, s);
     case kEpiResLnStats:
       return LaunchGemm<C, kEpiResLnStats>(p, s);
+    case kEpiF32Res:
+      if constexpr (C::kWN == 64) return LaunchGemm<C, kEpiF32Res>(p, s);
+      break;
+    case kEpiSwiGLU:
+      if constexpr (C::kWN == 64) return LaunchGemm<C, kEpiSwiGLU>(p, s);
+      break;
   }
   throw std::runtime_error("bt4fast: bad epilogue");
 }
@@ -183,6 +189,10 @@ void InitCfg() {
   InitGemm<C, kEpiLnMish>();
   InitGemm<C, kEpiResStats>();
   InitGemm<C, kEpiResLnStats>();
+  if constexpr (C::kWN == 64) {
+    InitGemm<C, kEpiF32Res>();
+    InitGemm<C, kEpiSwiGLU>();
+  }
 }
 
 }  // namespace

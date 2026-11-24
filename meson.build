@@ -523,7 +523,8 @@ if get_option('build_backends')
   if (get_option('cudnn') or get_option('plain_cuda')) and cu_dart.found() and cu_blas.found() and nvcc_ok
     deps += [cu_blas, cu_dart]
     cuda_files = ['src/neural/backends/cuda/layers.cc',
-                  'src/neural/backends/cuda/bt4fast.cc']
+                  'src/neural/backends/cuda/bt4fast.cc',
+                  'src/neural/backends/cuda/network_nx.cc']
     if get_option('cudnn') and cu_dnn.found()
       deps += cu_dnn
       cuda_files += 'src/neural/backends/cuda/network_cudnn.cc'
@@ -563,6 +564,13 @@ if get_option('build_backends')
       input : 'src/neural/backends/cuda/fp16_kernels.cu',
       output : outputname,
       depend_files: 'src/neural/backends/cuda/winograd_helper.inc',
+      command : [nvcc, nvcc_extra_args, nvcc_arguments, nvcc_io_arguments]
+    )
+
+    files += custom_target('cuda nx code',
+      input : 'src/neural/backends/cuda/nx_kernels.cu',
+      output : outputname,
+      depend_files: ['src/neural/backends/cuda/nx_kernels.h', 'src/neural/backends/cuda/nx_gemm.cuh', 'src/neural/backends/cuda/bt4fast_gemm.cuh'],
       command : [nvcc, nvcc_extra_args, nvcc_arguments, nvcc_io_arguments]
     )
 

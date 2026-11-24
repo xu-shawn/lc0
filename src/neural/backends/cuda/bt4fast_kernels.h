@@ -64,7 +64,12 @@ enum EpiKind : int {
   // Q/K/V in shared memory and writes the attention output
   // C[token][head * 32 + d]. att_bias: smolgen logits [N * heads][64 * 64].
   kEpiAttention = 9,
-  kNumEpis = 10,
+  // nx: Cf[M][ldc] (fp32, in place) += acc + bias (64-wide warp tiles only).
+  kEpiF32Res = 10,
+  // nx: SwiGLU. Logical columns of each 64 block: 32 gate rows then the 32 dense1 rows of
+  // the same outputs; C[r][(c / 64) * 32 + c % 64] = sigmoid(gate) * (dense1 + bias), fp16.
+  kEpiSwiGLU = 11,
+  kNumEpis = 12,
 };
 
 struct GemmParams {
@@ -90,6 +95,7 @@ struct GemmParams {
   float2* stats_out;        // kEpiRes*Stats: [M][N / WN] partial statistics
   const half* att_bias;     // kEpiAttention: smolgen logits
   int att_heads;            // kEpiAttention: heads per position
+  const float* bias32;      // kEpiF32Res: optional fp32 bias [N] (added after bias)
   float att_scale;          // kEpiAttention: 1 / sqrt(depth)
   int M, N;
   int K;       // K handled by one split (multiple of 32)

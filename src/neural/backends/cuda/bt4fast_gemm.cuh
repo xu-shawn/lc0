@@ -743,6 +743,40 @@ __global__ void __launch_bounds__((BM / WM) * (BN / WN) * 32, MIN_BLOCKS)
           }
 #pragma unroll
           for (int k = 0; k < 16; k++) v[k] += cb[k];
+          if (EPI == kEpiF32Res) {
+            if (p.bias32) {
+#pragma unroll
+              for (int q = 0; q < 8; q++) {
+                v[q] += p.bias32[fa + q];
+                v[8 + q] += p.bias32[fa + 32 + q];
+              }
+            }
+            if (row < p.M) {
+              float* cp = p.Cf + (long long)row * p.ldc;
+              float4* a = reinterpret_cast<float4*>(cp + fa);
+              float4* b = reinterpret_cast<float4*>(cp + fa + 32);
+              float4 a0 = a[0], a1 = a[1], b0 = b[0], b1 = b[1];
+              a0.x += v[0]; a0.y += v[1]; a0.z += v[2]; a0.w += v[3];
+              a1.x += v[4]; a1.y += v[5]; a1.z += v[6]; a1.w += v[7];
+              b0.x += v[8]; b0.y += v[9]; b0.z += v[10]; b0.w += v[11];
+              b1.x += v[12]; b1.y += v[13]; b1.z += v[14]; b1.w += v[15];
+              a[0] = a0; a[1] = a1; b[0] = b0; b[1] = b1;
+            }
+            continue;
+          }
+          if (EPI == kEpiSwiGLU) {
+            if (row < p.M) {
+              uint4 o;
+              uint32_t* ow = reinterpret_cast<uint32_t*>(&o);
+#pragma unroll
+              for (int q = 0; q < 4; q++)
+                ow[q] = pack_half2(v[8 + 2 * q] / (1.0f + __expf(-v[2 * q])),
+                                   v[9 + 2 * q] / (1.0f + __expf(-v[2 * q + 1])));
+              const int oc = fa - (fa >> 6) * 32;
+              *reinterpret_cast<uint4*>(p.C + (long long)row * p.ldc + oc) = o;
+            }
+            continue;
+          }
           if (EPI == kEpiMish || EPI == kEpiLnMish) {
 #pragma unroll
             for (int k = 0; k < 16; k++) v[k] = bt4_mish(v[k]);
